@@ -8,15 +8,15 @@ type Props = PropsWithChildren<{
 
 export function SectionCard({ title, subtitle, aside, children }: Props) {
   return (
-    <section className="rounded-[28px] border border-ink/10 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded-[28px] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/15">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-display text-2xl text-ink">{title}</h2>
-          {subtitle ? <p className="mt-1 text-sm text-ink/70">{subtitle}</p> : null}
+          <h2 className="text-xl font-semibold tracking-tight text-white md:text-2xl">{title}</h2>
+          {subtitle ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{subtitle}</p> : null}
         </div>
         {aside}
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-6">{children}</div>
     </section>
   );
 }

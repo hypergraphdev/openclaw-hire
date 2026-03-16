@@ -1,29 +1,31 @@
 import { NavLink } from "react-router-dom";
 
 const links = [
-  { to: "/", label: "Register" },
-  { to: "/hire", label: "Hire" },
-  { to: "/employees", label: "Employees" },
+  { to: "/", label: "Account", detail: "Personal access" },
+  { to: "/hire", label: "Provision Agent", detail: "Create a new instance" },
+  { to: "/employees", label: "Agent Fleet", detail: "Manage running hires" },
 ];
 
 export function NavBar() {
   return (
-    <div className="border-b border-ink/10 px-6 py-4 md:px-8">
-      <div className="flex flex-wrap gap-3">
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `rounded-full px-4 py-2 text-sm font-medium transition ${
-                isActive ? "bg-ink text-sand" : "bg-sand text-ink hover:bg-ember hover:text-white"
-              }`
-            }
-          >
-            {link.label}
-          </NavLink>
-        ))}
-      </div>
-    </div>
+    <nav className="grid gap-2">
+      {links.map((link) => (
+        <NavLink
+          key={link.to}
+          to={link.to}
+          end={link.to === "/"}
+          className={({ isActive }) =>
+            `group rounded-2xl border px-4 py-3 transition ${
+              isActive
+                ? "border-white/15 bg-white/10 text-white shadow-lg shadow-slate-950/10"
+                : "border-transparent bg-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white"
+            }`
+          }
+        >
+          <p className="text-sm font-semibold">{link.label}</p>
+          <p className="mt-1 text-xs text-slate-400 group-hover:text-slate-300">{link.detail}</p>
+        </NavLink>
+      ))}
+    </nav>
   );
 }

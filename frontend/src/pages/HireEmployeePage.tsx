@@ -1,94 +1,211 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 
+import type { AppShellContext } from "../App";
 import { api } from "../api";
 import { SectionCard } from "../components/SectionCard";
-import type { Employee, User } from "../types";
+import { StatusPill } from "../components/StatusPill";
+import { formatStateLabel } from "../lib/formatters";
+import type { Employee } from "../types";
+
+const roleTemplates = [
+  {
+    value: "Personal Research Analyst",
+    description: "Tracks ideas, summarizes sources, and keeps long-running notes organized.",
+  },
+  {
+    value: "Inbox & Scheduling Assistant",
+    description: "Drafts replies, triages requests, and prepares a daily operating queue.",
+  },
+  {
+    value: "Builder / Coding Partner",
+    description: "Helps ship side projects, debug issues, and maintain task momentum.",
+  },
+  {
+    value: "Life Ops Coordinator",
+    description: "Keeps travel, errands, reminders, and household tasks aligned.",
+  },
+];
+
+const provisioningSteps = [
+  "Queue request",
+  "Prepare workspace",
+  "Write config",
+  "Create service",
+  "Wait for Telegram token",
+  "Ready for use",
+];
 
 export function HireEmployeePage() {
-  const [owner, setOwner] = useState<User | null>(null);
+  const { owner, refreshEmployees } = useOutletContext<AppShellContext>();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    const storedOwner = localStorage.getItem("openclaw_owner");
-    if (storedOwner) {
-      setOwner(JSON.parse(storedOwner) as User);
-    }
-  }, []);
+  const defaultTemplate = roleTemplates[0]?.value ?? "";
+  const latestState = useMemo(() => employee?.current_state ?? "queued", [employee]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
     if (!owner) {
-      setError("Register an owner account first.");
+      setError("Create your personal account before provisioning an agent.");
       return;
     }
+
     const formData = new FormData(event.currentTarget);
+    setIsSaving(true);
+
     try {
       const createdEmployee = await api.createEmployee({
         owner_id: owner.id,
-        name: String(formData.get("name") ?? ""),
-        role: String(formData.get("role") ?? ""),
-        brief: String(formData.get("brief") ?? ""),
-        telegram_handle: String(formData.get("telegram_handle") ?? ""),
+        name: String(formData.get("name") ?? "").trim(),
+        role: String(formData.get("role") ?? "").trim(),
+        brief: String(formData.get("brief") ?? "").trim(),
+        telegram_handle: String(formData.get("telegram_handle") ?? "").trim(),
       });
       setEmployee(createdEmployee);
+      await refreshEmployees();
       event.currentTarget.reset();
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Employee creation failed.");
+      setError(submissionError instanceof Error ? submissionError.message : "Provisioning failed.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
   return (
-    <div className="grid gap-6 p-6 md:p-8">
+    <div className="grid gap-6 p-6 md:p-8 2xl:grid-cols-[minmax(0,1.3fr)_380px]">
       <SectionCard
-        title="Hire employee"
-        subtitle="Creates the employee record and pushes initialization to the monitored waiting state."
-        aside={<span className="rounded-full bg-ember/10 px-3 py-1 text-xs font-semibold text-ember">Step 2</span>}
+        title="Provision a new personal agent"
+        subtitle="The hiring flow now behaves like a resource creation wizard. Choose a template, name the instance, and review the runtime defaults before the backend starts provisioning."
+        aside={<span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">Provisioning</span>}
       >
-        <div className="mb-4 rounded-2xl bg-sand p-4 text-sm text-ink/80">
-          Owner: {owner ? `${owner.name} (${owner.id})` : "not registered locally yet"}
-        </div>
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-          <label className="grid gap-2 text-sm">
-            Employee name
-            <input className="rounded-2xl border border-ink/10 bg-sand px-4 py-3 outline-none" name="name" required />
-          </label>
-          <label className="grid gap-2 text-sm">
-            Role
-            <input className="rounded-2xl border border-ink/10 bg-sand px-4 py-3 outline-none" name="role" required />
-          </label>
-          <label className="grid gap-2 text-sm md:col-span-2">
-            Brief
-            <textarea className="min-h-28 rounded-2xl border border-ink/10 bg-sand px-4 py-3 outline-none" name="brief" />
-          </label>
-          <label className="grid gap-2 text-sm md:col-span-2">
-            Telegram handle
-            <input className="rounded-2xl border border-ink/10 bg-sand px-4 py-3 outline-none" name="telegram_handle" />
-          </label>
-          <button className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-sand" type="submit">
-            Create employee job
-          </button>
-        </form>
-        {error ? <p className="mt-4 text-sm text-ember">{error}</p> : null}
-      </SectionCard>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <form className="grid gap-5" onSubmit={onSubmit}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm text-slate-300">
+                Agent template
+                <select
+                  className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
+                  defaultValue={defaultTemplate}
+                  name="role"
+                  required
+                >
+                  {roleTemplates.map((template) => (
+                    <option key={template.value} value={template.value}>
+                      {template.value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm text-slate-300">
+                Agent name
+                <input
+                  className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
+                  name="name"
+                  placeholder="Scout"
+                  required
+                />
+              </label>
+            </div>
 
-      <SectionCard title="Most recent employee" subtitle="The generated employee starts with the default model config.">
-        {employee ? (
-          <div className="grid gap-2 text-sm">
-            <p>
-              <strong>ID:</strong> {employee.id}
-            </p>
-            <p>
-              <strong>State:</strong> {employee.current_state}
-            </p>
-            <p>
-              <strong>Model:</strong> {employee.model_config}
-            </p>
+            <label className="grid gap-2 text-sm text-slate-300">
+              Personal mission brief
+              <textarea
+                className="min-h-32 rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
+                name="brief"
+                placeholder="Help me monitor side-project priorities, summarize notes, and prep a daily plan."
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm text-slate-300">
+              Telegram handle
+              <input
+                className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
+                name="telegram_handle"
+                placeholder="@alexrivera"
+              />
+            </label>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Runtime defaults</p>
+                <p className="mt-3 text-lg font-semibold text-white">openai-codex/gpt-5.3-codex-spark</p>
+                <p className="mt-2 text-sm text-slate-400">This is the backend-provided default model config currently applied to new agents.</p>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Owner binding</p>
+                <p className="mt-3 text-lg font-semibold text-white">{owner ? owner.name : "No account connected"}</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {owner ? owner.email : "Go back to Account and create your personal login first."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-slate-950/50 p-4">
+              <div>
+                <p className="text-sm font-semibold text-white">Launch provisioning workflow</p>
+                <p className="mt-1 text-xs text-slate-400">The request creates the employee record, then the backend advances through its lifecycle states.</p>
+              </div>
+              <button
+                className="rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={isSaving}
+                type="submit"
+              >
+                {isSaving ? "Provisioning..." : "Create agent instance"}
+              </button>
+            </div>
+            {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          </form>
+
+          <div className="grid gap-4">
+            <div className="rounded-[24px] border border-white/10 bg-slate-950/50 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Current request</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{employee ? employee.name : "No agent provisioned yet"}</p>
+                </div>
+                <StatusPill state={latestState} />
+              </div>
+              <p className="mt-3 text-sm text-slate-400">
+                {employee ? employee.role : "Submit the form to create a personal agent resource and populate this panel."}
+              </p>
+              {employee ? (
+                <Link className="mt-4 inline-flex text-sm font-medium text-cyan-300 hover:text-cyan-200" to={`/employees/${employee.id}`}>
+                  Open resource page
+                </Link>
+              ) : null}
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-slate-950/50 p-5">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Provisioning steps</p>
+              <div className="mt-4 grid gap-3">
+                {provisioningSteps.map((step, index) => {
+                  const isActive = employee ? index <= 3 : index === 0;
+                  return (
+                    <div
+                      key={step}
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        isActive ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400"
+                      }`}
+                    >
+                      <p className="font-medium">{step}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-5">
+              <p className="text-sm font-semibold text-amber-100">Lifecycle note</p>
+              <p className="mt-2 text-sm text-amber-50/80">
+                Agents move into <span className="font-medium">{formatStateLabel("waiting_bot_token")}</span> until you complete the Telegram token placeholder step on the detail page.
+              </p>
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-ink/70">No employee created in this session yet.</p>
-        )}
+        </div>
       </SectionCard>
     </div>
   );
