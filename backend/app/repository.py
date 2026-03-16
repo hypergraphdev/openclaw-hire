@@ -172,8 +172,7 @@ def create_template_table_safe() -> None:
         columns = [r[1] for r in connection.execute("PRAGMA table_info(employees)").fetchall()]
         if "template_id" not in columns:
             connection.execute(
-                "ALTER TABLE employees ADD COLUMN template_id TEXT DEFAULT ?",
-                ("audit-codex-base",),
+                "ALTER TABLE employees ADD COLUMN template_id TEXT DEFAULT 'audit-codex-base'"
             )
         connection.execute(
             "UPDATE employees SET template_id = COALESCE(template_id, 'audit-codex-base')",
