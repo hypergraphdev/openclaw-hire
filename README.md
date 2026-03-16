@@ -1,30 +1,35 @@
 # OpenClaw Hire
 
-First runnable scaffold for Michael Wu's OpenClaw hiring platform.
+This is the OpenClaw Hire multipage control-console implementation.
 
 It includes:
 
-- FastAPI backend with SQLite persistence
-- Vite + React frontend with a React Native-style card UI and Tailwind CSS
-- employee initialization timeline tracking
-- bootstrap documentation for future security-auditor style cloning
+- FastAPI backend with SQLite persistence (Python)
+- Vite + React frontend + Tailwind CSS
+- Multi-page dashboard with account, templates, fleet, agent detail, and settings
+- End-to-end initialization timeline tracking for each AI agent
+- Async-style backend state progression for provisioning workflow
 
-## Features in this scaffold
+## Features
 
-Backend APIs:
+### Backend APIs
 
 - `POST /api/register`
+- `GET /api/templates`
 - `POST /api/employees`
 - `GET /api/owners/{owner_id}/employees`
 - `GET /api/employees/{employee_id}/status`
 - `POST /api/employees/{employee_id}/bot-token`
+- `GET /api/dashboard/{owner_id}`
 
-Frontend screens:
+### Frontend pages (now multi-page)
 
-- registration
-- hire employee
-- employee list
-- employee detail / status timeline
+- `Dashboard` (`/dashboard`)
+- `Settings / Profile` (`/settings`)
+- `Create Agent` (`/agents/new`)
+- `Agent Fleet` (`/agents`)
+- `Agent Detail` (`/agents/:employeeId`)
+- `Templates` (`/templates`)
 
 Default employee model config:
 
@@ -101,4 +106,4 @@ If you deploy the frontend under `/openclaw`, build it with a matching Vite base
 
 ## Bootstrap template
 
-See [BOOTSTRAP_TEMPLATE.md](/home/wwwroot/openclaw-hire/BOOTSTRAP_TEMPLATE.md) for the intended security-auditor style clone flow. This repo does not claim that provisioning is complete; the employee timeline intentionally stops at `waiting_bot_token` until a placeholder token is supplied.
+See [BOOTSTRAP_TEMPLATE.md](/home/wwwroot/openclaw-hire/BOOTSTRAP_TEMPLATE.md) for the intended security-auditor style clone flow.

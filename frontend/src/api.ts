@@ -1,4 +1,4 @@
-import type { Employee, EmployeeDetail, User } from "./types";
+import type { DashboardData, Employee, EmployeeDetail, TemplateConfig, User } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8010";
 
@@ -25,10 +25,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  listTemplates: () => request<TemplateConfig[]>("/api/templates"),
+  dashboard: (ownerId: string) => request<DashboardData>(`/api/dashboard/${ownerId}`),
   createEmployee: (payload: {
     owner_id: string;
     name: string;
     role: string;
+    template_id: string;
     brief?: string;
     telegram_handle?: string;
   }) =>

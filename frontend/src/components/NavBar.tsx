@@ -1,9 +1,11 @@
 import { NavLink } from "react-router-dom";
 
 const links = [
-  { to: "/", label: "Account", detail: "Personal access" },
-  { to: "/hire", label: "Provision Agent", detail: "Create a new instance" },
-  { to: "/employees", label: "Agent Fleet", detail: "Manage running hires" },
+  { to: "/dashboard", label: "Dashboard", detail: "总览与告警" },
+  { to: "/settings", label: "Settings / Profile", detail: "账户与偏好" },
+  { to: "/agents/new", label: "Create Agent", detail: "创建员工/AI 实例" },
+  { to: "/agents", label: "Agent Fleet", detail: "管理所有雇佣" },
+  { to: "/templates", label: "Templates", detail: "默认模型模板库" },
 ];
 
 export function NavBar() {
@@ -13,7 +15,6 @@ export function NavBar() {
         <NavLink
           key={link.to}
           to={link.to}
-          end={link.to === "/"}
           className={({ isActive }) =>
             `group rounded-2xl border px-4 py-3 transition ${
               isActive

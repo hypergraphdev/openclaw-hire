@@ -6,11 +6,20 @@ export type User = {
   created_at: string;
 };
 
+export type TemplateConfig = {
+  id: string;
+  name: string;
+  description: string;
+  codex_profile: string;
+  notes: string[];
+};
+
 export type Employee = {
   id: string;
   owner_id: string;
   name: string;
   role: string;
+  template_id: string;
   brief?: string | null;
   telegram_handle?: string | null;
   model_config: string;
@@ -29,4 +38,17 @@ export type StatusEvent = {
 export type EmployeeDetail = {
   employee: Employee;
   timeline: StatusEvent[];
+};
+
+export type DashboardSummary = {
+  total: number;
+  ready: number;
+  waiting_bot_token: number;
+  provisioning: number;
+  failed: number;
+};
+
+export type DashboardData = {
+  owner: User;
+  summary: DashboardSummary;
 };

@@ -33,6 +33,7 @@ def init_db() -> None:
                 owner_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 role TEXT NOT NULL,
+                template_id TEXT DEFAULT 'audit-codex-base',
                 brief TEXT,
                 telegram_handle TEXT,
                 model_config TEXT NOT NULL,

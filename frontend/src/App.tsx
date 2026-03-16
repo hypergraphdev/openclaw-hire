@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Outlet, Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./api";
 import { PhoneFrame } from "./components/PhoneFrame";
-import { EmployeeDetailPage } from "./pages/EmployeeDetailPage";
-import { EmployeeListPage } from "./pages/EmployeeListPage";
-import { HireEmployeePage } from "./pages/HireEmployeePage";
-import { RegisterPage } from "./pages/RegisterPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { CreateAgentPage } from "./pages/CreateAgentPage";
+import { AgentFleetPage } from "./pages/AgentFleetPage";
+import { AgentDetailPage } from "./pages/AgentDetailPage";
+import { TemplatesPage } from "./pages/TemplatesPage";
 import type { Employee, User } from "./types";
 
 const OWNER_STORAGE_KEY = "openclaw_owner";
@@ -42,6 +44,7 @@ function AppShell() {
       setEmployees([]);
       return;
     }
+
     const nextEmployees = await api.listEmployees(owner.id);
     setEmployees(nextEmployees);
   }, [owner]);
@@ -62,7 +65,7 @@ function AppShell() {
 
   return (
     <PhoneFrame employees={employees} owner={owner}>
-      <Outlet context={{ employees, owner, refreshEmployees, setOwner } satisfies AppShellContext} />
+      <Outlet context={{ employees, owner, refreshEmployees, setOwner }} />
     </PhoneFrame>
   );
 }
@@ -72,10 +75,14 @@ export default function App() {
     <BrowserRouter basename={normalizeBasename(import.meta.env.BASE_URL)}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<RegisterPage />} />
-          <Route path="/hire" element={<HireEmployeePage />} />
-          <Route path="/employees" element={<EmployeeListPage />} />
-          <Route path="/employees/:employeeId" element={<EmployeeDetailPage />} />
+          <Route path="/" element={<Navigate replace to="/dashboard" />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/agents/new" element={<CreateAgentPage />} />
+          <Route path="/agents" element={<AgentFleetPage />} />
+          <Route path="/agents/:employeeId" element={<AgentDetailPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="*" element={<Navigate replace to="/dashboard" />} />
         </Route>
       </Routes>
     </BrowserRouter>
