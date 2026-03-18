@@ -14,7 +14,7 @@ from ..schemas import (
     InstanceDetailResponse,
     InstanceResponse,
 )
-from ..services.install_service import trigger_install
+from ..services.install_service import sync_instance_status, trigger_install
 
 router = APIRouter(prefix="/api/instances", tags=["instances"])
 
@@ -69,6 +69,15 @@ def list_instances(
         "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
         (current_user["id"],),
     ).fetchall()
+
+    for row in rows:
+        if row["compose_project"] and row["install_state"] in {"starting", "running", "failed"}:
+            sync_instance_status(row["id"])
+
+    rows = db.execute(
+        "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
+        (current_user["id"],),
+    ).fetchall()
     return [_row_to_instance(row) for row in rows]
 
 
@@ -79,6 +88,10 @@ def get_instance(
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceDetailResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    if inst.get("compose_project") and inst.get("install_state") in {"starting", "running", "failed"}:
+        sync_instance_status(instance_id)
+        inst = _get_instance_or_404(instance_id, current_user["id"], db)
+
     events = db.execute(
         "SELECT * FROM install_events WHERE instance_id = ? ORDER BY id ASC",
         (instance_id,),
@@ -110,7 +123,7 @@ def start_install(
     )
     db.commit()
 
-    trigger_install(instance_id, inst["product"])
+    trigger_install(instance_id)
 
     row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
     return _row_to_instance(row)

@@ -5,7 +5,7 @@ Cloud-console style demo for hiring and installing AI products per user account.
 ## What it does
 
 - User registration + login (email/password)
-- Secure password hashing (bcrypt via `passlib`)
+- Secure password hashing (PBKDF2-SHA256, Python stdlib — no extra deps)
 - Authenticated user dashboard
 - Product catalog with **two products only**:
   - OpenClaw (`https://github.com/openclaw/openclaw`)

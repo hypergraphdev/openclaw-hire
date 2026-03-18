@@ -36,6 +36,9 @@ def init_db() -> None:
                 repo_url TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 install_state TEXT NOT NULL DEFAULT 'idle',
+                compose_project TEXT,
+                compose_file TEXT,
+                runtime_dir TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (owner_id) REFERENCES users (id)
@@ -103,6 +106,12 @@ def _migrate_existing_db() -> None:
                 conn.execute("ALTER TABLE instances ADD COLUMN install_state TEXT NOT NULL DEFAULT 'idle'")
             if "status" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+            if "compose_project" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN compose_project TEXT")
+            if "compose_file" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN compose_file TEXT")
+            if "runtime_dir" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN runtime_dir TEXT")
 
         if "install_events" not in tables:
             conn.execute("""

@@ -1,62 +1,194 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 import threading
-import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ..database import get_connection
 
-INSTALL_STEPS: dict[str, list[tuple[str, str]]] = {
-    "openclaw": [
-        ("pulling", "Cloning openclaw/openclaw from GitHub and pulling Docker images..."),
-        ("configuring", "Writing Docker Compose configuration and environment files..."),
-        ("starting", "Starting OpenClaw containers and initializing runtime..."),
-        ("running", "OpenClaw is running. All services healthy."),
-    ],
-    "zylos": [
-        ("pulling", "Cloning zylos-ai/zylos-core from GitHub and pulling Docker images..."),
-        ("configuring", "Writing Docker environment configuration and plugin manifests..."),
-        ("starting", "Starting Zylos Core services and agent pipeline..."),
-        ("running", "Zylos Core is running. Pipeline ready to receive tasks."),
-    ],
-}
+RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+COMPOSE_CANDIDATES = [
+    "docker-compose.yml",
+    "compose.yml",
+    "docker/docker-compose.yml",
+    "docker/compose.yml",
+]
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _add_install_event(conn, instance_id: str, state: str, message: str) -> None:
-    conn.execute(
-        "INSERT INTO install_events (instance_id, state, message, created_at) VALUES (?, ?, ?, ?)",
-        (instance_id, state, message, _utc_now()),
-    )
-    conn.commit()
-
-
-def _run_install(instance_id: str, product: str) -> None:
-    steps = INSTALL_STEPS.get(product, INSTALL_STEPS["openclaw"])
-
-    for state, message in steps:
-        with get_connection() as conn:
-            row = conn.execute("SELECT install_state FROM instances WHERE id = ?", (instance_id,)).fetchone()
-            if row is None or row["install_state"] == "failed":
-                return
+def _set_instance_state(instance_id: str, state: str, status: str | None = None) -> None:
+    with get_connection() as conn:
+        if status is None:
             conn.execute(
                 "UPDATE instances SET install_state = ?, updated_at = ? WHERE id = ?",
                 (state, _utc_now(), instance_id),
             )
-            _add_install_event(conn, instance_id, state, message)
+        else:
+            conn.execute(
+                "UPDATE instances SET install_state = ?, status = ?, updated_at = ? WHERE id = ?",
+                (state, status, _utc_now(), instance_id),
+            )
+        conn.commit()
 
-        # Simulate realistic install timing
-        delay = 3 if state == "pulling" else 2
-        time.sleep(delay)
+
+def _add_install_event(instance_id: str, state: str, message: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO install_events (instance_id, state, message, created_at) VALUES (?, ?, ?, ?)",
+            (instance_id, state, message, _utc_now()),
+        )
+        conn.commit()
 
 
-def trigger_install(instance_id: str, product: str) -> None:
-    """Kick off the install in a background daemon thread."""
-    threading.Thread(
-        target=_run_install,
-        args=(instance_id, product),
-        daemon=True,
-    ).start()
+def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    out = (proc.stdout or "").strip()
+    return proc.returncode, out
+
+
+def _compose_up(compose_file: Path, project: str, workdir: Path) -> tuple[int, str]:
+    # Prefer docker compose plugin, fallback to docker-compose binary.
+    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project, "up", "-d", "--build"], cwd=workdir)
+    if rc == 0:
+        return rc, out
+    rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project, "up", "-d", "--build"], cwd=workdir)
+    if rc2 == 0:
+        return rc2, out2
+    return rc2, f"docker compose failed:\n{out}\n\ndocker-compose failed:\n{out2}"
+
+
+def _find_compose_file(repo_dir: Path) -> Path | None:
+    for rel in COMPOSE_CANDIDATES:
+        p = repo_dir / rel
+        if p.exists():
+            return p
+    return None
+
+
+def _sync_runtime_status(instance_id: str, project: str) -> None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT install_state FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    current_state = row["install_state"] if row else None
+
+    rc, out = _run([
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        f"label=com.docker.compose.project={project}",
+        "--format",
+        "{{.Status}}",
+    ])
+    if rc != 0:
+        if current_state != "failed":
+            _add_install_event(instance_id, "failed", f"Unable to query docker status: {out[:400]}")
+        _set_instance_state(instance_id, "failed", status="failed")
+        return
+
+    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    if not lines:
+        if current_state != "failed":
+            _add_install_event(instance_id, "failed", "No containers found after compose up.")
+        _set_instance_state(instance_id, "failed", status="failed")
+        return
+
+    if any("Up" in ln for ln in lines):
+        if current_state != "running":
+            _add_install_event(instance_id, "running", f"Install finished. Containers: {len(lines)}. Project: {project}")
+        _set_instance_state(instance_id, "running", status="active")
+        return
+
+    if current_state != "failed":
+        _add_install_event(instance_id, "failed", "Containers were created but not running: " + " | ".join(lines[:4]))
+    _set_instance_state(instance_id, "failed", status="failed")
+
+
+def _run_install(instance_id: str) -> None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT id, product, repo_url FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    if row is None:
+        return
+
+    product = row["product"]
+    repo_url = row["repo_url"]
+    project = f"hire_{instance_id.replace('-', '')[:16]}"
+    workdir = RUNTIME_ROOT / instance_id
+    repo_dir = workdir / "repo"
+
+    try:
+        RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        _set_instance_state(instance_id, "pulling", status="installing")
+        _add_install_event(instance_id, "pulling", f"Preparing source for {product}: {repo_url}")
+
+        if repo_dir.exists():
+            if (repo_dir / ".git").exists():
+                rc, out = _run(["git", "-C", str(repo_dir), "fetch", "--all", "--prune"])
+                if rc != 0:
+                    raise RuntimeError(f"git fetch failed: {out[:800]}")
+                rc, out = _run(["git", "-C", str(repo_dir), "reset", "--hard", "origin/HEAD"])
+                if rc != 0:
+                    rc, out = _run(["git", "-C", str(repo_dir), "pull", "--ff-only"])
+                    if rc != 0:
+                        raise RuntimeError(f"git pull failed: {out[:800]}")
+            else:
+                shutil.rmtree(repo_dir, ignore_errors=True)
+                rc, out = _run(["git", "clone", "--depth", "1", repo_url, str(repo_dir)])
+                if rc != 0:
+                    raise RuntimeError(f"git clone failed: {out[:800]}")
+        else:
+            rc, out = _run(["git", "clone", "--depth", "1", repo_url, str(repo_dir)])
+            if rc != 0:
+                raise RuntimeError(f"git clone failed: {out[:800]}")
+
+        _set_instance_state(instance_id, "configuring")
+        _add_install_event(instance_id, "configuring", "Detecting docker compose file...")
+
+        compose_file = _find_compose_file(repo_dir)
+        if compose_file is None:
+            raise RuntimeError("No docker compose file found (checked docker-compose.yml/compose.yml and docker/* variants).")
+
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE instances SET compose_project = ?, compose_file = ?, runtime_dir = ?, updated_at = ? WHERE id = ?",
+                (project, str(compose_file), str(workdir), _utc_now(), instance_id),
+            )
+            conn.commit()
+
+        _set_instance_state(instance_id, "starting")
+        _add_install_event(instance_id, "starting", f"Running docker compose up for project {project}...")
+
+        rc, out = _compose_up(compose_file, project, repo_dir)
+        if rc != 0:
+            raise RuntimeError(out[:2000])
+
+        _add_install_event(instance_id, "starting", "docker compose command finished, verifying containers...")
+        _sync_runtime_status(instance_id, project)
+
+    except Exception as exc:
+        _add_install_event(instance_id, "failed", f"Install failed: {exc}")
+        _set_instance_state(instance_id, "failed", status="failed")
+
+
+def sync_instance_status(instance_id: str) -> None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT compose_project FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    if row and row["compose_project"]:
+        _sync_runtime_status(instance_id, row["compose_project"])
+
+
+def trigger_install(instance_id: str) -> None:
+    """Kick off real install in a background daemon thread."""
+    threading.Thread(target=_run_install, args=(instance_id,), daemon=True).start()
