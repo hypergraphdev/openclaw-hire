@@ -639,7 +639,7 @@ def _configure_openclaw_channels(
         cfg["plugins"]["entries"] = {}
     cfg["plugins"]["entries"][plugin_name] = {"enabled": True}
 
-    openclaw_json.write_text(json.dumps(cfg, indent=2) + "\\n")
+    openclaw_json.write_text(json.dumps(cfg, indent=2) + "\n")
     notes.append("Host config written.")
 
     _run(["docker", "restart", gateway_container])
