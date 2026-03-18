@@ -61,6 +61,9 @@ if [[ "$PRODUCT" == "zylos" ]]; then
   INSTANCE_DATA_DIR="$WORKDIR/zylos-data"
   INSTANCE_CLAUDE_DIR="$WORKDIR/claude-config"
   mkdir -p "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR"
+  # zylos container runs as non-root; ensure mounted dirs are writable to avoid init/pm2 failures
+  chown -R 1001:1001 "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR" >/dev/null 2>&1 || true
+  chmod -R u+rwX,g+rwX,o-rwx "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR" >/dev/null 2>&1 || true
 
   PATCHED_COMPOSE="$WORKDIR/docker-compose.instance.yml"
   SRC_COMPOSE="$COMPOSE_FILE" PATCHED_PATH="$PATCHED_COMPOSE" INSTANCE_ID="$INSTANCE_ID" \
@@ -80,10 +83,10 @@ text = text.replace("- zylos-data:/home/zylos/zylos", f"- {os.environ['INSTANCE_
 text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INSTANCE_CLAUDE_DIR']}:/home/zylos/.claude")
 
 # Ensure default auth + model are injected for every new zylos instance
-text = text.replace("${ANTHROPIC_API_KEY:-}", "sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98")
+text = text.replace("${ANTHROPIC_API_KEY:-}", "sk-ant-proxy-via-sub2api")
 if "ANTHROPIC_BASE_URL:" not in text:
     anchor = "      CLAUDE_BYPASS_PERMISSIONS: ${CLAUDE_BYPASS_PERMISSIONS:-true}"
-    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
+    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"${ANTHROPIC_AUTH_TOKEN:-}\"\n      ANTHROPIC_API_KEY: \"${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
     text = text.replace(anchor, insert)
 
 out.write_text(text)
@@ -92,12 +95,13 @@ PY
   # Also write per-instance env file as a hard fallback for compose var resolution
   cat > "$WORKDIR/.env" <<EOF
 ANTHROPIC_BASE_URL=http://172.17.0.1:18080
-ANTHROPIC_AUTH_TOKEN=sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98
-ANTHROPIC_API_KEY=sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98
+ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}
 ANTHROPIC_MODEL=claude-sonnet-4-5
 WEB_CONSOLE_PORT=$WEB_CONSOLE_PORT
 HTTP_PORT=$HTTP_PORT
 EOF
+  chmod 600 "$WORKDIR/.env" >/dev/null 2>&1 || true
 
   COMPOSE_FILE="$PATCHED_COMPOSE"
   export WEB_CONSOLE_PORT HTTP_PORT INSTANCE_DATA_DIR INSTANCE_CLAUDE_DIR
@@ -117,6 +121,40 @@ if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build; then
     "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build
   else
     exit 22
+  fi
+fi
+
+if [[ "$PRODUCT" == "zylos" ]]; then
+  # zylos can show container=Up while app ports are still dead; verify runtime endpoints are reachable.
+  ok=0
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:${WEB_CONSOLE_PORT}" >/dev/null 2>&1 \
+      || curl -fsS --max-time 2 "http://127.0.0.1:${HTTP_PORT}" >/dev/null 2>&1; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ "$ok" -ne 1 ]]; then
+    echo "WARN: zylos ports not ready; attempting one self-heal restart" >&2
+    "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" down >/dev/null 2>&1 || true
+    "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build
+
+    for _ in $(seq 1 30); do
+      if curl -fsS --max-time 2 "http://127.0.0.1:${WEB_CONSOLE_PORT}" >/dev/null 2>&1 \
+        || curl -fsS --max-time 2 "http://127.0.0.1:${HTTP_PORT}" >/dev/null 2>&1; then
+        ok=1
+        break
+      fi
+      sleep 2
+    done
+  fi
+
+  if [[ "$ok" -ne 1 ]]; then
+    echo "ERROR: zylos container is up but app endpoints are unreachable (web:${WEB_CONSOLE_PORT}, http:${HTTP_PORT})" >&2
+    docker logs --tail 120 "zylos_${INSTANCE_ID}" >&2 || true
+    exit 23
   fi
 fi
 
