@@ -292,8 +292,10 @@ if [[ -n "$_HXA_ORG_SECRET" ]]; then
   const agentName = '$HXA_AGENT_NAME';
   try {
     const reg = await HxaConnectClient.register(hub, orgId, { org_secret: secret }, agentName);
-    const token = reg.token || reg.agent_token;
-    const agentId = reg.agent_id || reg.id;
+    // API returns: { token, id, bot_id, name, ... }
+    const token = reg.token || reg.agent_token || reg.bot_token;
+    const agentId = reg.id || reg.bot_id || reg.agent_id;
+    if (!token) { console.error('HXA registration: no token in response', JSON.stringify(reg)); return; }
     const fs = require('fs');
     const configPath = '/home/node/.openclaw/openclaw.json';
     let cfg = {};
