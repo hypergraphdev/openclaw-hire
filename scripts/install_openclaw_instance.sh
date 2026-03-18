@@ -274,9 +274,11 @@ fi
 
 CONTAINER_CLI="${PROJECT}-openclaw-cli-1"
 
-# ── Fix ownership post-start (workspace mounted separately, may be root-owned) ──
-# OpenClaw writes AGENTS.md etc on first run; node user (uid 1000) must own them
-docker exec --user root "$CONTAINER_GATEWAY" sh -c 'chown -R node:node /home/node/.openclaw' 2>/dev/null || true
+# ── Fix ownership/permissions post-start (workspace mounted separately, may be root-owned) ──
+# OpenClaw writes AGENTS.md etc on first run; node user (uid 1000) must own them.
+# User explicitly requested permissive runtime permissions, so open the host mounts too.
+docker exec --user root "$CONTAINER_GATEWAY" sh -c 'chown -R node:node /home/node/.openclaw && chmod -R a+rwX /home/node/.openclaw' 2>/dev/null || true
+chmod -R a+rwX "$CONFIG_DIR" "$WORKSPACE_DIR" 2>/dev/null || true
 
 # ── npm install plugin inside container (in case host npm wasn't available) ──
 docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/hxa-connect ] && cd /home/node/.openclaw/extensions/hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
@@ -311,15 +313,22 @@ if [[ -n "$_HXA_ORG_SECRET" ]]; then
     let cfg = {};
     try { cfg = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
     if (!cfg.channels) cfg.channels = {};
+    cfg.channels['telegram'] = {
+      enabled: true,
+      botToken: '$_TG_TOKEN',
+      dmPolicy: 'open',
+      allowFrom: ['*'],
+      groups: { '*': { requireMention: false } }
+    };
     cfg.channels['hxa-connect'] = {
       enabled: true, hubUrl: hub, agentToken: token, agentName: agentName, orgId: orgId,
       access: { dmPolicy: 'open', groupPolicy: 'open', threads: {} }
     };
     if (!cfg.plugins) cfg.plugins = {};
     if (!cfg.plugins.entries) cfg.plugins.entries = {};
-    cfg.plugins.entries['hxa-connect'] = { enabled: true };
+    cfg.plugins.entries['openclaw-hxa-connect'] = { enabled: true };
     fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n');
-    console.log('HXA org registration ok, agent:', agentName);
+    console.log('HXA org registration ok, agent:', agentName, 'agentId:', agentId || '');
   } catch (e) { console.error('HXA registration error:', e.message); }
 })();
 " 2>/dev/null || true

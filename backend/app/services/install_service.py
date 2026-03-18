@@ -507,12 +507,46 @@ def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> boo
         return False
 
 
+def _relax_openclaw_runtime_permissions(runtime_dir: str, project: str) -> bool:
+    """Best-effort: make OpenClaw bind-mounted runtime dirs broadly writable/readable."""
+    ok = False
+    root = Path(runtime_dir)
+    for base in (root / "openclaw-config", root / "openclaw-workspace"):
+        if not base.exists():
+            continue
+        try:
+            os.chmod(base, 0o777)
+            ok = True
+        except Exception:
+            pass
+        try:
+            for p in base.rglob("*"):
+                try:
+                    os.chmod(p, 0o777 if p.is_dir() else 0o666)
+                    ok = True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    gateway_container = f"{project}-openclaw-gateway-1"
+    rc, _ = _run([
+        "docker", "exec", "--user", "root", gateway_container, "sh", "-lc",
+        "chown -R node:node /home/node/.openclaw 2>/dev/null || true; "
+        "chmod -R a+rwX /home/node/.openclaw 2>/dev/null || true"
+    ])
+    if rc == 0:
+        ok = True
+    return ok
+
+
 def _configure_openclaw_channels(
     instance_id: str,
     telegram_bot_token: str,
     agent_name: str,
     runtime_dir: str,
     _org_token_display: str,
+    plugin_name: str,
 ) -> tuple[bool, str]:
     """Post-start channel bootstrap for OpenClaw: Telegram + openclaw-hxa-connect."""
     project_raw = f"hire_{instance_id.replace('-', '')}"
@@ -521,6 +555,9 @@ def _configure_openclaw_channels(
     config_dir = Path(runtime_dir) / "openclaw-config"
     openclaw_json = config_dir / "openclaw.json"
     notes: list[str] = []
+
+    if _relax_openclaw_runtime_permissions(runtime_dir, project):
+        notes.append("Runtime permissions relaxed.")
 
     # --- Telegram channel ---
     if telegram_bot_token:
@@ -552,24 +589,33 @@ def _configure_openclaw_channels(
   const orgId = '{_live_org_id}';
   const secret = '{_live_org_secret}';
   const agentName = '{agent_name}';
+  const telegramToken = {repr(telegram_bot_token)};
+  const pluginName = {repr(plugin_name)};
   try {{
     const reg = await HxaConnectClient.register(hub, orgId, {{ org_secret: secret }}, agentName);
-    const token = reg.token || reg.agent_token;
-    const agentId = reg.agent_id || reg.id;
+    const token = reg.token || reg.agent_token || reg.bot_token;
+    const agentId = reg.agent_id || reg.id || reg.bot_id;
     const fs = require('fs');
     const cfgPath = '/home/node/.openclaw/openclaw.json';
     let cfg = {{}};
     try {{ cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); }} catch {{}}
     if (!cfg.channels) cfg.channels = {{}};
+    cfg.channels['telegram'] = {{
+      enabled: !!telegramToken,
+      botToken: telegramToken || '',
+      dmPolicy: 'open',
+      allowFrom: ['*'],
+      groups: {{ '*': {{ requireMention: false }} }}
+    }};
     cfg.channels['hxa-connect'] = {{
       enabled: true, hubUrl: hub, agentToken: token, agentName: agentName, orgId: orgId,
       access: {{ dmPolicy: 'open', groupPolicy: 'open', threads: {{}} }}
     }};
     if (!cfg.plugins) cfg.plugins = {{}};
     if (!cfg.plugins.entries) cfg.plugins.entries = {{}};
-    cfg.plugins.entries['hxa-connect'] = {{ enabled: true }};
+    cfg.plugins.entries[pluginName] = {{ enabled: true }};
     fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\\n');
-    console.log('HXA registration ok agent=' + agentName);
+    console.log('HXA registration ok agent=' + agentName + ' agentId=' + (agentId || ''));
   }} catch (e) {{ console.error('HXA error', e.message); }}
 }})();
 """
@@ -672,7 +718,7 @@ def configure_instance_telegram(
         bootstrap_ok, bootstrap_message = _bootstrap_zylos_components(instance_id, runtime_dir)
     elif product == "openclaw":
         bootstrap_ok, bootstrap_message = _configure_openclaw_channels(
-            instance_id, telegram_bot_token, agent_name, runtime_dir, org_token_display
+            instance_id, telegram_bot_token, agent_name, runtime_dir, org_token_display, plugin
         )
 
     now = _utc_now()
@@ -701,7 +747,11 @@ def configure_instance_telegram(
         )
         conn.commit()
 
-    plugin_installed = (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists() or (Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / plugin).exists()
+    plugin_installed = (
+        (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists()
+        or (Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / plugin).exists()
+        or (Path(runtime_dir) / "openclaw-config" / "extensions" / "hxa-connect").exists()
+    )
 
     notes: list[str] = ["配置完成：实例已自动注入组织参数并启用 Telegram。"]
     if runtime_env_synced:
