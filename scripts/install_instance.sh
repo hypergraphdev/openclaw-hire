@@ -192,6 +192,14 @@ if [[ "$PRODUCT" == "zylos" ]]; then
   WEB_CONSOLE_PORT=$(find_free_port $((34000 + HASH % 1000)))
   HTTP_PORT=$(find_free_port $((35000 + HASH % 1000)))
 
+  AGENT_NAME_BASE="${AGENT_NAME_BASE:-Michael_Wu}"
+  AGENT_NAME_BASE="${AGENT_NAME_BASE// /_}"
+  AGENT_NAME_SUFFIX="$(tr -dc 'a-z0-9' </dev/urandom | head -c 4 || true)"
+  if [[ -z "$AGENT_NAME_SUFFIX" ]]; then
+    AGENT_NAME_SUFFIX="$(date +%s | tail -c 5)"
+  fi
+  HXA_CONNECT_AGENT_NAME_DEFAULT="${AGENT_NAME_BASE}_${AGENT_NAME_SUFFIX}"
+
   INSTANCE_DATA_DIR="$WORKDIR/zylos-data"
   INSTANCE_CLAUDE_DIR="$WORKDIR/claude-config"
   mkdir -p "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR"
@@ -233,6 +241,10 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}
 ANTHROPIC_MODEL=claude-sonnet-4-5
 WEB_CONSOLE_PORT=$WEB_CONSOLE_PORT
 HTTP_PORT=$HTTP_PORT
+HXA_CONNECT_URL=${HXA_CONNECT_URL:-${HUB_URL:-}}
+HXA_CONNECT_ORG_ID=${HXA_CONNECT_ORG_ID:-${ORG_ID:-}}
+HXA_CONNECT_ORG_TICKET=${HXA_CONNECT_ORG_TICKET:-${ORG_TOKEN:-}}
+HXA_CONNECT_AGENT_NAME=${HXA_CONNECT_AGENT_NAME:-$HXA_CONNECT_AGENT_NAME_DEFAULT}
 EOF
   chmod 600 "$WORKDIR/.env" >/dev/null 2>&1 || true
 
@@ -339,6 +351,28 @@ PY
   fi
   # Relax false-negative health gate for comm-bridge when agent is actually idle/busy.
   patch_zylos_c4_health_gate "$INSTANCE_DATA_DIR"
+
+  # Optional auto-bootstrap for hxa-connect (when org vars are provided)
+  HXA_URL_VAL="$(grep '^HXA_CONNECT_URL=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+  HXA_ORG_VAL="$(grep '^HXA_CONNECT_ORG_ID=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+  HXA_TICKET_VAL="$(grep '^HXA_CONNECT_ORG_TICKET=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+  HXA_AGENT_VAL="$(grep '^HXA_CONNECT_AGENT_NAME=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+  if [[ -n "$HXA_URL_VAL" && -n "$HXA_ORG_VAL" && -n "$HXA_TICKET_VAL" && -n "$HXA_AGENT_VAL" ]]; then
+    docker exec "zylos_${INSTANCE_ID}" sh -lc '/home/zylos/.npm-global/bin/zylos add hxa-connect --yes >/tmp/hxa_add_auto.log 2>&1 || true' || true
+    docker exec "zylos_${INSTANCE_ID}" sh -lc "HUB='$HXA_URL_VAL' ORG='$HXA_ORG_VAL' TICKET='$HXA_TICKET_VAL' AGENT='$HXA_AGENT_VAL' node - <<'JS'
+const fs=require('fs'); const path=require('path');
+(async()=>{
+  const { HxaConnectClient } = await import('/home/zylos/zylos/.claude/skills/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
+  const hub = process.env.HUB; const org = process.env.ORG; const ticket = process.env.TICKET; const name = process.env.AGENT;
+  const reg = await HxaConnectClient.register(hub, org, { org_secret: ticket }, name);
+  const token = reg.token || reg.agent_token; const agentId = reg.agent_id || reg.id;
+  const cfg={default_hub_url:hub,orgs:{default:{org_id:org,agent_id:agentId,agent_token:token,agent_name:name,hub_url:null,access:{dmPolicy:'open',groupPolicy:'open',threadMode:'mention'}}}};
+  const cfgPath='/home/zylos/zylos/components/hxa-connect/config.json';
+  fs.mkdirSync(path.dirname(cfgPath),{recursive:true}); fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
+})();
+JS" || true
+    docker exec "zylos_${INSTANCE_ID}" sh -lc 'pm2 restart zylos-hxa-connect >/dev/null 2>&1 || true' || true
+  fi
 fi
 
 # machine-readable output for caller
