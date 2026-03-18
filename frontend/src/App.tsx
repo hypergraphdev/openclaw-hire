@@ -1,90 +1,102 @@
-import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Outlet, Navigate, Route, Routes } from "react-router-dom";
-
-import { api } from "./api";
-import { PhoneFrame } from "./components/PhoneFrame";
+import type { ReactNode } from "react";
+import { Navigate, Route, Routes, BrowserRouter } from "react-router-dom";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { Layout } from "./components/Layout";
+import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
 import { DashboardPage } from "./pages/DashboardPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { CreateAgentPage } from "./pages/CreateAgentPage";
-import { AgentFleetPage } from "./pages/AgentFleetPage";
-import { AgentDetailPage } from "./pages/AgentDetailPage";
-import { TemplatesPage } from "./pages/TemplatesPage";
-import type { Employee, User } from "./types";
-
-const OWNER_STORAGE_KEY = "openclaw_owner";
-
-export type AppShellContext = {
-  employees: Employee[];
-  owner: User | null;
-  refreshEmployees: () => Promise<void>;
-  setOwner: (owner: User | null) => void;
-};
+import { CatalogPage } from "./pages/CatalogPage";
+import { InstancesPage } from "./pages/InstancesPage";
+import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
   return trimmed === "" ? "/" : trimmed;
 }
 
-function AppShell() {
-  const [owner, setOwnerState] = useState<User | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="text-gray-500 text-sm">Loading...</div>
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return <Layout>{children}</Layout>;
+}
 
-  const setOwner = useCallback((nextOwner: User | null) => {
-    setOwnerState(nextOwner);
-    if (nextOwner) {
-      localStorage.setItem(OWNER_STORAGE_KEY, JSON.stringify(nextOwner));
-      return;
-    }
-    localStorage.removeItem(OWNER_STORAGE_KEY);
-    setEmployees([]);
-  }, []);
-
-  const refreshEmployees = useCallback(async () => {
-    if (!owner) {
-      setEmployees([]);
-      return;
-    }
-
-    const nextEmployees = await api.listEmployees(owner.id);
-    setEmployees(nextEmployees);
-  }, [owner]);
-
-  useEffect(() => {
-    const storedOwner = localStorage.getItem(OWNER_STORAGE_KEY);
-    if (!storedOwner) {
-      return;
-    }
-    setOwnerState(JSON.parse(storedOwner) as User);
-  }, []);
-
-  useEffect(() => {
-    refreshEmployees().catch(() => {
-      setEmployees([]);
-    });
-  }, [refreshEmployees]);
-
-  return (
-    <PhoneFrame employees={employees} owner={owner}>
-      <Outlet context={{ employees, owner, refreshEmployees, setOwner }} />
-    </PhoneFrame>
-  );
+function PublicRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="text-gray-500 text-sm">Loading...</div>
+      </div>
+    );
+  }
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
 }
 
 export default function App() {
   return (
     <BrowserRouter basename={normalizeBasename(import.meta.env.BASE_URL)}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/" element={<Navigate replace to="/dashboard" />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/agents/new" element={<CreateAgentPage />} />
-          <Route path="/agents" element={<AgentFleetPage />} />
-          <Route path="/agents/:employeeId" element={<AgentDetailPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="*" element={<Navigate replace to="/dashboard" />} />
-        </Route>
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <LoginPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <PublicRoute>
+                <RegisterPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/catalog"
+            element={
+              <ProtectedRoute>
+                <CatalogPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instances"
+            element={
+              <ProtectedRoute>
+                <InstancesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instances/:instanceId"
+            element={
+              <ProtectedRoute>
+                <InstanceDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

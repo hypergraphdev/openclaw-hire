@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "openclaw_hire.db"
@@ -17,42 +16,104 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    with get_connection() as connection:
-        connection.executescript(
-            """
+    with get_connection() as conn:
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
                 company_name TEXT,
+                password_hash TEXT,
                 created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS employees (
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS instances (
                 id TEXT PRIMARY KEY,
                 owner_id TEXT NOT NULL,
                 name TEXT NOT NULL,
-                role TEXT NOT NULL,
-                template_id TEXT DEFAULT 'audit-codex-base',
-                stack TEXT NOT NULL DEFAULT 'openclaw',
-                repo_url TEXT NOT NULL DEFAULT 'https://github.com/openclaw/openclaw',
-                brief TEXT,
-                telegram_handle TEXT,
-                model_config TEXT NOT NULL,
-                current_state TEXT NOT NULL,
+                product TEXT NOT NULL DEFAULT 'openclaw',
+                repo_url TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                install_state TEXT NOT NULL DEFAULT 'idle',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                telegram_bot_token_placeholder TEXT,
                 FOREIGN KEY (owner_id) REFERENCES users (id)
-            );
-
-            CREATE TABLE IF NOT EXISTS employee_status_events (
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS install_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                employee_id TEXT NOT NULL,
+                instance_id TEXT NOT NULL,
                 state TEXT NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (employee_id) REFERENCES employees (id)
-            );
-            """
-        )
+                FOREIGN KEY (instance_id) REFERENCES instances (id)
+            )
+        """)
+        conn.commit()
+    _migrate_existing_db()
+
+
+def _migrate_existing_db() -> None:
+    """Add new columns and tables to existing database without data loss."""
+    with get_connection() as conn:
+        # Add password_hash to users if missing
+        user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "password_hash" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+        # Create instances table from employees if needed
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+        if "instances" not in tables:
+            conn.execute("""
+                CREATE TABLE instances (
+                    id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    product TEXT NOT NULL DEFAULT 'openclaw',
+                    repo_url TEXT NOT NULL DEFAULT 'https://github.com/openclaw/openclaw',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    install_state TEXT NOT NULL DEFAULT 'idle',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (owner_id) REFERENCES users (id)
+                )
+            """)
+            # Migrate existing employees to instances
+            if "employees" in tables:
+                conn.execute("""
+                    INSERT OR IGNORE INTO instances (id, owner_id, name, product, repo_url, status, install_state, created_at, updated_at)
+                    SELECT
+                        id,
+                        owner_id,
+                        name,
+                        COALESCE(stack, 'openclaw'),
+                        COALESCE(repo_url, 'https://github.com/openclaw/openclaw'),
+                        CASE current_state WHEN 'failed' THEN 'failed' ELSE 'active' END,
+                        'idle',
+                        created_at,
+                        updated_at
+                    FROM employees
+                """)
+        else:
+            inst_cols = {r[1] for r in conn.execute("PRAGMA table_info(instances)").fetchall()}
+            if "install_state" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN install_state TEXT NOT NULL DEFAULT 'idle'")
+            if "status" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+
+        if "install_events" not in tables:
+            conn.execute("""
+                CREATE TABLE install_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    instance_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (instance_id) REFERENCES instances (id)
+                )
+            """)
+
+        conn.commit()

@@ -1,71 +1,97 @@
-# OpenClaw Hire
+# OpenClaw Hire Console
 
-This is the OpenClaw Hire multipage control-console implementation.
+Cloud-console style demo for hiring and installing AI products per user account.
 
-It includes:
+## What it does
 
-- FastAPI backend with SQLite persistence (Python)
-- Vite + React frontend + Tailwind CSS
-- Multi-page dashboard with account, templates, fleet, agent detail, and settings
-- End-to-end initialization timeline tracking for each AI agent
-- Async-style backend state progression for provisioning workflow
-- Hire-time stack selection: OpenClaw or Zylos
-- Docker-based install flow for both stacks after hiring
+- User registration + login (email/password)
+- Secure password hashing (bcrypt via `passlib`)
+- Authenticated user dashboard
+- Product catalog with **two products only**:
+  - OpenClaw (`https://github.com/openclaw/openclaw`)
+  - Zylos (`https://github.com/zylos-ai/zylos-core`)
+- Hire instance into your own account
+- Instance list in user control panel
+- Click **Install** and watch install progress timeline
+- Docker-oriented install semantics in state/events for both products
 
-## Features
+---
 
-### Backend APIs
+## Architecture
 
-- `POST /api/register`
-- `GET /api/templates`
-- `POST /api/employees` (supports `stack: openclaw | zylos`)
-- `GET /api/owners/{owner_id}/employees`
-- `GET /api/employees/{employee_id}/status`
-- `POST /api/employees/{employee_id}/bot-token`
-- `GET /api/dashboard/{owner_id}`
+### Backend (`backend/`)
 
-### Frontend pages (now multi-page)
+- FastAPI + SQLite
+- Modular structure:
+  - `app/routes/` → API routers (`auth`, `catalog`, `instances`)
+  - `app/services/` → business logic (`auth_service`, `install_service`)
+  - `app/deps.py` → auth/database dependencies
+  - `app/database.py` → schema + migration-safe setup
+  - `app/schemas.py` → Pydantic contracts
 
-- `Dashboard` (`/dashboard`)
-- `Settings / Profile` (`/settings`)
-- `Create Agent` (`/agents/new`)
-- `Agent Fleet` (`/agents`)
-- `Agent Detail` (`/agents/:employeeId`)
-- `Templates` (`/templates`)
+### Frontend (`frontend/`)
 
-Default employee model config:
+- React + Vite + Tailwind
+- Route guards + auth context
+- Pages:
+  - `/register`
+  - `/login`
+  - `/dashboard`
+  - `/catalog`
+  - `/instances`
+  - `/instances/:instanceId`
 
-- `openai-codex/gpt-5.3-codex-spark`
+---
 
-Stack options for hire:
+## API overview
 
-- `openclaw` -> `https://github.com/openclaw/openclaw`
-- `zylos` -> `https://github.com/zylos-ai/zylos-core`
-- Both are provisioned through Docker-oriented workflow messages/states.
+### Auth
 
-Initialization states tracked:
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 
-- `queued`
-- `preparing_workspace`
-- `writing_config`
-- `creating_service`
-- `waiting_bot_token`
-- `ready`
-- `failed`
+### Catalog
+
+- `GET /api/catalog`
+
+### Instances (auth required)
+
+- `POST /api/instances` (hire)
+- `GET /api/instances` (my list)
+- `GET /api/instances/{instance_id}` (detail + timeline)
+- `POST /api/instances/{instance_id}/install` (trigger install)
+
+---
+
+## Install progress states
+
+Example progression:
+
+- `idle`
+- `pulling`
+- `configuring`
+- `starting`
+- `running` (success)
+- `failed` (on error)
+
+Timeline events are persisted and shown in instance detail page.
+
+---
 
 ## Local run
 
-Backend:
+### Backend
 
 ```bash
 cd /home/wwwroot/openclaw-hire/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python server.py
+uvicorn app.main:app --host 0.0.0.0 --port 8010
 ```
 
-Frontend:
+### Frontend
 
 ```bash
 cd /home/wwwroot/openclaw-hire/frontend
@@ -73,45 +99,23 @@ npm install
 npm run dev
 ```
 
-Frontend defaults to `http://127.0.0.1:8010` for the API. Override with:
+Default API base in dev: `http://127.0.0.1:8010`
 
-```bash
-VITE_API_BASE=https://your-host.example.com/openclaw npm run dev
-```
+---
 
-## Build commands
-
-Backend production-style run:
+## Build checks
 
 ```bash
 cd /home/wwwroot/openclaw-hire/backend
-source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8010
-```
+python3 -m compileall app
 
-Frontend production build:
-
-```bash
 cd /home/wwwroot/openclaw-hire/frontend
-npm install
-VITE_BASE_PATH=/openclaw/ npm run build
+npm run build
 ```
 
-## Deployment notes
+---
 
-Intended public paths:
+## Notes
 
-- `www.ucai.net/openclaw` -> OpenClaw Hire app
-- `www.ucai.net/connect` -> HXA-Connect app from `/home/wwwroot/connect`
-
-Suggested mapping:
-
-- reverse proxy `www.ucai.net/openclaw/api/*` to FastAPI on port `8010`
-- serve the built Vite app at `www.ucai.net/openclaw` with `VITE_BASE_PATH=/openclaw/`
-- reverse proxy `www.ucai.net/connect` to the existing HXA-Connect deployment with base path enabled
-
-If you deploy the frontend under `/openclaw`, build it with a matching Vite base path strategy before publishing static assets.
-
-## Bootstrap template
-
-See [BOOTSTRAP_TEMPLATE.md](/home/wwwroot/openclaw-hire/BOOTSTRAP_TEMPLATE.md) for the intended security-auditor style clone flow.
+- Existing database is migration-tolerant (adds new tables/columns when missing).
+- This project currently simulates Docker installation progress via controlled state transitions/events suitable for UI validation.

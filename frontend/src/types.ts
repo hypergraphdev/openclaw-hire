@@ -6,53 +6,57 @@ export type User = {
   created_at: string;
 };
 
-export type TemplateConfig = {
+export type Product = "openclaw" | "zylos";
+
+export type ProductCatalog = {
   id: string;
   name: string;
   description: string;
-  codex_profile: string;
-  notes: string[];
+  tagline: string;
+  repo_url: string;
+  tags: string[];
+  features: string[];
 };
 
-export type HireStack = "openclaw" | "zylos";
-
-export type Employee = {
+export type Instance = {
   id: string;
   owner_id: string;
   name: string;
-  role: string;
-  template_id: string;
-  stack: HireStack;
+  product: Product;
   repo_url: string;
-  brief?: string | null;
-  telegram_handle?: string | null;
-  model_config: string;
-  current_state: string;
+  status: "active" | "failed" | "inactive";
+  install_state: "idle" | "pulling" | "configuring" | "starting" | "running" | "failed";
   created_at: string;
   updated_at: string;
-  telegram_bot_token_placeholder?: string | null;
 };
 
-export type StatusEvent = {
+export type InstallEvent = {
+  id: number;
   state: string;
   message: string;
   created_at: string;
 };
 
-export type EmployeeDetail = {
-  employee: Employee;
-  timeline: StatusEvent[];
+export type InstanceDetail = {
+  instance: Instance;
+  install_timeline: InstallEvent[];
+};
+
+export type AuthToken = {
+  access_token: string;
+  token_type: string;
+  user: User;
 };
 
 export type DashboardSummary = {
   total: number;
-  ready: number;
-  waiting_bot_token: number;
-  provisioning: number;
+  running: number;
+  idle: number;
+  installing: number;
   failed: number;
 };
 
 export type DashboardData = {
-  owner: User;
+  user: User;
   summary: DashboardSummary;
 };

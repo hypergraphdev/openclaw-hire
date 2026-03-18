@@ -1,95 +1,97 @@
 import { useEffect, useState } from "react";
-
+import { Link } from "react-router-dom";
 import { api } from "../api";
-import { SectionCard } from "../components/SectionCard";
-import type { AppShellContext } from "../App";
-import { useOutletContext } from "react-router-dom";
-import { StatusPill } from "../components/StatusPill";
+import { useAuth } from "../contexts/AuthContext";
+import type { DashboardData } from "../types";
+
+function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg px-5 py-4">
+      <div className={`text-2xl font-bold ${accent ?? "text-white"}`}>{value}</div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  );
+}
 
 export function DashboardPage() {
-  const { owner, refreshEmployees } = useOutletContext<AppShellContext>();
-  const [summary, setSummary] = useState({ total: 0, ready: 0, waiting_bot_token: 0, provisioning: 0, failed: 0 });
-  const [busy, setBusy] = useState(false);
+  const { user } = useAuth();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!owner) {
-      return;
-    }
+    api.dashboard()
+      .then(setData)
+      .catch(() => setError("Failed to load dashboard."));
 
-    let isActive = true;
-    setBusy(true);
-
-    Promise.all([api.dashboard(owner.id), refreshEmployees()])
-      .then(([dashboardData]) => {
-        if (!isActive) {
-          return;
-        }
-        setSummary(dashboardData.summary);
-      })
-      .catch(() => {
-        if (!isActive) {
-          return;
-        }
-        setSummary({ total: 0, ready: 0, waiting_bot_token: 0, provisioning: 0, failed: 0 });
-      })
-      .finally(() => {
-        if (isActive) {
-          setBusy(false);
-        }
-      });
-
-    const timer = window.setInterval(() => {
-      api
-        .dashboard(owner.id)
-        .then((dashboardData) => {
-          if (!isActive) {
-            return;
-          }
-          setSummary(dashboardData.summary);
-        })
-        .catch(() => {
-          if (!isActive) {
-            return;
-          }
-          setSummary({ total: 0, ready: 0, waiting_bot_token: 0, provisioning: 0, failed: 0 });
-        });
-    }, 12000);
-
-    return () => {
-      isActive = false;
-      window.clearInterval(timer);
-    };
-  }, [owner, refreshEmployees]);
+    const interval = setInterval(() => {
+      api.dashboard().then(setData).catch(() => {});
+    }, 15_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="grid gap-6 p-6 md:p-8">
-      <SectionCard
-        title="Dashboard"
-        subtitle="OpenClaw 多页面控制台总览：账户状态、员工池规模与初始化健康度一眼可见。"
-        aside={<StatusPill state={owner ? "ready" : "queued"} />}
-      >
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-5">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Account</p>
-            <p className="mt-3 text-lg font-semibold text-white">{owner ? owner.name : "未登录"}</p>
-            <p className="mt-2 text-sm text-slate-400">{owner ? owner.email : "请先去 Settings 注册/登录账户。"}</p>
-          </div>
+    <div>
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold text-white">
+          Welcome back, {user?.name?.split(" ")[0]}
+        </h1>
+        <p className="text-gray-500 text-sm mt-1">
+          {user?.company_name ? `${user.company_name} · ` : ""}
+          {user?.email}
+        </p>
+      </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-5">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">总 Agent 数</p>
-            <p className="mt-3 text-3xl font-semibold text-white">{owner ? summary.total : 0}</p>
-            <p className="mt-2 text-sm text-slate-400">{busy ? "正在同步状态..." : "已同步最新状态"}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-5">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">初始化链路</p>
-            <p className="mt-3 text-sm text-white">就绪：{summary.ready}</p>
-            <p className="mt-2 text-sm text-slate-400">待 Token：{summary.waiting_bot_token}</p>
-            <p className="mt-2 text-sm text-slate-400">进行中：{summary.provisioning}</p>
-            <p className="mt-2 text-sm text-slate-400">失败：{summary.failed}</p>
-          </div>
+      {error && (
+        <div className="mb-6 p-3 bg-red-900/40 border border-red-700 rounded-md text-red-300 text-sm">
+          {error}
         </div>
-      </SectionCard>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Total Instances" value={data?.summary.total ?? 0} />
+        <StatCard label="Running" value={data?.summary.running ?? 0} accent="text-green-400" />
+        <StatCard label="Installing" value={data?.summary.installing ?? 0} accent="text-blue-400" />
+        <StatCard label="Failed" value={data?.summary.failed ?? 0} accent="text-red-400" />
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link
+          to="/catalog"
+          className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-blue-600 transition-colors group"
+        >
+          <div className="text-blue-400 text-xl mb-2">◈</div>
+          <div className="text-sm font-medium text-white group-hover:text-blue-300">Browse Catalog</div>
+          <div className="text-xs text-gray-500 mt-1">Deploy OpenClaw or Zylos to your environment</div>
+        </Link>
+        <Link
+          to="/instances"
+          className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-blue-600 transition-colors group"
+        >
+          <div className="text-gray-400 text-xl mb-2">⊞</div>
+          <div className="text-sm font-medium text-white group-hover:text-blue-300">My Instances</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {data?.summary.total
+              ? `${data.summary.total} instance${data.summary.total !== 1 ? "s" : ""} deployed`
+              : "No instances yet"}
+          </div>
+        </Link>
+      </div>
+
+      {/* Account info */}
+      <div className="mt-8 bg-gray-900 border border-gray-800 rounded-lg p-5">
+        <h2 className="text-sm font-medium text-gray-300 mb-3">Account</h2>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <dt className="text-gray-500">User ID</dt>
+          <dd className="text-gray-300 font-mono text-xs">{user?.id}</dd>
+          <dt className="text-gray-500">Member since</dt>
+          <dd className="text-gray-300">
+            {user ? new Date(user.created_at).toLocaleDateString() : "—"}
+          </dd>
+        </dl>
+      </div>
     </div>
   );
 }
