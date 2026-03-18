@@ -215,36 +215,20 @@ export function InstanceDetailPage() {
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Compose Project</dt>
-                <dd className="text-gray-300 text-xs font-mono break-all">{instance.compose_project || "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-500">Web Console Port</dt>
-                <dd className="text-gray-300 text-xs font-mono">{instance.web_console_port ?? "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-500">Web Console URL</dt>
+                <dt className="text-xs text-gray-500">{instance.product === "zylos" ? "Web Console URL" : "Gateway URL"}</dt>
                 <dd className="text-xs break-all">
                   {instance.web_console_url ? (
                     <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
                       {instance.web_console_url}
                     </a>
+                  ) : instance.web_console_port ? (
+                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`}
+                    </a>
                   ) : (
                     <span className="text-gray-400">-</span>
                   )}
                 </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-500">HTTP Port</dt>
-                <dd className="text-gray-300 text-xs font-mono">{instance.http_port ?? "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-500">Console Password</dt>
-                <dd className="text-gray-400 text-xs">Not managed by platform (use app-side credentials if prompted)</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-500">Runtime Dir</dt>
-                <dd className="text-gray-300 text-xs font-mono break-all">{instance.runtime_dir || "-"}</dd>
               </div>
               <div>
                 <dt className="text-xs text-gray-500">Deployed</dt>

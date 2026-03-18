@@ -27,6 +27,40 @@ REPO_DIR="$WORKDIR/repo"
 PROJECT="hire_${INSTANCE_ID//-/}"
 PROJECT="${PROJECT:0:24}"
 
+# ── Nginx reverse proxy for OpenClaw gateway ─────────────────────────────────
+NGINX_VHOST_CONF="/usr/local/nginx/conf/vhost/www.ucai.net.conf"
+OPENCLAW_PROXY_DIR="/usr/local/nginx/conf/vhost/openclaw-instances"
+
+ensure_openclaw_proxy_include() {
+  mkdir -p "$OPENCLAW_PROXY_DIR"
+  if [[ -f "$NGINX_VHOST_CONF" ]] && ! grep -q "openclaw-instances/\*.conf" "$NGINX_VHOST_CONF"; then
+    sed -i '/# HXA-Connect/i\    include /usr/local/nginx/conf/vhost/openclaw-instances/*.conf;' "$NGINX_VHOST_CONF"
+  fi
+}
+
+write_openclaw_proxy_route() {
+  local id="$1"
+  local port="$2"
+  local conf="$OPENCLAW_PROXY_DIR/${id}.conf"
+  cat > "$conf" <<EOF
+location = /connect/openclaw/${id} {
+    return 301 /connect/openclaw/${id}/;
+}
+location ^~ /connect/openclaw/${id}/ {
+    proxy_pass http://127.0.0.1:${port}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 86400;
+    proxy_buffering off;
+}
+EOF
+}
+
 # ── Org / auth constants ──────────────────────────────────────────────────────
 _HXA_HUB_URL="https://www.ucai.net/connect"
 _HXA_ORG_ID="${HXA_CONNECT_ORG_ID:-123cd566-c2ea-409f-8f7e-4fa9f5296dd1}"
@@ -34,9 +68,12 @@ _HXA_ORG_SECRET="${HXA_CONNECT_ORG_SECRET:-${ORG_SECRET:-}}"
 # ANTHROPIC_AUTH_TOKEN  = Bearer token for sub2api gateway (what openclaw sends as apiKey to 172.17.0.1:18080)
 # ANTHROPIC_BASE_URL    = URL of sub2api gateway inside Docker network
 # ANTHROPIC_API_KEY     = NOT USED — real sk-ant-api* key is not required when routing through sub2api
-_ANTHROPIC_BASE="${ANTHROPIC_BASE_URL:-http://172.17.0.1:18080}"
+_ANTHROPIC_BASE="http://172.17.0.1:18080"  # Always use Docker-accessible address, never localhost
 _ANTHROPIC_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
 _DEFAULT_MODEL="${OPENCLAW_MODEL:-claude-sonnet-4-5}"
+_TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+TG_ENABLED="false"
+[[ -n "$_TG_TOKEN" ]] && TG_ENABLED="true"
 
 mkdir -p "$WORKDIR"
 
@@ -118,12 +155,24 @@ cat > "$OPENCLAW_JSON" <<OCJSON
         ]
       }
     }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": ${TG_ENABLED},
+      "botToken": "$_TG_TOKEN",
+      "dmPolicy": "open",
+      "allowFrom": ["*"],
+      "groups": {
+        "*": { "requireMention": false }
+      }
+    }
   }
 }
 OCJSON
 # Notes:
 # - models.providers.anthropic.apiKey = ANTHROPIC_AUTH_TOKEN (sub2api bearer, NOT real sk-ant-api* key)
 # - models.providers.anthropic.api = "anthropic-messages" (required by custom provider schema)
+# - channels.telegram uses botToken (not token), requires allowFrom:[*] when dmPolicy=open
 # - "enabled", "default" are NOT valid top-level openclaw.json keys
 chmod 600 "$OPENCLAW_JSON"
 
@@ -161,6 +210,12 @@ HXA_CONNECT_ORG_SECRET=${_HXA_ORG_SECRET}
 HXA_CONNECT_AGENT_NAME=$HXA_AGENT_NAME
 EOF
 chmod 600 "$WORKDIR/.env" >/dev/null 2>&1 || true
+
+# ── Reverse proxy route (same pattern as Zylos) ──────────────────────────────
+ensure_openclaw_proxy_include
+write_openclaw_proxy_route "$INSTANCE_ID" "$OPENCLAW_GATEWAY_PORT"
+# Reload nginx to pick up the new route
+nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1 || true
 
 # ── Clone openclaw-hxa-connect plugin into extensions ─────────────────────────
 PLUGIN_DIR="$EXTENSIONS_DIR/hxa-connect"
@@ -268,4 +323,5 @@ printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
 printf 'REPO_DIR=%s\n' "$REPO_DIR"
 printf 'WEB_CONSOLE_PORT=%s\n' "$OPENCLAW_GATEWAY_PORT"
 printf 'HTTP_PORT=%s\n' "$OPENCLAW_BRIDGE_PORT"
+printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/"
 printf 'HXA_AGENT_NAME=%s\n' "$HXA_AGENT_NAME"
