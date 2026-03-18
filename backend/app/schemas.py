@@ -136,6 +136,8 @@ class InstanceResponse(BaseModel):
     compose_project: Optional[str] = None
     web_console_url: Optional[str] = None
     agent_name: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    org_token: Optional[str] = None
     created_at: str
     updated_at: str
 
