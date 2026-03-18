@@ -88,6 +88,8 @@ cd /home/wwwroot/openclaw-hire/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+# Required for auto org-join during Telegram configuration
+export HXA_CONNECT_ORG_SECRET="<org_secret>"
 uvicorn app.main:app --host 0.0.0.0 --port 8010
 ```
 
@@ -118,4 +120,6 @@ npm run build
 ## Notes
 
 - Existing database is migration-tolerant (adds new tables/columns when missing).
-- This project currently simulates Docker installation progress via controlled state transitions/events suitable for UI validation.
+- Telegram configuration is now bootstrap-oriented for Zylos instances: user provides only `telegram_bot_token`, and backend auto-injects org/hub/plugin settings and starts `hxa-connect` + `telegram` components.
+- `HXA_CONNECT_ORG_SECRET` must be present in backend process env for automatic organization registration.
+- One running instance must use one unique Telegram bot token (duplicate token is rejected to avoid Telegram `409 getUpdates` conflicts).
