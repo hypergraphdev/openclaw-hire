@@ -107,12 +107,20 @@ def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
         return 127, str(exc)
 
 
-def _compose_up(compose_file: Path, project: str, workdir: Path) -> tuple[int, str]:
-    # Prefer docker compose plugin, fallback to docker-compose binary.
-    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project, "up", "-d", "--build"], cwd=workdir)
+def _env_file_for(runtime_dir: str | None) -> list[str]:
+    """Return --env-file arg list if a .env exists in the runtime dir."""
+    if not runtime_dir:
+        return []
+    env_path = Path(runtime_dir) / ".env"
+    return ["--env-file", str(env_path)] if env_path.exists() else []
+
+
+def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
+    env_args = _env_file_for(runtime_dir or str(workdir))
+    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir)
     if rc == 0:
         return rc, out
-    rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project, "up", "-d", "--build"], cwd=workdir)
+    rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir)
     if rc2 == 0:
         return rc2, out2
     return rc2, f"docker compose failed:\n{out}\n\ndocker-compose failed:\n{out2}"
@@ -120,10 +128,11 @@ def _compose_up(compose_file: Path, project: str, workdir: Path) -> tuple[int, s
 
 def _compose_control(compose_file: str, project: str, workdir: str, action: str) -> tuple[int, str]:
     wd = Path(workdir)
-    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, action], cwd=wd)
+    env_args = _env_file_for(workdir)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd)
     if rc == 0:
         return rc, out
-    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project, action], cwd=wd)
+    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd)
     if rc2 == 0:
         return rc2, out2
     return rc2, f"docker compose {action} failed:\n{out}\n\ndocker-compose {action} failed:\n{out2}"
@@ -131,10 +140,11 @@ def _compose_control(compose_file: str, project: str, workdir: str, action: str)
 
 def compose_logs(compose_file: str, project: str, workdir: str, lines: int = 200) -> tuple[int, str]:
     wd = Path(workdir)
-    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, "logs", "--tail", str(lines)], cwd=wd)
+    env_args = _env_file_for(workdir)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project] + env_args + ["logs", "--tail", str(lines)], cwd=wd)
     if rc == 0:
         return rc, out
-    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project, "logs", "--tail", str(lines)], cwd=wd)
+    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project] + env_args + ["logs", "--tail", str(lines)], cwd=wd)
     if rc2 == 0:
         return rc2, out2
     return rc2, f"docker compose logs failed:\n{out}\n\ndocker-compose logs failed:\n{out2}"
