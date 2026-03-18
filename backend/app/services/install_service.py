@@ -426,6 +426,17 @@ pm2 ls --no-color || true
     rc, out = _run(["docker", "exec", container, "sh", "-lc", cmd], cwd=Path(runtime_dir))
     if rc != 0:
         return False, out
+
+    # Ensure hxa-connect config.json exists after bootstrap
+    fix_cmd = (
+        "HXA_CFG=/home/zylos/zylos/components/hxa-connect/config.json; "
+        "if [ ! -f \"$HXA_CFG\" ] || [ ! -s \"$HXA_CFG\" ]; then "
+        "  echo [bootstrap] hxa-connect config missing, re-running post-install...; "
+        "  cd /home/zylos/zylos/.claude/skills/hxa-connect && node hooks/post-install.js 2>&1 || true; "
+        "fi; "
+        "pm2 restart zylos-hxa-connect >/dev/null 2>&1 || true"
+    )
+    _run(["docker", "exec", container, "sh", "-lc", fix_cmd], cwd=Path(runtime_dir))
     return True, out
 
 
