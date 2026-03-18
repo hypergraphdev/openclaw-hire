@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -28,6 +29,28 @@ COMPOSE_CANDIDATES = [
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _read_gateway_env_var(key: str) -> str:
+    """Best-effort read of env vars from openclaw gateway user service file."""
+    try:
+        svc = Path('/root/.config/systemd/user/openclaw-gateway.service')
+        if not svc.exists():
+            return ''
+        text = svc.read_text()
+        m = re.search(rf'^Environment={re.escape(key)}=(.*)$', text, flags=re.M)
+        return (m.group(1).strip() if m else '')
+    except Exception:
+        return ''
+
+
+def _ensure_auth_env() -> None:
+    """Ensure installer subprocess inherits usable provider credentials."""
+    token = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip() or _read_gateway_env_var('ANTHROPIC_AUTH_TOKEN')
+    if token and not os.getenv('ANTHROPIC_AUTH_TOKEN'):
+        os.environ['ANTHROPIC_AUTH_TOKEN'] = token
+    if token and not os.getenv('ANTHROPIC_API_KEY'):
+        os.environ['ANTHROPIC_API_KEY'] = token
 
 
 def _set_instance_state(instance_id: str, state: str, status: str | None = None) -> None:
@@ -165,6 +188,7 @@ def _run_install(instance_id: str) -> None:
 
     try:
         RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+        _ensure_auth_env()
 
         _set_instance_state(instance_id, "pulling", status="installing")
         _add_install_event(instance_id, "pulling", f"Preparing source for {product}: {repo_url}")
