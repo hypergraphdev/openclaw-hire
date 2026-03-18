@@ -92,12 +92,18 @@ def _add_install_event(instance_id: str, state: str, message: str) -> None:
         conn.commit()
 
 
-_SAFE_ENV = {k: v for k, v in os.environ.items() if k not in (
-    # Purge host openclaw/zylos port vars that would shadow --env-file values
+_PORT_SHADOW_KEYS = frozenset({
     "OPENCLAW_GATEWAY_PORT", "OPENCLAW_BRIDGE_PORT",
     "OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_GATEWAY_BIND",
     "WEB_CONSOLE_PORT", "HTTP_PORT",
-)}
+})
+
+
+def _make_clean_env() -> dict[str, str]:
+    """Build a fresh env dict each call, stripping host port vars.
+    Must be built at call-time (not module-load time) because the host process
+    might export these vars after module import."""
+    return {k: v for k, v in os.environ.items() if k not in _PORT_SHADOW_KEYS}
 
 
 def _run(cmd: list[str], cwd: Path | None = None, clean_env: bool = False) -> tuple[int, str]:
@@ -108,7 +114,7 @@ def _run(cmd: list[str], cwd: Path | None = None, clean_env: bool = False) -> tu
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env=_SAFE_ENV if clean_env else None,
+            env=_make_clean_env() if clean_env else None,
         )
         out = (proc.stdout or "").strip()
         return proc.returncode, out
