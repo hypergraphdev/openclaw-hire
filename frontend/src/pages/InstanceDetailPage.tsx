@@ -215,15 +215,15 @@ export function InstanceDetailPage() {
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">{instance.product === "zylos" ? "Web Console URL" : "Gateway URL"}</dt>
+                <dt className="text-xs text-gray-500">Web Console URL</dt>
                 <dd className="text-xs break-all">
                   {instance.web_console_url ? (
                     <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
                       {instance.web_console_url}
                     </a>
                   ) : instance.web_console_port ? (
-                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`}
+                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/__openclaw__/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/__openclaw__/`}
                     </a>
                   ) : (
                     <span className="text-gray-400">-</span>

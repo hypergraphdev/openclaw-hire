@@ -291,7 +291,8 @@ if [[ -n "$_HXA_ORG_SECRET" ]]; then
   const secret = '$_HXA_ORG_SECRET';
   const agentName = '$HXA_AGENT_NAME';
   try {
-    const reg = await HxaConnectClient.register(hub, orgId, { org_secret: secret }, agentName);
+    // Register as member role (user-created instances should not be org admins)
+    const reg = await HxaConnectClient.register(hub, orgId, { org_secret: secret }, agentName, { role: 'member' });
     // API returns: { token, id, bot_id, name, ... }
     const token = reg.token || reg.agent_token || reg.bot_token;
     const agentId = reg.id || reg.bot_id || reg.agent_id;
@@ -325,5 +326,5 @@ printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
 printf 'REPO_DIR=%s\n' "$REPO_DIR"
 printf 'WEB_CONSOLE_PORT=%s\n' "$OPENCLAW_GATEWAY_PORT"
 printf 'HTTP_PORT=%s\n' "$OPENCLAW_BRIDGE_PORT"
-printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/"
+printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/__openclaw__/"
 printf 'HXA_AGENT_NAME=%s\n' "$HXA_AGENT_NAME"
