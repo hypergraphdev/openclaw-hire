@@ -30,6 +30,8 @@ export function InstanceDetailPage() {
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
+  const [actionLoading, setActionLoading] = useState<"" | "stop" | "restart" | "uninstall" | "logs">("");
+  const [logs, setLogs] = useState("");
   const [error, setError] = useState("");
 
   const fetchDetail = useCallback(() => {
@@ -55,6 +57,26 @@ export function InstanceDetailPage() {
       setError(err instanceof Error ? err.message : "Install failed.");
     } finally {
       setInstalling(false);
+    }
+  }
+
+  async function handleAction(action: "stop" | "restart" | "uninstall" | "logs") {
+    if (!instanceId) return;
+    setError("");
+    setActionLoading(action);
+    try {
+      if (action === "stop") await api.stopInstance(instanceId);
+      if (action === "restart") await api.restartInstance(instanceId);
+      if (action === "uninstall") await api.uninstallInstance(instanceId);
+      if (action === "logs") {
+        const res = await api.instanceLogs(instanceId, 300);
+        setLogs(res.logs || "(no logs)");
+      }
+      await fetchDetail();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : `${action} failed.`);
+    } finally {
+      setActionLoading("");
     }
   }
 
@@ -96,15 +118,21 @@ export function InstanceDetailPage() {
           </div>
         </div>
 
-        {canInstall && (
-          <button
-            onClick={handleInstall}
-            disabled={installing}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-5 py-2 rounded-md transition-colors"
-          >
-            {installing ? "Starting..." : instance.install_state === "failed" ? "Retry Install" : "Install"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canInstall && (
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+            >
+              {installing ? "Starting..." : instance.install_state === "failed" ? "Retry Install" : "Install"}
+            </button>
+          )}
+          <button onClick={() => handleAction("logs")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Logs</button>
+          <button onClick={() => handleAction("stop")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Stop</button>
+          <button onClick={() => handleAction("restart")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Restart</button>
+          <button onClick={() => handleAction("uninstall")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Uninstall</button>
+        </div>
 
         {isInstalling && (
           <div className="flex items-center gap-2 text-blue-400 text-sm">
@@ -132,6 +160,15 @@ export function InstanceDetailPage() {
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-5">
           <h2 className="text-sm font-medium text-gray-300 mb-4">Install Progress</h2>
           <InstallTimeline events={install_timeline} />
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-300">Docker Logs</h3>
+              {actionLoading === "logs" ? <span className="text-xs text-gray-500">Loading...</span> : null}
+            </div>
+            <pre className="bg-gray-950 border border-gray-800 rounded-md p-3 text-xs text-gray-300 overflow-auto max-h-80 whitespace-pre-wrap">
+              {logs || "Click Logs to fetch the latest container output."}
+            </pre>
+          </div>
         </div>
 
         {/* Instance info */}

@@ -132,6 +132,9 @@ class InstanceResponse(BaseModel):
     repo_url: str
     status: str
     install_state: str
+    compose_project: Optional[str] = None
+    compose_file: Optional[str] = None
+    runtime_dir: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -139,6 +142,12 @@ class InstanceResponse(BaseModel):
 class InstanceDetailResponse(BaseModel):
     instance: InstanceResponse
     install_timeline: list[InstallEventResponse]
+
+
+class InstanceLogsResponse(BaseModel):
+    instance_id: str
+    compose_project: Optional[str] = None
+    logs: str
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

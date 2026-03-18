@@ -1,4 +1,4 @@
-import type { AuthToken, DashboardData, Instance, InstanceDetail, ProductCatalog, User } from "./types";
+import type { AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -62,6 +62,18 @@ export const api = {
 
   startInstall: (id: string) =>
     request<Instance>(`/api/instances/${id}/install`, { method: "POST" }),
+
+  stopInstance: (id: string) =>
+    request<Instance>(`/api/instances/${id}/stop`, { method: "POST" }),
+
+  restartInstance: (id: string) =>
+    request<Instance>(`/api/instances/${id}/restart`, { method: "POST" }),
+
+  uninstallInstance: (id: string) =>
+    request<Instance>(`/api/instances/${id}/uninstall`, { method: "POST" }),
+
+  instanceLogs: (id: string, lines = 200) =>
+    request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
 
   // Dashboard (derived from instances)
   dashboard: () => request<User>("/api/auth/me").then(async (user) => {

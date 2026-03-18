@@ -12,9 +12,17 @@ from ..schemas import (
     CreateInstanceRequest,
     InstallEventResponse,
     InstanceDetailResponse,
+    InstanceLogsResponse,
     InstanceResponse,
 )
-from ..services.install_service import sync_instance_status, trigger_install
+from ..services.install_service import (
+    compose_logs,
+    restart_instance,
+    stop_instance,
+    sync_instance_status,
+    trigger_install,
+    uninstall_instance,
+)
 
 router = APIRouter(prefix="/api/instances", tags=["instances"])
 
@@ -35,6 +43,15 @@ def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection
     if row is None:
         raise HTTPException(status_code=404, detail="Instance not found.")
     return dict(row)
+
+
+def _require_compose(inst: dict) -> tuple[str, str, str]:
+    compose_file = inst.get("compose_file")
+    project = inst.get("compose_project")
+    runtime_dir = inst.get("runtime_dir")
+    if not compose_file or not project or not runtime_dir:
+        raise HTTPException(status_code=409, detail="Instance has not completed initial install; compose metadata missing.")
+    return compose_file, project, runtime_dir
 
 
 @router.post("", response_model=InstanceResponse, status_code=status.HTTP_201_CREATED)
@@ -118,7 +135,7 @@ def start_install(
 
     now = _utc_now()
     db.execute(
-        "UPDATE instances SET install_state = 'pulling', updated_at = ? WHERE id = ?",
+        "UPDATE instances SET install_state = 'pulling', updated_at = ?, status='installing' WHERE id = ?",
         (now, instance_id),
     )
     db.commit()
@@ -127,3 +144,63 @@ def start_install(
 
     row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
     return _row_to_instance(row)
+
+
+@router.post("/{instance_id}/stop", response_model=InstanceResponse)
+def stop_instance_api(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> InstanceResponse:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+    ok, out = stop_instance(instance_id, compose_file, project, runtime_dir)
+    if not ok:
+        raise HTTPException(status_code=500, detail=out[:500])
+    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    return _row_to_instance(row)
+
+
+@router.post("/{instance_id}/restart", response_model=InstanceResponse)
+def restart_instance_api(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> InstanceResponse:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+    ok, out = restart_instance(instance_id, compose_file, project, runtime_dir)
+    if not ok:
+        raise HTTPException(status_code=500, detail=out[:500])
+    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    return _row_to_instance(row)
+
+
+@router.post("/{instance_id}/uninstall", response_model=InstanceResponse)
+def uninstall_instance_api(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> InstanceResponse:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+    ok, out = uninstall_instance(instance_id, compose_file, project, runtime_dir)
+    if not ok:
+        raise HTTPException(status_code=500, detail=out[:500])
+    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    return _row_to_instance(row)
+
+
+@router.get("/{instance_id}/logs", response_model=InstanceLogsResponse)
+def instance_logs(
+    instance_id: str,
+    lines: int = 200,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> InstanceLogsResponse:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+    rc, out = compose_logs(compose_file, project, runtime_dir, lines=max(20, min(lines, 2000)))
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=out[:500])
+    return InstanceLogsResponse(instance_id=instance_id, compose_project=project, logs=out)

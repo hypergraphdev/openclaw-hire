@@ -68,6 +68,28 @@ def _compose_up(compose_file: Path, project: str, workdir: Path) -> tuple[int, s
     return rc2, f"docker compose failed:\n{out}\n\ndocker-compose failed:\n{out2}"
 
 
+def _compose_control(compose_file: str, project: str, workdir: str, action: str) -> tuple[int, str]:
+    wd = Path(workdir)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, action], cwd=wd)
+    if rc == 0:
+        return rc, out
+    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project, action], cwd=wd)
+    if rc2 == 0:
+        return rc2, out2
+    return rc2, f"docker compose {action} failed:\n{out}\n\ndocker-compose {action} failed:\n{out2}"
+
+
+def compose_logs(compose_file: str, project: str, workdir: str, lines: int = 200) -> tuple[int, str]:
+    wd = Path(workdir)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, "logs", "--tail", str(lines)], cwd=wd)
+    if rc == 0:
+        return rc, out
+    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project, "logs", "--tail", str(lines)], cwd=wd)
+    if rc2 == 0:
+        return rc2, out2
+    return rc2, f"docker compose logs failed:\n{out}\n\ndocker-compose logs failed:\n{out2}"
+
+
 def _find_compose_file(repo_dir: Path) -> Path | None:
     for rel in COMPOSE_CANDIDATES:
         p = repo_dir / rel
@@ -192,3 +214,33 @@ def sync_instance_status(instance_id: str) -> None:
 def trigger_install(instance_id: str) -> None:
     """Kick off real install in a background daemon thread."""
     threading.Thread(target=_run_install, args=(instance_id,), daemon=True).start()
+
+
+def stop_instance(instance_id: str, compose_file: str, project: str, runtime_dir: str) -> tuple[bool, str]:
+    rc, out = _compose_control(compose_file, project, runtime_dir, "stop")
+    if rc == 0:
+        _set_instance_state(instance_id, "idle", status="inactive")
+        _add_install_event(instance_id, "idle", "Instance stopped.")
+        return True, out
+    _add_install_event(instance_id, "failed", f"Stop failed: {out[:1200]}")
+    return False, out
+
+
+def restart_instance(instance_id: str, compose_file: str, project: str, runtime_dir: str) -> tuple[bool, str]:
+    rc, out = _compose_control(compose_file, project, runtime_dir, "restart")
+    if rc == 0:
+        _sync_runtime_status(instance_id, project)
+        _add_install_event(instance_id, "running", "Instance restarted.")
+        return True, out
+    _add_install_event(instance_id, "failed", f"Restart failed: {out[:1200]}")
+    return False, out
+
+
+def uninstall_instance(instance_id: str, compose_file: str, project: str, runtime_dir: str) -> tuple[bool, str]:
+    rc, out = _compose_control(compose_file, project, runtime_dir, "down")
+    if rc == 0:
+        _set_instance_state(instance_id, "idle", status="inactive")
+        _add_install_event(instance_id, "idle", "Instance removed with docker compose down.")
+        return True, out
+    _add_install_event(instance_id, "failed", f"Uninstall failed: {out[:1200]}")
+    return False, out

@@ -12,6 +12,7 @@ const STATE_STYLES: Record<string, string> = {
   starting: "bg-blue-900 text-blue-300 border border-blue-700",
   failed: "bg-red-900 text-red-300 border border-red-700",
   installing: "bg-purple-900 text-purple-300 border border-purple-700",
+  inactive: "bg-yellow-900 text-yellow-300 border border-yellow-700",
 };
 
 const STATE_LABELS: Record<string, string> = {
@@ -23,6 +24,7 @@ const STATE_LABELS: Record<string, string> = {
   starting: "Starting",
   failed: "Failed",
   installing: "Installing",
+  inactive: "Stopped",
 };
 
 export function StatusPill({ state, size = "sm" }: Props) {

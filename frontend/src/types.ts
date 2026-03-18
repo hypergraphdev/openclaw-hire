@@ -24,8 +24,11 @@ export type Instance = {
   name: string;
   product: Product;
   repo_url: string;
-  status: "active" | "failed" | "inactive";
+  status: "active" | "failed" | "inactive" | "installing";
   install_state: "idle" | "pulling" | "configuring" | "starting" | "running" | "failed";
+  compose_project?: string | null;
+  compose_file?: string | null;
+  runtime_dir?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -40,6 +43,12 @@ export type InstallEvent = {
 export type InstanceDetail = {
   instance: Instance;
   install_timeline: InstallEvent[];
+};
+
+export type InstanceLogs = {
+  instance_id: string;
+  compose_project?: string | null;
+  logs: string;
 };
 
 export type AuthToken = {
