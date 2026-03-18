@@ -435,6 +435,82 @@ def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> boo
         return False
 
 
+def _configure_openclaw_channels(
+    instance_id: str,
+    telegram_bot_token: str,
+    agent_name: str,
+    runtime_dir: str,
+    _org_token_display: str,
+) -> tuple[bool, str]:
+    """Post-start channel bootstrap for OpenClaw: Telegram + openclaw-hxa-connect."""
+    project_raw = f"hire_{instance_id.replace('-', '')}"
+    project = project_raw[:24]
+    cli_container = f"{project}-openclaw-cli-1"
+    config_dir = Path(runtime_dir) / "openclaw-config"
+    openclaw_json = config_dir / "openclaw.json"
+    notes: list[str] = []
+
+    # --- Telegram channel ---
+    if telegram_bot_token:
+        rc, out = _run([
+            "docker", "exec", cli_container, "sh", "-lc",
+            f"node dist/index.js channels add --channel telegram --token '{telegram_bot_token}' --yes 2>/dev/null || true"
+        ])
+        if rc == 0:
+            notes.append("Telegram channel configured.")
+        else:
+            notes.append(f"Telegram config warning: {out[:200]}")
+
+    # --- HXA plugin + org registration via SDK inside container ---
+    if _ORG_SECRET:
+        js = f"""
+(async () => {{
+  let sdk;
+  try {{
+    sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
+  }} catch (e) {{
+    // attempt fallback path
+    try {{ sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
+  }}
+  if (!sdk) {{ console.log('SDK not found'); return; }}
+  const {{ HxaConnectClient }} = sdk;
+  const hub = '{_HUB_URL}';
+  const orgId = '{_ORG_ID}';
+  const secret = '{_ORG_SECRET}';
+  const agentName = '{agent_name}';
+  try {{
+    const reg = await HxaConnectClient.register(hub, orgId, {{ org_secret: secret }}, agentName);
+    const token = reg.token || reg.agent_token;
+    const agentId = reg.agent_id || reg.id;
+    const fs = require('fs');
+    const cfgPath = '/home/node/.openclaw/openclaw.json';
+    let cfg = {{}};
+    try {{ cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); }} catch {{}}
+    if (!cfg.channels) cfg.channels = {{}};
+    cfg.channels['hxa-connect'] = {{
+      enabled: true, hubUrl: hub, agentToken: token, agentName: agentName, orgId: orgId,
+      access: {{ dmPolicy: 'open', groupPolicy: 'open', threads: {{}} }}
+    }};
+    if (!cfg.plugins) cfg.plugins = {{}};
+    if (!cfg.plugins.entries) cfg.plugins.entries = {{}};
+    cfg.plugins.entries['hxa-connect'] = {{ enabled: true }};
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\\n');
+    console.log('HXA registration ok agent=' + agentName);
+  }} catch (e) {{ console.error('HXA error', e.message); }}
+}})();
+"""
+        rc, out = _run(["docker", "exec", cli_container, "node", "-e", js])
+        if "HXA registration ok" in out:
+            # restart gateway to pick up new openclaw.json
+            _run(["docker", "exec", cli_container, "sh", "-lc",
+                  "node dist/index.js gateway restart 2>/dev/null || true"])
+            notes.append("HXA org registration ok.")
+        else:
+            notes.append(f"HXA registration note: {out[:200]}")
+
+    return True, " ".join(notes) if notes else "OpenClaw channels configured."
+
+
 def configure_instance_telegram(
     instance_id: str,
     telegram_bot_token: str,
@@ -519,6 +595,10 @@ def configure_instance_telegram(
         comm_bridge_patched = _patch_zylos_comm_bridge(runtime_dir)
         _restart_zylos_pm2_services(instance_id)
         bootstrap_ok, bootstrap_message = _bootstrap_zylos_components(instance_id, runtime_dir)
+    elif product == "openclaw":
+        bootstrap_ok, bootstrap_message = _configure_openclaw_channels(
+            instance_id, telegram_bot_token, agent_name, runtime_dir, org_token_display
+        )
 
     now = _utc_now()
     with get_connection() as conn:
@@ -561,6 +641,8 @@ def configure_instance_telegram(
         notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
         notes.append("消息分发补丁已应用。" if comm_bridge_patched else "消息分发补丁未应用。")
         notes.append("zylos 组件自动启动成功。" if bootstrap_ok else f"zylos 组件自动启动部分失败：{bootstrap_message[:180]}")
+    elif product == "openclaw":
+        notes.append("OpenClaw Telegram+HXA 配置成功。" if bootstrap_ok else f"OpenClaw 配置部分失败：{bootstrap_message[:180]}")
 
     msg = " ".join(notes)
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
