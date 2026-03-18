@@ -510,32 +510,42 @@ def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> boo
 
 
 def _relax_openclaw_runtime_permissions(runtime_dir: str, project: str) -> bool:
-    """Best-effort: make OpenClaw bind-mounted runtime dirs broadly writable/readable."""
+    """Fix ownership and set safe permissions.
+
+    extensions/ must NOT be world-writable — OpenClaw refuses to load world-writable plugins.
+    workspace/ gets 755/644 so the node user can read/write its own files.
+    """
     ok = False
     root = Path(runtime_dir)
-    for base in (root / "openclaw-config", root / "openclaw-workspace"):
-        if not base.exists():
-            continue
-        try:
-            os.chmod(base, 0o777)
-            ok = True
-        except Exception:
-            pass
-        try:
-            for p in base.rglob("*"):
-                try:
-                    os.chmod(p, 0o777 if p.is_dir() else 0o666)
-                    ok = True
-                except Exception:
-                    pass
-        except Exception:
-            pass
+
+    # extensions: 755 dirs, 644 files (plugin security requirement)
+    ext_root = root / "openclaw-config" / "extensions"
+    if ext_root.exists():
+        for p in [ext_root, *ext_root.rglob("*")]:
+            try:
+                os.chmod(p, 0o755 if p.is_dir() else 0o644)
+                ok = True
+            except Exception:
+                pass
+
+    # workspace: 755 dirs, 644 files
+    ws_root = root / "openclaw-workspace"
+    if ws_root.exists():
+        for p in [ws_root, *ws_root.rglob("*")]:
+            try:
+                os.chmod(p, 0o755 if p.is_dir() else 0o644)
+                ok = True
+            except Exception:
+                pass
 
     gateway_container = f"{project}-openclaw-gateway-1"
     rc, _ = _run([
         "docker", "exec", "--user", "root", gateway_container, "sh", "-lc",
         "chown -R node:node /home/node/.openclaw 2>/dev/null || true; "
-        "chmod -R a+rwX /home/node/.openclaw 2>/dev/null || true"
+        "find /home/node/.openclaw/extensions -type d -exec chmod 755 {} + 2>/dev/null || true; "
+        "find /home/node/.openclaw/extensions -type f -exec chmod 644 {} + 2>/dev/null || true; "
+        "find /home/node/.openclaw/workspace -type d -exec chmod 755 {} + 2>/dev/null || true; "
+        "find /home/node/.openclaw/workspace -type f -exec chmod 644 {} + 2>/dev/null || true"
     ])
     if rc == 0:
         ok = True
