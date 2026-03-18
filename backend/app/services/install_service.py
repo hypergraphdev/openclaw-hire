@@ -12,6 +12,21 @@ from ..database import get_connection, get_setting
 RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
 _HUB_URL = "https://www.ucai.net/connect"
+
+
+def _get_org_id() -> str:
+    """Read HXA org ID from DB settings (fall back to env)."""
+    from_db = get_setting("hxa_org_id", "")
+    return from_db or os.getenv("HXA_CONNECT_ORG_ID", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1")
+
+
+def _get_org_secret() -> str:
+    """Read HXA org secret from DB settings (fall back to env)."""
+    from_db = get_setting("hxa_org_secret", "")
+    return from_db or os.getenv("HXA_CONNECT_ORG_SECRET") or os.getenv("ORG_SECRET") or ""
+
+
+# Backward-compat aliases (read at import time as fallback only)
 _ORG_ID = "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"
 _ORG_SECRET = os.getenv("HXA_CONNECT_ORG_SECRET") or os.getenv("ORG_SECRET") or ""
 _AGENT_PREFIX = os.getenv("HXA_CONNECT_AGENT_PREFIX", "hire")
@@ -508,7 +523,9 @@ def _configure_openclaw_channels(
             notes.append(f"Telegram config warning: {out[:200]}")
 
     # --- HXA plugin + org registration via SDK inside container ---
-    if _ORG_SECRET:
+    _live_org_secret = _get_org_secret()
+    _live_org_id = _get_org_id()
+    if _live_org_secret:
         js = f"""
 (async () => {{
   let sdk;
@@ -521,8 +538,8 @@ def _configure_openclaw_channels(
   if (!sdk) {{ console.log('SDK not found'); return; }}
   const {{ HxaConnectClient }} = sdk;
   const hub = '{_HUB_URL}';
-  const orgId = '{_ORG_ID}';
-  const secret = '{_ORG_SECRET}';
+  const orgId = '{_live_org_id}';
+  const secret = '{_live_org_secret}';
   const agentName = '{agent_name}';
   try {{
     const reg = await HxaConnectClient.register(hub, orgId, {{ org_secret: secret }}, agentName);
@@ -569,7 +586,9 @@ def configure_instance_telegram(
     plugin = _PLUGIN_MAP.get(product, "hxa-connect")
     env_path = Path(runtime_dir) / ".env"
 
-    if not _ORG_SECRET:
+    _ORG_SECRET_LIVE = _get_org_secret()
+    _ORG_ID_LIVE = _get_org_id()
+    if not _ORG_SECRET_LIVE:
         return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot auto-join org.", "", plugin, ""
 
     duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
@@ -583,7 +602,7 @@ def configure_instance_telegram(
         )
 
     agent_name = _safe_agent_name(instance_id)
-    org_token_display = f"server-managed:{_ORG_SECRET[-6:]}" if len(_ORG_SECRET) >= 6 else "server-managed"
+    org_token_display = f"server-managed:{_ORG_SECRET_LIVE[-6:]}" if len(_ORG_SECRET_LIVE) >= 6 else "server-managed"
 
     env = _read_env_file(env_path)
     # propagate auth envs into runtime zylos/.env so startup auth checks pass
@@ -600,11 +619,11 @@ def configure_instance_telegram(
         "HUB_URL": _HUB_URL,
         "HXA_CONNECT_HUB_URL": _HUB_URL,
         "HXA_CONNECT_URL": _HUB_URL,
-        "ORG_ID": _ORG_ID,
-        "HXA_CONNECT_ORG_ID": _ORG_ID,
+        "ORG_ID": _ORG_ID_LIVE,
+        "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
         # Note: post-install hook currently expects org_secret in this field.
-        "ORG_TOKEN": _ORG_SECRET,
-        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET,
+        "ORG_TOKEN": _ORG_SECRET_LIVE,
+        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET_LIVE,
         "HXA_CONNECT_AGENT_NAME": agent_name,
         "HXA_PLUGIN": plugin,
         "PLUGIN_NAME": plugin,
@@ -663,7 +682,7 @@ def configure_instance_telegram(
               configured_at=excluded.configured_at,
               updated_at=excluded.updated_at
             """,
-            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token_display, agent_name, now, now),
+            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID_LIVE, org_token_display, agent_name, now, now),
         )
         conn.execute(
             "UPDATE instances SET telegram_bot_token = ?, org_token = ?, agent_name = ?, updated_at = ? WHERE id = ?",
