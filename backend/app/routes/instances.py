@@ -40,7 +40,11 @@ def _utc_now() -> str:
 
 
 def _row_to_instance(row) -> InstanceResponse:
-    return InstanceResponse(**dict(row))
+    d = dict(row)
+    # Convert raw token fields to safe boolean - never expose token values
+    d["is_telegram_configured"] = bool(d.pop("telegram_bot_token", None))
+    d.pop("org_token", None)  # remove sensitive field entirely
+    return InstanceResponse(**d)
 
 
 def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection) -> dict:
@@ -129,7 +133,13 @@ def list_instances(
         (current_user["id"],),
     ).fetchall()
     merged = [_merge_instance_config_fields(dict(row), db) for row in rows]
-    return [InstanceResponse(**row) for row in merged]
+    # Convert to response: drop sensitive fields, add bool flag
+    results = []
+    for m in merged:
+        m["is_telegram_configured"] = bool(m.pop("telegram_bot_token", None))
+        m.pop("org_token", None)
+        results.append(InstanceResponse(**m))
+    return results
 
 
 @router.get("/{instance_id}", response_model=InstanceDetailResponse)

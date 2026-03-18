@@ -15,7 +15,7 @@ function formatDate(iso: string) {
 }
 
 function configStatus(inst: Instance) {
-  if (!inst.telegram_bot_token) return "Telegram 未配置";
+  if (!inst.is_telegram_configured) return "Telegram 未配置";
   if (!inst.agent_name) return "组织名未绑定";
   return "已配置";
 }
@@ -93,7 +93,7 @@ export function InstancesPage() {
 
                 <div className="mt-3 text-xs text-gray-400 space-y-1">
                   <div>Product: <span className="capitalize text-gray-300">{inst.product}</span></div>
-                  <div>配置: <span className={inst.telegram_bot_token && inst.agent_name ? "text-green-400" : "text-amber-400"}>{configStatus(inst)}</span></div>
+                  <div>配置: <span className={inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}>{configStatus(inst)}</span></div>
                   <div>组织内名字: <span className="text-gray-300 font-mono">{inst.agent_name || "-"}</span></div>
                   {inst.web_console_port && <div>Gateway Port: <span className="text-gray-300 font-mono">{inst.web_console_port}</span></div>}
                   {inst.http_port && <div>Bridge Port: <span className="text-gray-300 font-mono">{inst.http_port}</span></div>}
@@ -145,7 +145,7 @@ export function InstancesPage() {
                       <StatusPill state={inst.install_state} />
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs ${inst.telegram_bot_token && inst.agent_name ? "text-green-400" : "text-amber-400"}`}>
+                      <span className={`text-xs ${inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}`}>
                         {configStatus(inst)}
                       </span>
                     </td>

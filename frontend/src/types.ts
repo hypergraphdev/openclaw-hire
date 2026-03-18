@@ -33,8 +33,8 @@ export type Instance = {
   web_console_port?: number | null;
   web_console_url?: string | null;
   http_port?: number | null;
-  telegram_bot_token?: string | null;
-  org_token?: string | null;
+  is_telegram_configured?: boolean;
+  // org_token removed - sensitive
   agent_name?: string | null;
   created_at: string;
   updated_at: string;
@@ -45,7 +45,7 @@ export type TelegramConfigResponse = {
   plugin_name: string;
   hub_url: string;
   org_id: string;
-  org_token: string;
+  // org_token removed - sensitive
   agent_name: string;
   message: string;
 };
@@ -54,7 +54,7 @@ export type InstanceConfig = {
   plugin_name?: string | null;
   hub_url?: string | null;
   org_id?: string | null;
-  org_token?: string | null;
+  // org_token removed - sensitive
   agent_name?: string | null;
   allow_group?: boolean;
   allow_dm?: boolean;

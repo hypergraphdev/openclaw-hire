@@ -52,9 +52,9 @@ export function InstanceDetailPage() {
   }, [fetchDetail]);
 
   useEffect(() => {
-    const configured = Boolean(detail?.config?.org_token) || Boolean(configResult);
+    const configured = Boolean(detail?.config?.agent_name) || Boolean(configResult);
     setShowConfigureForm(!configured);
-  }, [detail?.config?.org_token, configResult]);
+  }, [detail?.config?.agent_name, configResult]);
 
   async function handleInstall() {
     if (!instanceId) return;
@@ -256,13 +256,13 @@ export function InstanceDetailPage() {
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
             <div className="space-y-3">
-              {(configResult || config?.org_token) && (
+              {(configResult || config?.agent_name) && (
                 <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
                   {configResult?.message || "Already configured"}
                 </div>
               )}
 
-              {(configResult || config?.org_token) && (
+              {(configResult || config?.agent_name) && (
                 <dl className="space-y-1 text-xs">
                   <div><dt className="text-gray-500">Plugin</dt><dd className="text-gray-300 font-mono">{configResult?.plugin_name || config?.plugin_name || "-"}</dd></div>
                   <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{configResult?.org_id || config?.org_id || "-"}</dd></div>
@@ -271,7 +271,7 @@ export function InstanceDetailPage() {
                 </dl>
               )}
 
-              {!showConfigureForm && (configResult || config?.org_token) && (
+              {!showConfigureForm && (configResult || config?.agent_name) && (
                 <button
                   onClick={() => {
                     setConfigResult(null);
