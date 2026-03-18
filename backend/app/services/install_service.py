@@ -92,7 +92,15 @@ def _add_install_event(instance_id: str, state: str, message: str) -> None:
         conn.commit()
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+_SAFE_ENV = {k: v for k, v in os.environ.items() if k not in (
+    # Purge host openclaw/zylos port vars that would shadow --env-file values
+    "OPENCLAW_GATEWAY_PORT", "OPENCLAW_BRIDGE_PORT",
+    "OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_GATEWAY_BIND",
+    "WEB_CONSOLE_PORT", "HTTP_PORT",
+)}
+
+
+def _run(cmd: list[str], cwd: Path | None = None, clean_env: bool = False) -> tuple[int, str]:
     try:
         proc = subprocess.run(
             cmd,
@@ -100,6 +108,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            env=_SAFE_ENV if clean_env else None,
         )
         out = (proc.stdout or "").strip()
         return proc.returncode, out
@@ -117,10 +126,10 @@ def _env_file_for(runtime_dir: str | None) -> list[str]:
 
 def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
     env_args = _env_file_for(runtime_dir or str(workdir))
-    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir)
+    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir, clean_env=True)
     if rc == 0:
         return rc, out
-    rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir)
+    rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir, clean_env=True)
     if rc2 == 0:
         return rc2, out2
     return rc2, f"docker compose failed:\n{out}\n\ndocker-compose failed:\n{out2}"
@@ -129,10 +138,10 @@ def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: st
 def _compose_control(compose_file: str, project: str, workdir: str, action: str) -> tuple[int, str]:
     wd = Path(workdir)
     env_args = _env_file_for(workdir)
-    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd, clean_env=True)
     if rc == 0:
         return rc, out
-    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd)
+    rc2, out2 = _run(["docker-compose", "-f", compose_file, "-p", project] + env_args + [action], cwd=wd, clean_env=True)
     if rc2 == 0:
         return rc2, out2
     return rc2, f"docker compose {action} failed:\n{out}\n\ndocker-compose {action} failed:\n{out2}"
