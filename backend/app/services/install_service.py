@@ -44,13 +44,25 @@ def _read_gateway_env_var(key: str) -> str:
         return ''
 
 
+def _normalize_anthropic_api_key(current: str, token: str) -> str:
+    current = (current or "").strip()
+    token = (token or "").strip()
+    if current.startswith("sk-ant-"):
+        return current
+    if token.startswith("sk-ant-"):
+        return token
+    return "sk-ant-proxy-via-sub2api"
+
+
 def _ensure_auth_env() -> None:
     """Ensure installer subprocess inherits usable provider credentials."""
     token = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip() or _read_gateway_env_var('ANTHROPIC_AUTH_TOKEN')
     if token and not os.getenv('ANTHROPIC_AUTH_TOKEN'):
         os.environ['ANTHROPIC_AUTH_TOKEN'] = token
-    if token and not os.getenv('ANTHROPIC_API_KEY'):
-        os.environ['ANTHROPIC_API_KEY'] = token
+
+    normalized = _normalize_anthropic_api_key(os.getenv('ANTHROPIC_API_KEY', ''), token)
+    if normalized and not os.getenv('ANTHROPIC_API_KEY'):
+        os.environ['ANTHROPIC_API_KEY'] = normalized
 
 
 def _set_instance_state(instance_id: str, state: str, status: str | None = None) -> None:
@@ -453,7 +465,7 @@ def configure_instance_telegram(
     env = _read_env_file(env_path)
     # propagate auth envs into runtime zylos/.env so startup auth checks pass
     auth_token = env.get("ANTHROPIC_AUTH_TOKEN", "")
-    anthropic_api_key = env.get("ANTHROPIC_API_KEY", "") or auth_token
+    anthropic_api_key = _normalize_anthropic_api_key(env.get("ANTHROPIC_API_KEY", ""), auth_token)
     claude_oauth = env.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     openai_api_key = env.get("OPENAI_API_KEY", "")
     codex_api_key = env.get("CODEX_API_KEY", "")
