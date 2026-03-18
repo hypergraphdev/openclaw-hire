@@ -583,9 +583,9 @@ def _configure_openclaw_channels(
 (async () => {{
   let sdk;
   try {{
-    sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
+    sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
   }} catch (e) {{
-    try {{ sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
+    try {{ sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
   }}
   if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
   const {{ HxaConnectClient }} = sdk;
@@ -624,15 +624,8 @@ def _configure_openclaw_channels(
         "groupPolicy": "allowlist",
         "streaming": "partial",
     }
-    if hxa_token:
-        cfg["channels"]["hxa-connect"] = {
-            "enabled": True,
-            "hubUrl": _HUB_URL,
-            "agentToken": hxa_token,
-            "agentName": agent_name,
-            "orgId": _live_org_id,
-            "access": {"dmPolicy": "open", "groupPolicy": "open", "threads": {}},
-        }
+    # openclaw-hxa-connect is a plugin, not a native channel.
+    # Do not write cfg["channels"]["hxa-connect"].
     if not cfg.get("plugins"):
         cfg["plugins"] = {}
     if not cfg["plugins"].get("entries"):
@@ -802,4 +795,11 @@ def configure_instance_telegram(
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
     return True, msg, org_token_display, plugin, agent_name
-ent_name
+
+ssage[:180]}")
+
+    msg = " ".join(notes)
+    _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
+    _sync_runtime_status(instance_id, project)
+    return True, msg, org_token_display, plugin, agent_name
+

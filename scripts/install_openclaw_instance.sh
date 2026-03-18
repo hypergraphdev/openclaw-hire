@@ -294,7 +294,7 @@ fi
 if [[ -n "$_HXA_ORG_SECRET" ]]; then
   docker exec "$CONTAINER_CLI" node -e "
 (async () => {
-  const sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js').catch(() => null);
+  const sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js').catch(() => null);
   if (!sdk) { console.log('SDK not found, skipping org registration'); return; }
   const { HxaConnectClient } = sdk;
   const hub = '$_HXA_HUB_URL';
