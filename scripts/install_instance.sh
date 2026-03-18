@@ -48,18 +48,45 @@ if [[ -z "$COMPOSE_FILE" ]]; then
   exit 21
 fi
 
-# Handle known upstream conflict: zylos compose hardcodes container_name: zylos
-# If an old container exists, remove it before deployment.
-if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
-  echo "WARN: existing container 'zylos' detected, removing to avoid name conflict..." >&2
-  docker rm -f zylos >/dev/null 2>&1 || true
+# For zylos, patch to instance-specific runtime paths + unique container name/ports.
+# This avoids multi-instance conflicts (container_name/ports/volumes).
+if [[ "$PRODUCT" == "zylos" ]]; then
+  HASH=$(echo -n "$INSTANCE_ID" | cksum | awk '{print $1}')
+  WEB_CONSOLE_PORT=$((34000 + HASH % 1000))
+  HTTP_PORT=$((35000 + HASH % 1000))
+
+  INSTANCE_DATA_DIR="$WORKDIR/zylos-data"
+  INSTANCE_CLAUDE_DIR="$WORKDIR/claude-config"
+  mkdir -p "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR"
+
+  PATCHED_COMPOSE="$WORKDIR/docker-compose.instance.yml"
+  SRC_COMPOSE="$COMPOSE_FILE" PATCHED_PATH="$PATCHED_COMPOSE" INSTANCE_ID="$INSTANCE_ID" \
+  WEB_CONSOLE_PORT="$WEB_CONSOLE_PORT" HTTP_PORT="$HTTP_PORT" \
+  INSTANCE_DATA_DIR="$INSTANCE_DATA_DIR" INSTANCE_CLAUDE_DIR="$INSTANCE_CLAUDE_DIR" \
+  python3 - <<'PY'
+import os
+from pathlib import Path
+
+src = Path(os.environ['SRC_COMPOSE'])
+out = Path(os.environ['PATCHED_PATH'])
+text = src.read_text()
+text = text.replace("container_name: zylos", f"container_name: zylos_{os.environ['INSTANCE_ID']}")
+text = text.replace("${WEB_CONSOLE_PORT:-3456}:3456", f"${{WEB_CONSOLE_PORT:-{os.environ['WEB_CONSOLE_PORT']}}}:3456")
+text = text.replace("${HTTP_PORT:-8080}:8080", f"${{HTTP_PORT:-{os.environ['HTTP_PORT']}}}:8080")
+text = text.replace("- zylos-data:/home/zylos/zylos", f"- {os.environ['INSTANCE_DATA_DIR']}:/home/zylos/zylos")
+text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INSTANCE_CLAUDE_DIR']}:/home/zylos/.claude")
+out.write_text(text)
+PY
+
+  COMPOSE_FILE="$PATCHED_COMPOSE"
+  export WEB_CONSOLE_PORT HTTP_PORT INSTANCE_DATA_DIR INSTANCE_CLAUDE_DIR
 fi
 
 # First attempt
 if ! "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build; then
-  # One retry path for container-name conflicts from hardcoded upstream compose
+  # legacy cleanup path for old upstream hardcoded zylos container name
   if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
-    echo "WARN: retry after removing conflicting 'zylos' container" >&2
+    echo "WARN: retry after removing conflicting legacy 'zylos' container" >&2
     docker rm -f zylos >/dev/null 2>&1 || true
     "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build
   else
