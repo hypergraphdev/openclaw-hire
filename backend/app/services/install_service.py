@@ -231,7 +231,7 @@ def _run_install(instance_id: str) -> None:
         _set_instance_state(instance_id, "starting")
 
         script = Path("/home/wwwroot/openclaw-hire/scripts/install_instance.sh")
-        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)])
+        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)], clean_env=True)
         if rc != 0:
             raise RuntimeError(out[:2000])
 

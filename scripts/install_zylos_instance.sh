@@ -262,6 +262,11 @@ EOF
   write_zylos_proxy_route "$INSTANCE_ID" "$WEB_CONSOLE_PORT"
 fi
 
+# Purge host-inherited port vars that would shadow --env-file values for docker compose
+unset OPENCLAW_GATEWAY_PORT OPENCLAW_BRIDGE_PORT OPENCLAW_GATEWAY_TOKEN OPENCLAW_GATEWAY_BIND
+# Re-export per-instance values computed above (zylos uses WEB_CONSOLE_PORT/HTTP_PORT)
+export WEB_CONSOLE_PORT HTTP_PORT
+
 COMPOSE_ARGS=(-f "$COMPOSE_FILE" -p "$PROJECT")
 if [[ "$PRODUCT" == "zylos" ]]; then
   COMPOSE_ARGS+=(--env-file "$WORKDIR/.env")
