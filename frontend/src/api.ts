@@ -103,4 +103,19 @@ export const api = {
 
   adminUserInstances: (userId: string) =>
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
+
+  // Raw fetch helpers (return Response)
+  get: (path: string) => {
+    const token = getStoredToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { headers });
+  },
+
+  put: (path: string, body: unknown) => {
+    const token = getStoredToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { method: "PUT", headers, body: JSON.stringify(body) });
+  },
 };

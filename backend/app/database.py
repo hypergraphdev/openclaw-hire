@@ -78,8 +78,6 @@ def init_db() -> None:
                 FOREIGN KEY (instance_id) REFERENCES instances (id)
             )
         """)
-        conn.commit()
-    _migrate_existing_db()
 
 
 def _migrate_existing_db() -> None:
@@ -189,4 +187,47 @@ def _migrate_existing_db() -> None:
             if "agent_name" not in cfg_cols:
                 conn.execute("ALTER TABLE instance_configs ADD COLUMN agent_name TEXT")
 
+        # server_settings table
+        if "server_settings" not in tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS server_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT ''
+                )
+            """)
+            import os as _os, datetime as _dt
+            _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            _defaults = [
+                ("anthropic_base_url", _os.getenv("ANTHROPIC_BASE_URL", "http://172.17.0.1:18080")),
+                ("anthropic_auth_token", _os.getenv("ANTHROPIC_AUTH_TOKEN", "")),
+                ("hxa_org_id", _os.getenv("HXA_CONNECT_ORG_ID", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1")),
+                ("hxa_org_secret", _os.getenv("HXA_CONNECT_ORG_SECRET", _os.getenv("ORG_SECRET", ""))),
+            ]
+            for _k, _v in _defaults:
+                conn.execute(
+                    "INSERT OR IGNORE INTO server_settings (key, value, updated_at) VALUES (?, ?, ?)",
+                    (_k, _v, _now)
+                )
+
+        conn.commit()
+
+
+def get_setting(key: str, default: str = "") -> str:
+    """Read a value from server_settings table."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT value FROM server_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    """Upsert a value in server_settings table."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO server_settings (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (key, value, now),
+        )
         conn.commit()

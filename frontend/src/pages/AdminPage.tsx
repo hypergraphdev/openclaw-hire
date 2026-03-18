@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { AdminUserInstances, User } from "../types";
@@ -35,6 +36,10 @@ export function AdminPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-white">Admin Console</h1>
+        <div className="flex gap-3 mt-2">
+          <Link to="/admin/settings" className="text-xs text-blue-400 hover:text-blue-300">⚙️ Settings</Link>
+          <Link to="/admin/hxa" className="text-xs text-blue-400 hover:text-blue-300">🔗 HXA Orgs</Link>
+        </div>
         <p className="text-gray-500 text-sm mt-1">Users and their instances</p>
       </div>
 

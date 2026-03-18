@@ -9,6 +9,8 @@ import { CatalogPage } from "./pages/CatalogPage";
 import { InstancesPage } from "./pages/InstancesPage";
 import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 import { AdminPage } from "./pages/AdminPage";
+import AdminSettingsPage from "./pages/AdminSettingsPage";
+import AdminHXAPage from "./pages/AdminHXAPage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -113,6 +115,22 @@ export default function App() {
             element={
               <AdminRoute>
                 <AdminPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/settings"
+            element={
+              <AdminRoute>
+                <AdminSettingsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/hxa"
+            element={
+              <AdminRoute>
+                <AdminHXAPage />
               </AdminRoute>
             }
           />

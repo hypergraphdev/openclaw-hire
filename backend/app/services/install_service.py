@@ -7,7 +7,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..database import get_connection
+from ..database import get_connection, get_setting
 
 RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
@@ -106,15 +106,18 @@ def _make_clean_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _PORT_SHADOW_KEYS}
 
 
-def _run(cmd: list[str], cwd: Path | None = None, clean_env: bool = False) -> tuple[int, str]:
+def _run(cmd: list[str], cwd: Path | None = None, clean_env: bool = False, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
     try:
+        env = _make_clean_env() if clean_env else dict(os.environ)
+        if extra_env:
+            env.update(extra_env)
         proc = subprocess.run(
             cmd,
             cwd=str(cwd) if cwd else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env=_make_clean_env() if clean_env else None,
+            env=env,
         )
         out = (proc.stdout or "").strip()
         return proc.returncode, out
@@ -237,7 +240,22 @@ def _run_install(instance_id: str) -> None:
         _set_instance_state(instance_id, "starting")
 
         script = Path("/home/wwwroot/openclaw-hire/scripts/install_instance.sh")
-        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)], clean_env=True)
+        # Inject admin-configurable settings from DB into installer env
+        db_anthropic_base = get_setting("anthropic_base_url", "")
+        db_anthropic_token = get_setting("anthropic_auth_token", "")
+        db_hxa_org_id = get_setting("hxa_org_id", "")
+        db_hxa_org_secret = get_setting("hxa_org_secret", "")
+        install_extra_env: dict[str, str] = {}
+        if db_anthropic_base:
+            install_extra_env["ANTHROPIC_BASE_URL"] = db_anthropic_base
+        if db_anthropic_token:
+            install_extra_env["ANTHROPIC_AUTH_TOKEN"] = db_anthropic_token
+        if db_hxa_org_id:
+            install_extra_env["HXA_CONNECT_ORG_ID"] = db_hxa_org_id
+        if db_hxa_org_secret:
+            install_extra_env["HXA_CONNECT_ORG_SECRET"] = db_hxa_org_secret
+            install_extra_env["ORG_SECRET"] = db_hxa_org_secret
+        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)], clean_env=True, extra_env=install_extra_env)
         if rc != 0:
             raise RuntimeError(out[:2000])
 
