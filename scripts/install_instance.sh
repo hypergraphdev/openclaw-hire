@@ -110,6 +110,25 @@ print('patched', p)
 PY
 }
 
+patch_zylos_c4_health_gate() {
+  local receive_js="$1/.claude/skills/comm-bridge/scripts/c4-receive.js"
+  [[ -f "$receive_js" ]] || return 0
+  RECEIVE_JS="$receive_js" python3 - <<'PY'
+from pathlib import Path
+import os
+p = Path(os.environ['RECEIVE_JS'])
+text = p.read_text()
+old = "if (status.health !== 'ok') {"
+new = "if (status.health !== 'ok' && status.state !== 'idle' && status.state !== 'busy') {"
+if old in text:
+    text = text.replace(old, new, 1)
+    p.write_text(text)
+    print('patched', p)
+else:
+    print('skip', p)
+PY
+}
+
 mkdir -p "$WORKDIR"
 
 if [[ -d "$REPO_DIR/.git" ]]; then
@@ -248,6 +267,8 @@ if [[ "$PRODUCT" == "zylos" ]]; then
 
   # Patch web console base-path handling so /connect/zylos/<id>/ keeps API/WS prefix.
   patch_zylos_web_console_basepath "$INSTANCE_DATA_DIR"
+  # Relax false-negative health gate for comm-bridge when agent is actually idle/busy.
+  patch_zylos_c4_health_gate "$INSTANCE_DATA_DIR"
 fi
 
 # machine-readable output for caller
