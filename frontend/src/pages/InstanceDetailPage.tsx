@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { InstallTimeline } from "../components/InstallTimeline";
 import { StatusPill } from "../components/StatusPill";
-import type { InstanceDetail } from "../types";
+import type { InstanceDetail, TelegramConfigResponse } from "../types";
 
 const PRODUCT_LABELS: Record<string, string> = {
   openclaw: "OpenClaw",
@@ -33,6 +33,10 @@ export function InstanceDetailPage() {
   const [actionLoading, setActionLoading] = useState<"" | "stop" | "restart" | "uninstall" | "logs">("");
   const [logs, setLogs] = useState("");
   const [error, setError] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [configuring, setConfiguring] = useState(false);
+  const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
+  const [configError, setConfigError] = useState("");
 
   const fetchDetail = useCallback(() => {
     if (!instanceId) return Promise.resolve();
@@ -80,6 +84,22 @@ export function InstanceDetailPage() {
     }
   }
 
+  async function handleConfigure() {
+    if (!instanceId || !botToken.trim()) return;
+    setConfigError("");
+    setConfiguring(true);
+    try {
+      const result = await api.configureInstance(instanceId, botToken.trim());
+      setConfigResult(result);
+      setBotToken("");
+      await fetchDetail();
+    } catch (err: unknown) {
+      setConfigError(err instanceof Error ? err.message : "Configuration failed.");
+    } finally {
+      setConfiguring(false);
+    }
+  }
+
   if (loading) {
     return <div className="text-gray-500 text-sm">Loading instance...</div>;
   }
@@ -92,7 +112,7 @@ export function InstanceDetailPage() {
     );
   }
 
-  const { instance, install_timeline } = detail;
+  const { instance, install_timeline, config } = detail;
   const isInstalling = ["pulling", "configuring", "starting"].includes(instance.install_state);
   const canInstall = instance.install_state === "idle" || instance.install_state === "failed";
 
@@ -225,6 +245,66 @@ export function InstanceDetailPage() {
             >
               {instance.repo_url}
             </a>
+          </div>
+
+          {/* Telegram Integration */}
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
+            <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
+            {configResult ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
+                  {configResult.message}
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Org Token</p>
+                  <p className="text-xs text-gray-200 font-mono break-all bg-gray-950 border border-gray-800 rounded p-2">
+                    {configResult.org_token}
+                  </p>
+                </div>
+                <dl className="space-y-1 text-xs">
+                  <div><dt className="text-gray-500">Plugin</dt><dd className="text-gray-300 font-mono">{configResult.plugin_name}</dd></div>
+                  <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{configResult.org_id}</dd></div>
+                  <div><dt className="text-gray-500">Hub URL</dt><dd className="text-gray-300 break-all">{configResult.hub_url}</dd></div>
+                </dl>
+                <p className="text-xs text-gray-500">· Send /start to your bot to verify the connection.</p>
+                <button
+                  onClick={() => setConfigResult(null)}
+                  className="text-xs text-gray-500 hover:text-gray-300 underline"
+                >
+                  Configure again
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {config?.org_token && !configResult && (
+                  <div className="p-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400">
+                    Already configured · Org token ends in <span className="font-mono text-gray-300">{config.org_token.slice(-8)}</span>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
+                <input
+                  type="text"
+                  placeholder="Bot token (e.g. 123456:ABC…)"
+                  value={botToken}
+                  onChange={(e) => setBotToken(e.target.value)}
+                  disabled={!instance.compose_project || configuring}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 disabled:opacity-50 focus:outline-none focus:border-gray-500"
+                />
+                {configError && (
+                  <p className="text-xs text-red-400">{configError}</p>
+                )}
+                <button
+                  onClick={handleConfigure}
+                  disabled={!botToken.trim() || !instance.compose_project || configuring}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+                >
+                  {configuring ? "Configuring…" : "Configure"}
+                </button>
+                {!instance.compose_project && (
+                  <p className="text-xs text-gray-600">Install the instance first to enable configuration.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

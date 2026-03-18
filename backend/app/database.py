@@ -41,6 +41,8 @@ def init_db() -> None:
                 runtime_dir TEXT,
                 web_console_port INTEGER,
                 http_port INTEGER,
+                telegram_bot_token TEXT,
+                org_token TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (owner_id) REFERENCES users (id)
@@ -53,6 +55,21 @@ def init_db() -> None:
                 state TEXT NOT NULL,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                FOREIGN KEY (instance_id) REFERENCES instances (id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS instance_configs (
+                instance_id TEXT PRIMARY KEY,
+                telegram_bot_token TEXT,
+                plugin_name TEXT,
+                hub_url TEXT,
+                org_id TEXT,
+                org_token TEXT,
+                allow_group INTEGER NOT NULL DEFAULT 1,
+                allow_dm INTEGER NOT NULL DEFAULT 1,
+                configured_at TEXT,
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY (instance_id) REFERENCES instances (id)
             )
         """)
@@ -118,6 +135,10 @@ def _migrate_existing_db() -> None:
                 conn.execute("ALTER TABLE instances ADD COLUMN web_console_port INTEGER")
             if "http_port" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN http_port INTEGER")
+            if "telegram_bot_token" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN telegram_bot_token TEXT")
+            if "org_token" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN org_token TEXT")
 
         if "install_events" not in tables:
             conn.execute("""
@@ -127,6 +148,23 @@ def _migrate_existing_db() -> None:
                     state TEXT NOT NULL,
                     message TEXT NOT NULL,
                     created_at TEXT NOT NULL,
+                    FOREIGN KEY (instance_id) REFERENCES instances (id)
+                )
+            """)
+
+        if "instance_configs" not in tables:
+            conn.execute("""
+                CREATE TABLE instance_configs (
+                    instance_id TEXT PRIMARY KEY,
+                    telegram_bot_token TEXT,
+                    plugin_name TEXT,
+                    hub_url TEXT,
+                    org_id TEXT,
+                    org_token TEXT,
+                    allow_group INTEGER NOT NULL DEFAULT 1,
+                    allow_dm INTEGER NOT NULL DEFAULT 1,
+                    configured_at TEXT,
+                    updated_at TEXT NOT NULL,
                     FOREIGN KEY (instance_id) REFERENCES instances (id)
                 )
             """)

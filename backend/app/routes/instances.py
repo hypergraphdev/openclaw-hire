@@ -11,14 +11,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from ..deps import get_current_user, get_db
 from ..schemas import (
     PRODUCT_MAP,
+    ConfigureTelegramRequest,
+    ConfigureTelegramResponse,
     CreateInstanceRequest,
     InstallEventResponse,
+    InstanceConfigResponse,
     InstanceDetailResponse,
     InstanceLogsResponse,
     InstanceResponse,
 )
 from ..services.install_service import (
+    _HUB_URL,
+    _ORG_ID,
     compose_logs,
+    configure_instance_telegram,
     restart_instance,
     stop_instance,
     sync_instance_status,
@@ -115,9 +121,27 @@ def get_instance(
         "SELECT * FROM install_events WHERE instance_id = ? ORDER BY id ASC",
         (instance_id,),
     ).fetchall()
+    cfg = db.execute(
+        "SELECT plugin_name, hub_url, org_id, org_token, allow_group, allow_dm, configured_at FROM instance_configs WHERE instance_id = ?",
+        (instance_id,),
+    ).fetchone()
+    config = None
+    if cfg:
+        c = dict(cfg)
+        config = InstanceConfigResponse(
+            plugin_name=c.get("plugin_name"),
+            hub_url=c.get("hub_url"),
+            org_id=c.get("org_id"),
+            org_token=c.get("org_token"),
+            allow_group=bool(c.get("allow_group", 1)),
+            allow_dm=bool(c.get("allow_dm", 1)),
+            configured_at=c.get("configured_at"),
+        )
+
     return InstanceDetailResponse(
         instance=InstanceResponse(**inst),
         install_timeline=[InstallEventResponse(**dict(e)) for e in events],
+        config=config,
     )
 
 
@@ -206,6 +230,38 @@ def instance_logs(
     if rc != 0:
         raise HTTPException(status_code=500, detail=out[:500])
     return InstanceLogsResponse(instance_id=instance_id, compose_project=project, logs=out)
+
+
+@router.post("/{instance_id}/configure", response_model=ConfigureTelegramResponse)
+def configure_instance(
+    instance_id: str,
+    payload: ConfigureTelegramRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> ConfigureTelegramResponse:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+
+    ok, message, org_token, plugin = configure_instance_telegram(
+        instance_id,
+        payload.telegram_bot_token,
+        inst["product"],
+        runtime_dir,
+        compose_file,
+        project,
+    )
+
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+
+    return ConfigureTelegramResponse(
+        instance_id=instance_id,
+        plugin_name=plugin,
+        hub_url=_HUB_URL,
+        org_id=_ORG_ID,
+        org_token=org_token,
+        message=f"Telegram bot configured. Plugin: {plugin}. DMs and group messages enabled.",
+    )
 
 
 @router.delete("/{instance_id}")

@@ -1,4 +1,4 @@
-import type { AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, User } from "./types";
+import type { AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -77,6 +77,12 @@ export const api = {
 
   instanceLogs: (id: string, lines = 200) =>
     request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
+
+  configureInstance: (id: string, botToken: string) =>
+    request<TelegramConfigResponse>(`/api/instances/${id}/configure`, {
+      method: "POST",
+      body: JSON.stringify({ telegram_bot_token: botToken }),
+    }),
 
   // Dashboard (derived from instances)
   dashboard: () => request<User>("/api/auth/me").then(async (user) => {

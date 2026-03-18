@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -8,6 +9,13 @@ from pathlib import Path
 from ..database import get_connection
 
 RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+
+_HUB_URL = "https://www.ucai.net/connect"
+_ORG_ID = "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"
+_PLUGIN_MAP = {
+    "zylos": "hxa-connect",
+    "openclaw": "openclaw-hxa-connect",
+}
 COMPOSE_CANDIDATES = [
     "docker-compose.yml",
     "compose.yml",
@@ -245,3 +253,84 @@ def uninstall_instance(instance_id: str, compose_file: str, project: str, runtim
         return True, out
     _add_install_event(instance_id, "failed", f"Uninstall failed: {out[:1200]}")
     return False, out
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    return env
+
+
+def _write_env_file(path: Path, env: dict[str, str]) -> None:
+    path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+
+
+def configure_instance_telegram(
+    instance_id: str,
+    telegram_bot_token: str,
+    product: str,
+    runtime_dir: str,
+    compose_file: str,
+    project: str,
+) -> tuple[bool, str, str, str]:
+    """Write telegram/plugin env vars, persist org token, restart compose."""
+    org_token = secrets.token_hex(24)
+    plugin = _PLUGIN_MAP.get(product, "hxa-connect")
+    env_path = Path(runtime_dir) / ".env"
+
+    env = _read_env_file(env_path)
+    env.update({
+        "TELEGRAM_BOT_TOKEN": telegram_bot_token,
+        "TELEGRAM_ENABLE_GROUPS": "true",
+        "TELEGRAM_ENABLE_DMS": "true",
+        "HUB_URL": _HUB_URL,
+        "HXA_CONNECT_HUB_URL": _HUB_URL,
+        "ORG_ID": _ORG_ID,
+        "ORG_TOKEN": org_token,
+        "HXA_PLUGIN": plugin,
+        "PLUGIN_NAME": plugin,
+    })
+    _write_env_file(env_path, env)
+
+    wd = Path(runtime_dir)
+    env_file = str(env_path)
+
+    # Bring down then up with updated env-file
+    _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "down"], cwd=wd)
+    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
+    if rc != 0:
+        _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "down"], cwd=wd)
+        rc, out = _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
+
+    if rc != 0:
+        return False, f"Compose restart failed: {out[:500]}", org_token, plugin
+
+    now = _utc_now()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, allow_group, allow_dm, configured_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+            ON CONFLICT(instance_id) DO UPDATE SET
+              telegram_bot_token=excluded.telegram_bot_token,
+              plugin_name=excluded.plugin_name,
+              hub_url=excluded.hub_url,
+              org_id=excluded.org_id,
+              org_token=excluded.org_token,
+              allow_group=1,
+              allow_dm=1,
+              configured_at=excluded.configured_at,
+              updated_at=excluded.updated_at
+            """,
+            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token, now, now),
+        )
+        conn.commit()
+
+    _add_install_event(instance_id, "running", f"Telegram configured. Plugin {plugin} linked to org {_ORG_ID}.")
+    _sync_runtime_status(instance_id, project)
+    return True, "配置完成：可通过 Telegram 在群聊和私信联系该实例。", org_token, plugin

@@ -31,8 +31,29 @@ export type Instance = {
   runtime_dir?: string | null;
   web_console_port?: number | null;
   http_port?: number | null;
+  telegram_bot_token?: string | null;
+  org_token?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type TelegramConfigResponse = {
+  instance_id: string;
+  plugin_name: string;
+  hub_url: string;
+  org_id: string;
+  org_token: string;
+  message: string;
+};
+
+export type InstanceConfig = {
+  plugin_name?: string | null;
+  hub_url?: string | null;
+  org_id?: string | null;
+  org_token?: string | null;
+  allow_group?: boolean;
+  allow_dm?: boolean;
+  configured_at?: string | null;
 };
 
 export type InstallEvent = {
@@ -45,6 +66,7 @@ export type InstallEvent = {
 export type InstanceDetail = {
   instance: Instance;
   install_timeline: InstallEvent[];
+  config?: InstanceConfig | null;
 };
 
 export type InstanceLogs = {
