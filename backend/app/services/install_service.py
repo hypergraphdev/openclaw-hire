@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import secrets
+import os
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -12,6 +12,8 @@ RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
 _HUB_URL = "https://www.ucai.net/connect"
 _ORG_ID = "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"
+_ORG_SECRET = os.getenv("HXA_CONNECT_ORG_SECRET") or os.getenv("ORG_SECRET") or ""
+_AGENT_PREFIX = os.getenv("HXA_CONNECT_AGENT_PREFIX", "hire")
 _PLUGIN_MAP = {
     "zylos": "hxa-connect",
     "openclaw": "openclaw-hxa-connect",
@@ -275,6 +277,61 @@ def _write_env_file(path: Path, env: dict[str, str]) -> None:
     path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
 
 
+def _safe_agent_name(instance_id: str) -> str:
+    suffix = instance_id.replace("inst_", "")[:12]
+    base = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in _AGENT_PREFIX).strip("_")
+    if not base:
+        base = "hire"
+    return f"{base}_{suffix}"
+
+
+def _telegram_token_in_use(instance_id: str, telegram_bot_token: str) -> str | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM instances
+            WHERE id <> ? AND telegram_bot_token = ?
+              AND COALESCE(status, 'active') <> 'inactive'
+              AND COALESCE(install_state, 'idle') <> 'failed'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (instance_id, telegram_bot_token),
+        ).fetchone()
+    return row["id"] if row else None
+
+
+def _bootstrap_zylos_components(instance_id: str, runtime_dir: str) -> tuple[bool, str]:
+    container = f"zylos_{instance_id}"
+    cmd = """
+set -e
+if [ -x /home/zylos/.npm-global/bin/zylos ]; then
+  /home/zylos/.npm-global/bin/zylos add hxa-connect --yes >/tmp/hxa_add.log 2>&1 || true
+  /home/zylos/.npm-global/bin/zylos add telegram --yes >/tmp/tg_add.log 2>&1 || true
+fi
+if [ -d /home/zylos/zylos/.claude/skills/hxa-connect ]; then
+  cd /home/zylos/zylos/.claude/skills/hxa-connect
+  npm install --silent || true
+  [ -f hooks/post-install.js ] && node hooks/post-install.js || true
+  pm2 delete zylos-hxa-connect >/dev/null 2>&1 || true
+  [ -f ecosystem.config.cjs ] && pm2 start ecosystem.config.cjs || true
+fi
+if [ -d /home/zylos/zylos/.claude/skills/telegram ]; then
+  cd /home/zylos/zylos/.claude/skills/telegram
+  npm install --silent || true
+  [ -f hooks/post-install.js ] && node hooks/post-install.js || true
+  pm2 delete zylos-telegram >/dev/null 2>&1 || true
+  [ -f ecosystem.config.cjs ] && pm2 start ecosystem.config.cjs || true
+fi
+pm2 save >/dev/null 2>&1 || true
+pm2 ls --no-color || true
+"""
+    rc, out = _run(["docker", "exec", container, "sh", "-lc", cmd], cwd=Path(runtime_dir))
+    if rc != 0:
+        return False, out
+    return True, out
+
+
 def _patch_zylos_web_console(runtime_dir: str) -> bool:
     """Best effort: keep web-console basePath compatible with /connect/zylos/<id>."""
     try:
@@ -350,10 +407,24 @@ def configure_instance_telegram(
     compose_file: str,
     project: str,
 ) -> tuple[bool, str, str, str]:
-    """Write telegram/plugin env vars, persist org token, restart compose."""
-    org_token = secrets.token_hex(24)
+    """Configure Telegram + org integration after install using only user-provided bot token."""
     plugin = _PLUGIN_MAP.get(product, "hxa-connect")
     env_path = Path(runtime_dir) / ".env"
+
+    if not _ORG_SECRET:
+        return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot auto-join org.", "", plugin
+
+    duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
+    if duplicated_by:
+        return (
+            False,
+            f"Telegram bot token is already used by instance {duplicated_by}. Use a unique token per running instance.",
+            "",
+            plugin,
+        )
+
+    agent_name = _safe_agent_name(instance_id)
+    org_token_display = f"server-managed:{_ORG_SECRET[-6:]}" if len(_ORG_SECRET) >= 6 else "server-managed"
 
     env = _read_env_file(env_path)
     updates = {
@@ -362,8 +433,13 @@ def configure_instance_telegram(
         "TELEGRAM_ENABLE_DMS": "true",
         "HUB_URL": _HUB_URL,
         "HXA_CONNECT_HUB_URL": _HUB_URL,
+        "HXA_CONNECT_URL": _HUB_URL,
         "ORG_ID": _ORG_ID,
-        "ORG_TOKEN": org_token,
+        "HXA_CONNECT_ORG_ID": _ORG_ID,
+        # Note: post-install hook currently expects org_secret in this field.
+        "ORG_TOKEN": _ORG_SECRET,
+        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET,
+        "HXA_CONNECT_AGENT_NAME": agent_name,
         "HXA_PLUGIN": plugin,
         "PLUGIN_NAME": plugin,
     }
@@ -375,7 +451,7 @@ def configure_instance_telegram(
     wd = Path(runtime_dir)
     env_file = str(env_path)
 
-    # Bring down then up with updated env-file
+    # Bring down then up with updated env-file.
     _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "down"], cwd=wd)
     rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
     if rc != 0:
@@ -383,14 +459,17 @@ def configure_instance_telegram(
         rc, out = _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
 
     if rc != 0:
-        return False, f"Compose restart failed: {out[:500]}", org_token, plugin
+        return False, f"Compose restart failed: {out[:500]}", org_token_display, plugin
 
     web_console_patched = False
     comm_bridge_patched = False
+    bootstrap_ok = True
+    bootstrap_message = ""
     if product == "zylos":
         web_console_patched = _patch_zylos_web_console(runtime_dir)
         comm_bridge_patched = _patch_zylos_comm_bridge(runtime_dir)
         _restart_zylos_pm2_services(instance_id)
+        bootstrap_ok, bootstrap_message = _bootstrap_zylos_components(instance_id, runtime_dir)
 
     now = _utc_now()
     with get_connection() as conn:
@@ -409,13 +488,17 @@ def configure_instance_telegram(
               configured_at=excluded.configured_at,
               updated_at=excluded.updated_at
             """,
-            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token, now, now),
+            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token_display, now, now),
+        )
+        conn.execute(
+            "UPDATE instances SET telegram_bot_token = ?, org_token = ?, updated_at = ? WHERE id = ?",
+            (telegram_bot_token, org_token_display, now, instance_id),
         )
         conn.commit()
 
     plugin_installed = (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists() or (Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / plugin).exists()
 
-    notes: list[str] = ["配置完成：可通过 Telegram 在群聊和私信联系该实例。"]
+    notes: list[str] = ["配置完成：实例已自动注入组织参数并启用 Telegram。"]
     if runtime_env_synced:
         notes.append("实例内部 .env 已同步。")
     else:
@@ -427,8 +510,9 @@ def configure_instance_telegram(
     if product == "zylos":
         notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
         notes.append("消息分发补丁已应用。" if comm_bridge_patched else "消息分发补丁未应用。")
+        notes.append("zylos 组件自动启动成功。" if bootstrap_ok else f"zylos 组件自动启动部分失败：{bootstrap_message[:180]}")
 
     msg = " ".join(notes)
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
-    return True, msg, org_token, plugin
+    return True, msg, org_token_display, plugin

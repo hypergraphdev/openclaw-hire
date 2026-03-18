@@ -237,8 +237,11 @@ PY
   cat > "$WORKDIR/.env" <<EOF
 ANTHROPIC_BASE_URL=http://172.17.0.1:18080
 ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 ANTHROPIC_MODEL=claude-sonnet-4-5
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+TELEGRAM_ENABLE_GROUPS=${TELEGRAM_ENABLE_GROUPS:-true}
+TELEGRAM_ENABLE_DMS=${TELEGRAM_ENABLE_DMS:-true}
 WEB_CONSOLE_PORT=$WEB_CONSOLE_PORT
 HTTP_PORT=$HTTP_PORT
 HXA_CONNECT_URL=${HXA_CONNECT_URL:-${HUB_URL:-}}
@@ -372,6 +375,15 @@ const fs=require('fs'); const path=require('path');
 })();
 JS" || true
     docker exec "zylos_${INSTANCE_ID}" sh -lc 'pm2 restart zylos-hxa-connect >/dev/null 2>&1 || true' || true
+  fi
+
+  # Optional auto-bootstrap for telegram (when bot token is provided)
+  TG_TOKEN_VAL="$(grep '^TELEGRAM_BOT_TOKEN=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+  if [[ -n "$TG_TOKEN_VAL" ]]; then
+    docker exec "zylos_${INSTANCE_ID}" sh -lc '/home/zylos/.npm-global/bin/zylos add telegram --yes >/tmp/tg_add_auto.log 2>&1 || true' || true
+    docker exec "zylos_${INSTANCE_ID}" sh -lc "TG='$TG_TOKEN_VAL'; ENVF=/home/zylos/zylos/.env; touch \"\$ENVF\"; sed -i '/^TELEGRAM_BOT_TOKEN=/d;/^TELEGRAM_ENABLE_GROUPS=/d;/^TELEGRAM_ENABLE_DMS=/d' \"\$ENVF\"; printf '%s\\n' \"TELEGRAM_BOT_TOKEN=\$TG\" 'TELEGRAM_ENABLE_GROUPS=true' 'TELEGRAM_ENABLE_DMS=true' >> \"\$ENVF\"" || true
+    docker exec "zylos_${INSTANCE_ID}" sh -lc '[ -f /home/zylos/zylos/.claude/skills/telegram/hooks/post-install.js ] && node /home/zylos/zylos/.claude/skills/telegram/hooks/post-install.js || true' || true
+    docker exec "zylos_${INSTANCE_ID}" sh -lc 'pm2 restart zylos-telegram >/dev/null 2>&1 || pm2 start /home/zylos/zylos/.claude/skills/telegram/ecosystem.config.cjs >/dev/null 2>&1 || true' || true
   fi
 fi
 
