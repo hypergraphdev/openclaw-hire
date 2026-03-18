@@ -78,6 +78,10 @@ text = text.replace("${WEB_CONSOLE_PORT:-3456}:3456", f"${{WEB_CONSOLE_PORT:-{os
 text = text.replace("${HTTP_PORT:-8080}:8080", f"${{HTTP_PORT:-{os.environ['HTTP_PORT']}}}:8080")
 text = text.replace("- zylos-data:/home/zylos/zylos", f"- {os.environ['INSTANCE_DATA_DIR']}:/home/zylos/zylos")
 text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INSTANCE_CLAUDE_DIR']}:/home/zylos/.claude")
+# Default upstream for new instances: local sub2api + token + Sonnet-4.5
+text = text.replace("${ANTHROPIC_API_KEY:-}", "sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98")
+if "ANTHROPIC_BASE_URL:" not in text:
+    text = text.replace("# ── Core config ───────────────────────────────────────────────────────", "# ── Core config ───────────────────────────────────────────────────────\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\"")
 out.write_text(text)
 PY
 

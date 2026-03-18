@@ -133,6 +133,12 @@ def _sync_runtime_status(instance_id: str, project: str) -> None:
         _set_instance_state(instance_id, "running", status="active")
         return
 
+    if any("Restarting" in ln for ln in lines):
+        if current_state != "starting":
+            _add_install_event(instance_id, "starting", "Container is restarting, waiting for stabilization...")
+        _set_instance_state(instance_id, "starting", status="installing")
+        return
+
     if current_state != "failed":
         _add_install_event(instance_id, "failed", "Containers were created but not running: " + " | ".join(lines[:4]))
     _set_instance_state(instance_id, "failed", status="failed")
