@@ -78,24 +78,43 @@ text = text.replace("${WEB_CONSOLE_PORT:-3456}:3456", f"${{WEB_CONSOLE_PORT:-{os
 text = text.replace("${HTTP_PORT:-8080}:8080", f"${{HTTP_PORT:-{os.environ['HTTP_PORT']}}}:8080")
 text = text.replace("- zylos-data:/home/zylos/zylos", f"- {os.environ['INSTANCE_DATA_DIR']}:/home/zylos/zylos")
 text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INSTANCE_CLAUDE_DIR']}:/home/zylos/.claude")
-# Default upstream for new instances: local sub2api + token + Sonnet-4.5
+
+# Ensure default auth + model are injected for every new zylos instance
 text = text.replace("${ANTHROPIC_API_KEY:-}", "sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98")
 if "ANTHROPIC_BASE_URL:" not in text:
-    text = text.replace("# ── Core config ───────────────────────────────────────────────────────", "# ── Core config ───────────────────────────────────────────────────────\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\"")
+    anchor = "      CLAUDE_BYPASS_PERMISSIONS: ${CLAUDE_BYPASS_PERMISSIONS:-true}"
+    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
+    text = text.replace(anchor, insert)
+
 out.write_text(text)
 PY
+
+  # Also write per-instance env file as a hard fallback for compose var resolution
+  cat > "$WORKDIR/.env" <<EOF
+ANTHROPIC_BASE_URL=http://172.17.0.1:18080
+ANTHROPIC_AUTH_TOKEN=sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98
+ANTHROPIC_API_KEY=sk-14b2e089b0ddd04e4b959508afbb90587366b9d5a65f23988c9415b8379def98
+ANTHROPIC_MODEL=claude-sonnet-4-5
+WEB_CONSOLE_PORT=$WEB_CONSOLE_PORT
+HTTP_PORT=$HTTP_PORT
+EOF
 
   COMPOSE_FILE="$PATCHED_COMPOSE"
   export WEB_CONSOLE_PORT HTTP_PORT INSTANCE_DATA_DIR INSTANCE_CLAUDE_DIR
 fi
 
+COMPOSE_ARGS=(-f "$COMPOSE_FILE" -p "$PROJECT")
+if [[ "$PRODUCT" == "zylos" ]]; then
+  COMPOSE_ARGS+=(--env-file "$WORKDIR/.env")
+fi
+
 # First attempt
-if ! "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build; then
+if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build; then
   # legacy cleanup path for old upstream hardcoded zylos container name
   if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
     echo "WARN: retry after removing conflicting legacy 'zylos' container" >&2
     docker rm -f zylos >/dev/null 2>&1 || true
-    "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build
+    "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build
   else
     exit 22
   fi
