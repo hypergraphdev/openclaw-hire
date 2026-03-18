@@ -222,8 +222,8 @@ export function InstanceDetailPage() {
                       {instance.web_console_url}
                     </a>
                   ) : instance.web_console_port ? (
-                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/__openclaw__/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/__openclaw__/`}
+                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`}
                     </a>
                   ) : (
                     <span className="text-gray-400">-</span>
