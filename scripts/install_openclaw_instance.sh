@@ -343,15 +343,3 @@ printf 'WEB_CONSOLE_PORT=%s\n' "$OPENCLAW_GATEWAY_PORT"
 printf 'HTTP_PORT=%s\n' "$OPENCLAW_BRIDGE_PORT"
 printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/"
 printf 'HXA_AGENT_NAME=%s\n' "$HXA_AGENT_NAME"
-penclaw-gateway 2>/dev/null || true
-fi
-
-# ── Output ────────────────────────────────────────────────────────────────────
-printf 'COMPOSE_PROJECT=%s\n' "$PROJECT"
-printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
-printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
-printf 'REPO_DIR=%s\n' "$REPO_DIR"
-printf 'WEB_CONSOLE_PORT=%s\n' "$OPENCLAW_GATEWAY_PORT"
-printf 'HTTP_PORT=%s\n' "$OPENCLAW_BRIDGE_PORT"
-printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/"
-printf 'HXA_AGENT_NAME=%s\n' "$HXA_AGENT_NAME"
