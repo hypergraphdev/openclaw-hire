@@ -241,6 +241,8 @@ def restart_instance(instance_id: str, compose_file: str, project: str, runtime_
     rc, out = _compose_control(compose_file, project, runtime_dir, "restart")
     if rc == 0:
         _patch_zylos_web_console(runtime_dir)
+        _patch_zylos_comm_bridge(runtime_dir)
+        _restart_zylos_pm2_services(instance_id)
         _sync_runtime_status(instance_id, project)
         _add_install_event(instance_id, "running", "Instance restarted.")
         return True, out
@@ -292,6 +294,40 @@ def _patch_zylos_web_console(runtime_dir: str) -> bool:
         return False
 
 
+def _patch_zylos_comm_bridge(runtime_dir: str) -> bool:
+    """Best effort: avoid false health-down blocking send/dispatch."""
+    try:
+        base = Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / "comm-bridge" / "scripts"
+        receive_js = base / "c4-receive.js"
+        dispatcher_js = base / "c4-dispatcher.js"
+        changed = False
+
+        if receive_js.exists():
+            text = receive_js.read_text()
+            old = "if (status.health !== 'ok') {"
+            new = "if (status.health !== 'ok' && status.state !== 'idle' && status.state !== 'busy') {"
+            if old in text:
+                receive_js.write_text(text.replace(old, new, 1))
+                changed = True
+
+        if dispatcher_js.exists():
+            text = dispatcher_js.read_text()
+            old = "if (agentState.health !== 'ok' && !bypass) {"
+            new = "if (agentState.health !== 'ok' && (agentState.state === 'offline' || agentState.state === 'stopped') && !bypass) {"
+            if old in text:
+                dispatcher_js.write_text(text.replace(old, new, 1))
+                changed = True
+
+        return changed
+    except Exception:
+        return False
+
+
+def _restart_zylos_pm2_services(instance_id: str) -> None:
+    container = f"zylos_{instance_id}"
+    _run(["docker", "exec", container, "sh", "-lc", "pm2 restart web-console c4-dispatcher >/dev/null 2>&1 || true"])
+
+
 def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> bool:
     """Best effort: sync key envs into instance's own runtime .env (e.g., zylos-data/.env)."""
     try:
@@ -335,7 +371,6 @@ def configure_instance_telegram(
     _write_env_file(env_path, env)
 
     runtime_env_synced = _sync_instance_runtime_env(runtime_dir, updates)
-    web_console_patched = _patch_zylos_web_console(runtime_dir) if product == "zylos" else False
 
     wd = Path(runtime_dir)
     env_file = str(env_path)
@@ -349,6 +384,13 @@ def configure_instance_telegram(
 
     if rc != 0:
         return False, f"Compose restart failed: {out[:500]}", org_token, plugin
+
+    web_console_patched = False
+    comm_bridge_patched = False
+    if product == "zylos":
+        web_console_patched = _patch_zylos_web_console(runtime_dir)
+        comm_bridge_patched = _patch_zylos_comm_bridge(runtime_dir)
+        _restart_zylos_pm2_services(instance_id)
 
     now = _utc_now()
     with get_connection() as conn:
@@ -384,6 +426,7 @@ def configure_instance_telegram(
         notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
     if product == "zylos":
         notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
+        notes.append("消息分发补丁已应用。" if comm_bridge_patched else "消息分发补丁未应用。")
 
     msg = " ".join(notes)
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
