@@ -11,6 +11,7 @@ function formatDate(iso: string) {
 export function InstancesPage() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string>("");
 
   useEffect(() => {
     api.listInstances()
@@ -22,6 +23,17 @@ export function InstancesPage() {
     }, 8_000);
     return () => clearInterval(interval);
   }, []);
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete instance '${name}'? This will remove runtime data and cannot be undone.`)) return;
+    setDeletingId(id);
+    try {
+      await api.deleteInstance(id);
+      setInstances((prev) => prev.filter((x) => x.id !== id));
+    } finally {
+      setDeletingId("");
+    }
+  }
 
   if (loading) {
     return <div className="text-gray-500 text-sm">Loading instances...</div>;
@@ -79,12 +91,21 @@ export function InstancesPage() {
                   </td>
                   <td className="px-5 py-3 text-gray-500">{formatDate(inst.created_at)}</td>
                   <td className="px-5 py-3 text-right">
-                    <Link
-                      to={`/instances/${inst.id}`}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      Manage →
-                    </Link>
+                    <div className="inline-flex items-center gap-3">
+                      <button
+                        onClick={() => handleDelete(inst.id, inst.name)}
+                        disabled={deletingId === inst.id}
+                        className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50 transition-colors"
+                      >
+                        {deletingId === inst.id ? "Deleting..." : "Delete"}
+                      </button>
+                      <Link
+                        to={`/instances/${inst.id}`}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        Manage →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -204,3 +206,27 @@ def instance_logs(
     if rc != 0:
         raise HTTPException(status_code=500, detail=out[:500])
     return InstanceLogsResponse(instance_id=instance_id, compose_project=project, logs=out)
+
+
+@router.delete("/{instance_id}")
+def delete_instance(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict[str, str]:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+
+    # best effort teardown of runtime containers/data
+    compose_file = inst.get("compose_file")
+    project = inst.get("compose_project")
+    runtime_dir = inst.get("runtime_dir")
+    if compose_file and project and runtime_dir:
+        uninstall_instance(instance_id, compose_file, project, runtime_dir)
+
+    if runtime_dir:
+        shutil.rmtree(Path(runtime_dir), ignore_errors=True)
+
+    db.execute("DELETE FROM install_events WHERE instance_id = ?", (instance_id,))
+    db.execute("DELETE FROM instances WHERE id = ? AND owner_id = ?", (instance_id, current_user["id"]))
+    db.commit()
+    return {"status": "deleted", "instance_id": instance_id}

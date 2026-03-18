@@ -72,6 +72,9 @@ export const api = {
   uninstallInstance: (id: string) =>
     request<Instance>(`/api/instances/${id}/uninstall`, { method: "POST" }),
 
+  deleteInstance: (id: string) =>
+    request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
+
   instanceLogs: (id: string, lines = 200) =>
     request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
 
