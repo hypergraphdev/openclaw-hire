@@ -802,18 +802,3 @@ def configure_instance_telegram(
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
     return True, msg, org_token_display, plugin, agent_name
-lugin_installed:
-        notes.append(f"插件 {plugin} 已检测到。")
-    else:
-        notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
-    if product == "zylos":
-        notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
-        notes.append("消息分发补丁已应用。" if comm_bridge_patched else "消息分发补丁未应用。")
-        notes.append("zylos 组件自动启动成功。" if bootstrap_ok else f"zylos 组件自动启动部分失败：{bootstrap_message[:180]}")
-    elif product == "openclaw":
-        notes.append("OpenClaw Telegram+HXA 配置成功。" if bootstrap_ok else f"OpenClaw 配置部分失败：{bootstrap_message[:180]}")
-
-    msg = " ".join(notes)
-    _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
-    _sync_runtime_status(instance_id, project)
-    return True, msg, org_token_display, plugin, agent_name
