@@ -31,9 +31,11 @@ PROJECT="${PROJECT:0:24}"
 _HXA_HUB_URL="https://www.ucai.net/connect"
 _HXA_ORG_ID="${HXA_CONNECT_ORG_ID:-123cd566-c2ea-409f-8f7e-4fa9f5296dd1}"
 _HXA_ORG_SECRET="${HXA_CONNECT_ORG_SECRET:-${ORG_SECRET:-}}"
+# ANTHROPIC_AUTH_TOKEN  = Bearer token for sub2api gateway (what openclaw sends as apiKey to 172.17.0.1:18080)
+# ANTHROPIC_BASE_URL    = URL of sub2api gateway inside Docker network
+# ANTHROPIC_API_KEY     = NOT USED — real sk-ant-api* key is not required when routing through sub2api
 _ANTHROPIC_BASE="${ANTHROPIC_BASE_URL:-http://172.17.0.1:18080}"
 _ANTHROPIC_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
-_ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_TOKEN}}"
 _DEFAULT_MODEL="${OPENCLAW_MODEL:-claude-sonnet-4-5}"
 
 mkdir -p "$WORKDIR"
@@ -101,13 +103,16 @@ cat > "$OPENCLAW_JSON" <<OCJSON
       "anthropic": {
         "enabled": true,
         "baseUrl": "$_ANTHROPIC_BASE",
-        "apiKey": "$_ANTHROPIC_API_KEY"
+        "apiKey": "$_ANTHROPIC_TOKEN"
       }
     },
     "default": "$_DEFAULT_MODEL"
   }
 }
 OCJSON
+# Note: "apiKey" here is ANTHROPIC_AUTH_TOKEN (the sub2api Bearer token).
+# OpenClaw sends this as Authorization: Bearer <apiKey> to ANTHROPIC_BASE_URL.
+# No real sk-ant-api* key is needed when routing through sub2api gateway.
 chmod 600 "$OPENCLAW_JSON"
 
 # ── .env for compose ──────────────────────────────────────────────────────────
@@ -122,7 +127,7 @@ OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
 
 ANTHROPIC_BASE_URL=$_ANTHROPIC_BASE
 ANTHROPIC_AUTH_TOKEN=$_ANTHROPIC_TOKEN
-ANTHROPIC_API_KEY=$_ANTHROPIC_API_KEY
+# ANTHROPIC_API_KEY intentionally omitted — apiKey in openclaw.json = ANTHROPIC_AUTH_TOKEN (sub2api Bearer)
 
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 TELEGRAM_ENABLE_GROUPS=${TELEGRAM_ENABLE_GROUPS:-true}

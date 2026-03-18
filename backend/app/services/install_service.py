@@ -55,14 +55,17 @@ def _normalize_anthropic_api_key(current: str, token: str) -> str:
 
 
 def _ensure_auth_env() -> None:
-    """Ensure installer subprocess inherits usable provider credentials."""
+    """Ensure installer subprocess inherits usable provider credentials.
+
+    Only ANTHROPIC_AUTH_TOKEN and ANTHROPIC_BASE_URL are propagated.
+    ANTHROPIC_API_KEY is intentionally NOT set here — the openclaw-hxa-connect
+    and openclaw installers use ANTHROPIC_AUTH_TOKEN as the sub2api bearer token
+    (passed as 'apiKey' in openclaw.json). They are different concepts.
+    """
     token = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip() or _read_gateway_env_var('ANTHROPIC_AUTH_TOKEN')
     if token and not os.getenv('ANTHROPIC_AUTH_TOKEN'):
         os.environ['ANTHROPIC_AUTH_TOKEN'] = token
-
-    normalized = _normalize_anthropic_api_key(os.getenv('ANTHROPIC_API_KEY', ''), token)
-    if normalized and not os.getenv('ANTHROPIC_API_KEY'):
-        os.environ['ANTHROPIC_API_KEY'] = normalized
+    # Explicitly do NOT set ANTHROPIC_API_KEY from ANTHROPIC_AUTH_TOKEN here.
 
 
 def _set_instance_state(instance_id: str, state: str, status: str | None = None) -> None:
