@@ -320,10 +320,7 @@ if [[ -n "$_HXA_ORG_SECRET" ]]; then
       allowFrom: ['*'],
       groups: { '*': { requireMention: false } }
     };
-    cfg.channels['hxa-connect'] = {
-      enabled: true, hubUrl: hub, agentToken: token, agentName: agentName, orgId: orgId,
-      access: { dmPolicy: 'open', groupPolicy: 'open', threads: {} }
-    };
+    // hxa-connect is a plugin, not a native channel. Do not write cfg.channels['hxa-connect'].
     if (!cfg.plugins) cfg.plugins = {};
     if (!cfg.plugins.entries) cfg.plugins.entries = {};
     cfg.plugins.entries['openclaw-hxa-connect'] = { enabled: true };
@@ -335,6 +332,18 @@ if [[ -n "$_HXA_ORG_SECRET" ]]; then
 
   # Restart gateway to apply new config
   "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" restart openclaw-gateway 2>/dev/null || true
+fi
+
+# ── Output ────────────────────────────────────────────────────────────────────
+printf 'COMPOSE_PROJECT=%s\n' "$PROJECT"
+printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
+printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
+printf 'REPO_DIR=%s\n' "$REPO_DIR"
+printf 'WEB_CONSOLE_PORT=%s\n' "$OPENCLAW_GATEWAY_PORT"
+printf 'HTTP_PORT=%s\n' "$OPENCLAW_BRIDGE_PORT"
+printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/openclaw/${INSTANCE_ID}/"
+printf 'HXA_AGENT_NAME=%s\n' "$HXA_AGENT_NAME"
+penclaw-gateway 2>/dev/null || true
 fi
 
 # ── Output ────────────────────────────────────────────────────────────────────

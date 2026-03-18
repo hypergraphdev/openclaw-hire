@@ -651,14 +651,11 @@ def _configure_openclaw_channels(
         return False, f"Config verify read failed: {e}"
 
     tg = ((verify.get("channels") or {}).get("telegram") or {})
-    hxa = ((verify.get("channels") or {}).get("hxa-connect") or {})
     plugin_ok = bool(((((verify.get("plugins") or {}).get("entries") or {}).get(plugin_name)) or {}).get("enabled"))
     if not tg.get("enabled") or not tg.get("botToken"):
         return False, "Telegram config was overwritten after restart."
     if not plugin_ok:
         return False, f"Plugin entry {plugin_name} missing after restart."
-    if _live_org_secret and not hxa.get("agentToken"):
-        return False, "HXA config missing after restart."
 
     notes.append("Restart verified.")
     return True, " ".join(notes) if notes else "OpenClaw channels configured."
@@ -791,6 +788,21 @@ def configure_instance_telegram(
     else:
         notes.append("实例内部 .env 未找到，已仅写入 runtime .env。")
     if plugin_installed:
+        notes.append(f"插件 {plugin} 已检测到。")
+    else:
+        notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
+    if product == "zylos":
+        notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
+        notes.append("消息分发补丁已应用。" if comm_bridge_patched else "消息分发补丁未应用。")
+        notes.append("zylos 组件自动启动成功。" if bootstrap_ok else f"zylos 组件自动启动部分失败：{bootstrap_message[:180]}")
+    elif product == "openclaw":
+        notes.append("OpenClaw Telegram+HXA 配置成功。" if bootstrap_ok else f"OpenClaw 配置部分失败：{bootstrap_message[:180]}")
+
+    msg = " ".join(notes)
+    _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
+    _sync_runtime_status(instance_id, project)
+    return True, msg, org_token_display, plugin, agent_name
+lugin_installed:
         notes.append(f"插件 {plugin} 已检测到。")
     else:
         notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
