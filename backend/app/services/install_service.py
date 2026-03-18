@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -548,10 +550,15 @@ def _configure_openclaw_channels(
     _org_token_display: str,
     plugin_name: str,
 ) -> tuple[bool, str]:
-    """Post-start channel bootstrap for OpenClaw: Telegram + openclaw-hxa-connect."""
+    """Post-start bootstrap for OpenClaw.
+
+    Use the container only to obtain the HXA registration token. Persist the final
+    openclaw.json on the host, then restart and verify to avoid silent overwrite bugs.
+    """
     project_raw = f"hire_{instance_id.replace('-', '')}"
     project = project_raw[:24]
     cli_container = f"{project}-openclaw-cli-1"
+    gateway_container = f"{project}-openclaw-gateway-1"
     config_dir = Path(runtime_dir) / "openclaw-config"
     openclaw_json = config_dir / "openclaw.json"
     notes: list[str] = []
@@ -559,20 +566,18 @@ def _configure_openclaw_channels(
     if _relax_openclaw_runtime_permissions(runtime_dir, project):
         notes.append("Runtime permissions relaxed.")
 
-    # --- Telegram channel ---
-    if telegram_bot_token:
-        rc, out = _run([
-            "docker", "exec", cli_container, "sh", "-lc",
-            f"node dist/index.js channels add --channel telegram --token '{telegram_bot_token}' --yes 2>/dev/null || true"
-        ])
-        if rc == 0:
-            notes.append("Telegram channel configured.")
-        else:
-            notes.append(f"Telegram config warning: {out[:200]}")
+    if not openclaw_json.exists():
+        return False, f"Missing config file: {openclaw_json}"
 
-    # --- HXA plugin + org registration via SDK inside container ---
+    try:
+        cfg = json.loads(openclaw_json.read_text())
+    except Exception:
+        cfg = {}
+
     _live_org_secret = _get_org_secret()
     _live_org_id = _get_org_id()
+    hxa_token = ""
+
     if _live_org_secret:
         js = f"""
 (async () => {{
@@ -580,56 +585,83 @@ def _configure_openclaw_channels(
   try {{
     sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
   }} catch (e) {{
-    // attempt fallback path
     try {{ sdk = await import('/home/node/.openclaw/extensions/hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
   }}
-  if (!sdk) {{ console.log('SDK not found'); return; }}
+  if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
   const {{ HxaConnectClient }} = sdk;
-  const hub = '{_HUB_URL}';
-  const orgId = '{_live_org_id}';
-  const secret = '{_live_org_secret}';
-  const agentName = '{agent_name}';
-  const telegramToken = {repr(telegram_bot_token)};
-  const pluginName = {repr(plugin_name)};
   try {{
-    const reg = await HxaConnectClient.register(hub, orgId, {{ org_secret: secret }}, agentName);
-    const token = reg.token || reg.agent_token || reg.bot_token;
-    const agentId = reg.agent_id || reg.id || reg.bot_id;
-    const fs = require('fs');
-    const cfgPath = '/home/node/.openclaw/openclaw.json';
-    let cfg = {{}};
-    try {{ cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); }} catch {{}}
-    if (!cfg.channels) cfg.channels = {{}};
-    cfg.channels['telegram'] = {{
-      enabled: !!telegramToken,
-      botToken: telegramToken || '',
-      dmPolicy: 'open',
-      allowFrom: ['*'],
-      groups: {{ '*': {{ requireMention: false }} }}
-    }};
-    cfg.channels['hxa-connect'] = {{
-      enabled: true, hubUrl: hub, agentToken: token, agentName: agentName, orgId: orgId,
-      access: {{ dmPolicy: 'open', groupPolicy: 'open', threads: {{}} }}
-    }};
-    if (!cfg.plugins) cfg.plugins = {{}};
-    if (!cfg.plugins.entries) cfg.plugins.entries = {{}};
-    cfg.plugins.entries[pluginName] = {{ enabled: true }};
-    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\\n');
-    console.log('HXA registration ok agent=' + agentName + ' agentId=' + (agentId || ''));
-  }} catch (e) {{ console.error('HXA error', e.message); }}
+    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)});
+    const token = reg.token || reg.agent_token || reg.bot_token || '';
+    const agentId = reg.agent_id || reg.id || reg.bot_id || '';
+    console.log('HXA_REG_OK::' + JSON.stringify({{ token, agentId }}));
+  }} catch (e) {{
+    console.error('HXA_REG_ERR::' + e.message);
+  }}
 }})();
 """
-        rc, out = _run(["docker", "exec", cli_container, "node", "-e", js])
-        if "HXA registration ok" in out:
-            # restart gateway container to pick up new openclaw.json
-            gateway_container = cli_container.replace("-cli-1", "-gateway-1")
-            _run(["docker", "restart", gateway_container])
-            notes.append("HXA org registration ok.")
+        _, out = _run(["docker", "exec", cli_container, "node", "-e", js])
+        marker = "HXA_REG_OK::"
+        if marker in out:
+            raw = out.split(marker, 1)[1].strip().splitlines()[0]
+            try:
+                parsed = json.loads(raw)
+                hxa_token = str(parsed.get("token") or "")
+                if hxa_token:
+                    notes.append("HXA org registration ok.")
+            except Exception:
+                notes.append("HXA registration parse failed.")
         else:
             notes.append(f"HXA registration note: {out[:200]}")
 
-    return True, " ".join(notes) if notes else "OpenClaw channels configured."
+    if not cfg.get("channels"):
+        cfg["channels"] = {}
+    cfg["channels"]["telegram"] = {
+        "enabled": bool(telegram_bot_token),
+        "dmPolicy": "open",
+        "botToken": telegram_bot_token or "",
+        "groups": {"*": {"requireMention": False}},
+        "allowFrom": ["*"],
+        "groupPolicy": "allowlist",
+        "streaming": "partial",
+    }
+    if hxa_token:
+        cfg["channels"]["hxa-connect"] = {
+            "enabled": True,
+            "hubUrl": _HUB_URL,
+            "agentToken": hxa_token,
+            "agentName": agent_name,
+            "orgId": _live_org_id,
+            "access": {"dmPolicy": "open", "groupPolicy": "open", "threads": {}},
+        }
+    if not cfg.get("plugins"):
+        cfg["plugins"] = {}
+    if not cfg["plugins"].get("entries"):
+        cfg["plugins"]["entries"] = {}
+    cfg["plugins"]["entries"][plugin_name] = {"enabled": True}
 
+    openclaw_json.write_text(json.dumps(cfg, indent=2) + "\\n")
+    notes.append("Host config written.")
+
+    _run(["docker", "restart", gateway_container])
+    time.sleep(2)
+
+    try:
+        verify = json.loads(openclaw_json.read_text())
+    except Exception as e:
+        return False, f"Config verify read failed: {e}"
+
+    tg = ((verify.get("channels") or {}).get("telegram") or {})
+    hxa = ((verify.get("channels") or {}).get("hxa-connect") or {})
+    plugin_ok = bool(((((verify.get("plugins") or {}).get("entries") or {}).get(plugin_name)) or {}).get("enabled"))
+    if not tg.get("enabled") or not tg.get("botToken"):
+        return False, "Telegram config was overwritten after restart."
+    if not plugin_ok:
+        return False, f"Plugin entry {plugin_name} missing after restart."
+    if _live_org_secret and not hxa.get("agentToken"):
+        return False, "HXA config missing after restart."
+
+    notes.append("Restart verified.")
+    return True, " ".join(notes) if notes else "OpenClaw channels configured."
 
 def configure_instance_telegram(
     instance_id: str,
