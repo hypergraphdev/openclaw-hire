@@ -34,6 +34,8 @@ def init_db() -> None:
                 name TEXT NOT NULL,
                 role TEXT NOT NULL,
                 template_id TEXT DEFAULT 'audit-codex-base',
+                stack TEXT NOT NULL DEFAULT 'openclaw',
+                repo_url TEXT NOT NULL DEFAULT 'https://github.com/openclaw/openclaw',
                 brief TEXT,
                 telegram_handle TEXT,
                 model_config TEXT NOT NULL,

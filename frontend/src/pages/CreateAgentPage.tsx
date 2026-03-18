@@ -37,11 +37,13 @@ export function CreateAgentPage() {
 
     try {
       const templateId = String(formData.get("template_id") ?? "audit-codex-base");
+      const stack = String(formData.get("stack") ?? "openclaw") === "zylos" ? "zylos" : "openclaw";
       const next = await api.createEmployee({
         owner_id: owner.id,
         name: String(formData.get("name") ?? "").trim(),
         role: String(formData.get("role") ?? "").trim(),
         template_id: templateId,
+        stack,
         brief: String(formData.get("brief") ?? "").trim(),
         telegram_handle: String(formData.get("telegram_handle") ?? "").trim(),
       });
@@ -101,6 +103,19 @@ export function CreateAgentPage() {
             </label>
 
             <label className="grid gap-2 text-sm text-slate-300">
+              安装栈
+              <select
+                className="rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
+                name="stack"
+                defaultValue="openclaw"
+                required
+              >
+                <option value="openclaw">OpenClaw · github.com/openclaw/openclaw（Docker）</option>
+                <option value="zylos">Zylos · github.com/zylos-ai/zylos-core（Docker）</option>
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm text-slate-300">
               任务描述
               <textarea
                 className="min-h-28 rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-cyan-400/50"
@@ -132,7 +147,9 @@ export function CreateAgentPage() {
             <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-5">
               <p className="text-xs uppercase tracking-[0.28em] text-slate-500">当前提交</p>
               <p className="mt-3 text-lg font-semibold text-white">{agent?.name || "未提交"}</p>
-              <p className="mt-2 text-sm text-slate-400">{agent ? `模板: ${agent.template_id}` : "填写信息后提交"}</p>
+              <p className="mt-2 text-sm text-slate-400">
+                {agent ? `模板: ${agent.template_id} · 安装栈: ${agent.stack}` : "填写信息后提交"}
+              </p>
               {agent ? <StatusPill state={agent.current_state} /> : null}
             </div>
 

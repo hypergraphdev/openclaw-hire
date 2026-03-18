@@ -7,6 +7,12 @@ from pydantic import BaseModel, EmailStr, Field
 
 DEFAULT_MODEL_CONFIG = "openai-codex/gpt-5.3-codex-spark"
 DEFAULT_TEMPLATE_ID = "audit-codex-base"
+DEFAULT_STACK = "openclaw"
+
+STACK_REPOS = {
+    "openclaw": "https://github.com/openclaw/openclaw",
+    "zylos": "https://github.com/zylos-ai/zylos-core",
+}
 
 INIT_STATES = (
     "queued",
@@ -38,6 +44,7 @@ class CreateEmployeeRequest(BaseModel):
     name: str = Field(min_length=2, max_length=80)
     role: str = Field(min_length=2, max_length=120)
     template_id: str = Field(default=DEFAULT_TEMPLATE_ID)
+    stack: str = Field(default=DEFAULT_STACK, pattern="^(openclaw|zylos)$")
     brief: Optional[str] = Field(default=None, max_length=1000)
     telegram_handle: Optional[str] = Field(default=None, max_length=120)
 
@@ -56,6 +63,8 @@ class EmployeeResponse(BaseModel):
     name: str
     role: str
     template_id: str
+    stack: str = DEFAULT_STACK
+    repo_url: str = STACK_REPOS[DEFAULT_STACK]
     brief: Optional[str] = None
     telegram_handle: Optional[str] = None
     employee_model_config: str = Field(alias="model_config")

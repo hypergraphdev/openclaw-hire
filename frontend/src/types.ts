@@ -14,12 +14,16 @@ export type TemplateConfig = {
   notes: string[];
 };
 
+export type HireStack = "openclaw" | "zylos";
+
 export type Employee = {
   id: string;
   owner_id: string;
   name: string;
   role: string;
   template_id: string;
+  stack: HireStack;
+  repo_url: string;
   brief?: string | null;
   telegram_handle?: string | null;
   model_config: string;

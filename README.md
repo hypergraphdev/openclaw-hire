@@ -9,6 +9,8 @@ It includes:
 - Multi-page dashboard with account, templates, fleet, agent detail, and settings
 - End-to-end initialization timeline tracking for each AI agent
 - Async-style backend state progression for provisioning workflow
+- Hire-time stack selection: OpenClaw or Zylos
+- Docker-based install flow for both stacks after hiring
 
 ## Features
 
@@ -16,7 +18,7 @@ It includes:
 
 - `POST /api/register`
 - `GET /api/templates`
-- `POST /api/employees`
+- `POST /api/employees` (supports `stack: openclaw | zylos`)
 - `GET /api/owners/{owner_id}/employees`
 - `GET /api/employees/{employee_id}/status`
 - `POST /api/employees/{employee_id}/bot-token`
@@ -34,6 +36,12 @@ It includes:
 Default employee model config:
 
 - `openai-codex/gpt-5.3-codex-spark`
+
+Stack options for hire:
+
+- `openclaw` -> `https://github.com/openclaw/openclaw`
+- `zylos` -> `https://github.com/zylos-ai/zylos-core`
+- Both are provisioned through Docker-oriented workflow messages/states.
 
 Initialization states tracked:
 

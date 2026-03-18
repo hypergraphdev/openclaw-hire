@@ -32,6 +32,7 @@ export const api = {
     name: string;
     role: string;
     template_id: string;
+    stack: "openclaw" | "zylos";
     brief?: string;
     telegram_handle?: string;
   }) =>

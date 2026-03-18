@@ -71,6 +71,7 @@ def create_employee_job(payload: CreateEmployeeRequest) -> EmployeeResponse:
         name=payload.name,
         role=payload.role,
         template_id=payload.template_id,
+        stack=payload.stack,
         brief=payload.brief,
         telegram_handle=payload.telegram_handle,
     )
