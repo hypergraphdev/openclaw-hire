@@ -564,9 +564,9 @@ def _configure_openclaw_channels(
 """
         rc, out = _run(["docker", "exec", cli_container, "node", "-e", js])
         if "HXA registration ok" in out:
-            # restart gateway to pick up new openclaw.json
-            _run(["docker", "exec", cli_container, "sh", "-lc",
-                  "node dist/index.js gateway restart 2>/dev/null || true"])
+            # restart gateway container to pick up new openclaw.json
+            gateway_container = cli_container.replace("-cli-1", "-gateway-1")
+            _run(["docker", "restart", gateway_container])
             notes.append("HXA org registration ok.")
         else:
             notes.append(f"HXA registration note: {out[:200]}")

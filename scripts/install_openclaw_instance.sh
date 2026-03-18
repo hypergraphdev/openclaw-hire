@@ -128,13 +128,6 @@ HXA_AGENT_NAME="${HXA_CONNECT_AGENT_NAME:-${AGENT_NAME_BASE}_${AGENT_NAME_SUFFIX
 OPENCLAW_JSON="$CONFIG_DIR/openclaw.json"
 cat > "$OPENCLAW_JSON" <<OCJSON
 {
-  "gateway": {
-    "mode": "local",
-    "bind": "lan",
-    "auth": {
-      "token": "$OPENCLAW_GATEWAY_TOKEN"
-    }
-  },
   "models": {
     "mode": "merge",
     "providers": {
@@ -166,6 +159,18 @@ cat > "$OPENCLAW_JSON" <<OCJSON
         "*": { "requireMention": false }
       }
     }
+  },
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-5",
+      "compaction": { "mode": "safeguard" }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "auth": { "token": "$OPENCLAW_GATEWAY_TOKEN" },
+    "trustedProxies": ["loopback", "uniquelocal"]
   }
 }
 OCJSON
