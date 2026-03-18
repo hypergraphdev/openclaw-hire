@@ -214,22 +214,21 @@ export function InstanceDetailPage() {
                 <dt className="text-xs text-gray-500">Status</dt>
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
-              <div>
-                <dt className="text-xs text-gray-500">Web Console URL</dt>
-                <dd className="text-xs break-all">
-                  {instance.web_console_url ? (
-                    <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {instance.web_console_url}
-                    </a>
-                  ) : instance.web_console_port ? (
-                    <a href={`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {`https://www.ucai.net/connect/${instance.product === "zylos" ? "zylos" : "openclaw"}/${instance.id}/`}
-                    </a>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
-                </dd>
-              </div>
+              {/* Web Console URL — Zylos only */}
+              {instance.product === "zylos" && (
+                <div>
+                  <dt className="text-xs text-gray-500">Web Console URL</dt>
+                  <dd className="text-xs break-all">
+                    {instance.web_console_url ? (
+                      <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+                        {instance.web_console_url}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-gray-500">Deployed</dt>
                 <dd className="text-gray-300 text-xs">{formatDate(instance.created_at)}</dd>
