@@ -177,10 +177,23 @@ fi
 WEB_CONSOLE_PORT=""
 HTTP_PORT=""
 
+port_in_use() {
+  local p="$1"
+  ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "(^|:)$p$"
+}
+
+find_free_port() {
+  local p="$1"
+  while port_in_use "$p"; do
+    p=$((p + 1))
+  done
+  echo "$p"
+}
+
 if [[ "$PRODUCT" == "zylos" ]]; then
   HASH=$(echo -n "$INSTANCE_ID" | cksum | awk '{print $1}')
-  WEB_CONSOLE_PORT=$((34000 + HASH % 1000))
-  HTTP_PORT=$((35000 + HASH % 1000))
+  WEB_CONSOLE_PORT=$(find_free_port $((34000 + HASH % 1000)))
+  HTTP_PORT=$(find_free_port $((35000 + HASH % 1000)))
 
   INSTANCE_DATA_DIR="$WORKDIR/zylos-data"
   INSTANCE_CLAUDE_DIR="$WORKDIR/claude-config"
