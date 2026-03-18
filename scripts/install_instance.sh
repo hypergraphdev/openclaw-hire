@@ -48,7 +48,24 @@ if [[ -z "$COMPOSE_FILE" ]]; then
   exit 21
 fi
 
-"${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build
+# Handle known upstream conflict: zylos compose hardcodes container_name: zylos
+# If an old container exists, remove it before deployment.
+if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
+  echo "WARN: existing container 'zylos' detected, removing to avoid name conflict..." >&2
+  docker rm -f zylos >/dev/null 2>&1 || true
+fi
+
+# First attempt
+if ! "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build; then
+  # One retry path for container-name conflicts from hardcoded upstream compose
+  if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
+    echo "WARN: retry after removing conflicting 'zylos' container" >&2
+    docker rm -f zylos >/dev/null 2>&1 || true
+    "${COMPOSE[@]}" -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build
+  else
+    exit 22
+  fi
+fi
 
 # machine-readable output for caller
 printf 'COMPOSE_PROJECT=%s\n' "$PROJECT"
