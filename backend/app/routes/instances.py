@@ -62,6 +62,23 @@ def _require_compose(inst: dict) -> tuple[str, str, str]:
     return compose_file, project, runtime_dir
 
 
+def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
+    """Backfill list/detail fields from instance_configs when legacy rows are partially empty."""
+    cfg = db.execute(
+        "SELECT telegram_bot_token, org_token, agent_name FROM instance_configs WHERE instance_id = ?",
+        (inst["id"],),
+    ).fetchone()
+    if cfg:
+        c = dict(cfg)
+        if not inst.get("telegram_bot_token") and c.get("telegram_bot_token"):
+            inst["telegram_bot_token"] = c.get("telegram_bot_token")
+        if not inst.get("org_token") and c.get("org_token"):
+            inst["org_token"] = c.get("org_token")
+        if not inst.get("agent_name") and c.get("agent_name"):
+            inst["agent_name"] = c.get("agent_name")
+    return inst
+
+
 @router.post("", response_model=InstanceResponse, status_code=status.HTTP_201_CREATED)
 def create_instance(
     payload: CreateInstanceRequest,
@@ -111,7 +128,8 @@ def list_instances(
         "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
         (current_user["id"],),
     ).fetchall()
-    return [_row_to_instance(row) for row in rows]
+    merged = [_merge_instance_config_fields(dict(row), db) for row in rows]
+    return [InstanceResponse(**row) for row in merged]
 
 
 @router.get("/{instance_id}", response_model=InstanceDetailResponse)
@@ -124,6 +142,8 @@ def get_instance(
     if inst.get("compose_project") and inst.get("install_state") in {"starting", "running", "failed"}:
         sync_instance_status(instance_id)
         inst = _get_instance_or_404(instance_id, current_user["id"], db)
+
+    inst = _merge_instance_config_fields(inst, db)
 
     events = db.execute(
         "SELECT * FROM install_events WHERE instance_id = ? ORDER BY id ASC",
