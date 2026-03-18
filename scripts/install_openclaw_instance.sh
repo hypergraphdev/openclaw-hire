@@ -269,6 +269,10 @@ fi
 
 CONTAINER_CLI="${PROJECT}-openclaw-cli-1"
 
+# ── Fix ownership post-start (workspace mounted separately, may be root-owned) ──
+# OpenClaw writes AGENTS.md etc on first run; node user (uid 1000) must own them
+docker exec --user root "$CONTAINER_GATEWAY" sh -c 'chown -R node:node /home/node/.openclaw' 2>/dev/null || true
+
 # ── npm install plugin inside container (in case host npm wasn't available) ──
 docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/hxa-connect ] && cd /home/node/.openclaw/extensions/hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
 
