@@ -223,7 +223,7 @@ write_openclaw_proxy_route "$INSTANCE_ID" "$OPENCLAW_GATEWAY_PORT"
 nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1 || true
 
 # ── Clone openclaw-hxa-connect plugin into extensions ─────────────────────────
-PLUGIN_DIR="$EXTENSIONS_DIR/hxa-connect"
+PLUGIN_DIR="$EXTENSIONS_DIR/openclaw-hxa-connect"
 if [[ -d "$PLUGIN_DIR/.git" ]]; then
   git -C "$PLUGIN_DIR" fetch --all --prune
   git -C "$PLUGIN_DIR" reset --hard origin/HEAD || git -C "$PLUGIN_DIR" pull --ff-only
