@@ -99,21 +99,43 @@ cat > "$OPENCLAW_JSON" <<OCJSON
     }
   },
   "models": {
+    "mode": "merge",
     "providers": {
       "anthropic": {
-        "enabled": true,
         "baseUrl": "$_ANTHROPIC_BASE",
-        "apiKey": "$_ANTHROPIC_TOKEN"
+        "apiKey": "$_ANTHROPIC_TOKEN",
+        "api": "anthropic-messages",
+        "models": [
+          {
+            "id": "claude-sonnet-4-5",
+            "name": "Claude Sonnet 4.5 (via sub2api)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 200000,
+            "maxTokens": 16000
+          }
+        ]
       }
-    },
-    "default": "$_DEFAULT_MODEL"
+    }
   }
 }
 OCJSON
-# Note: "apiKey" here is ANTHROPIC_AUTH_TOKEN (the sub2api Bearer token).
-# OpenClaw sends this as Authorization: Bearer <apiKey> to ANTHROPIC_BASE_URL.
-# No real sk-ant-api* key is needed when routing through sub2api gateway.
+# Notes:
+# - models.providers.anthropic.apiKey = ANTHROPIC_AUTH_TOKEN (sub2api bearer, NOT real sk-ant-api* key)
+# - models.providers.anthropic.api = "anthropic-messages" (required by custom provider schema)
+# - "enabled", "default" are NOT valid top-level openclaw.json keys
 chmod 600 "$OPENCLAW_JSON"
+
+# Fix ownership so container's node user (uid 1000) can read/write config.
+# Must run before compose up. Tolerates image not yet pulled (skips if it fails).
+_OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}"
+docker run --rm \
+  -v "$CONFIG_DIR:/home/node/.openclaw" \
+  --user root \
+  --entrypoint sh \
+  "$_OPENCLAW_IMAGE" \
+  -c 'chown -R 1000:1000 /home/node/.openclaw && echo owner_ok' 2>/dev/null || true
 
 # ── .env for compose ──────────────────────────────────────────────────────────
 cat > "$WORKDIR/.env" <<EOF
