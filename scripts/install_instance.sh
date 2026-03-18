@@ -112,8 +112,10 @@ PY
 
 patch_zylos_c4_health_gate() {
   local receive_js="$1/.claude/skills/comm-bridge/scripts/c4-receive.js"
-  [[ -f "$receive_js" ]] || return 0
-  RECEIVE_JS="$receive_js" python3 - <<'PY'
+  local dispatcher_js="$1/.claude/skills/comm-bridge/scripts/c4-dispatcher.js"
+
+  if [[ -f "$receive_js" ]]; then
+    RECEIVE_JS="$receive_js" python3 - <<'PY'
 from pathlib import Path
 import os
 p = Path(os.environ['RECEIVE_JS'])
@@ -127,6 +129,24 @@ if old in text:
 else:
     print('skip', p)
 PY
+  fi
+
+  if [[ -f "$dispatcher_js" ]]; then
+    DISPATCHER_JS="$dispatcher_js" python3 - <<'PY'
+from pathlib import Path
+import os
+p = Path(os.environ['DISPATCHER_JS'])
+text = p.read_text()
+old = "if (agentState.health !== 'ok' && !bypass) {"
+new = "if (agentState.health !== 'ok' && (agentState.state === 'offline' || agentState.state === 'stopped') && !bypass) {"
+if old in text:
+    text = text.replace(old, new, 1)
+    p.write_text(text)
+    print('patched', p)
+else:
+    print('skip', p)
+PY
+  fi
 }
 
 mkdir -p "$WORKDIR"

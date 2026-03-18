@@ -272,6 +272,20 @@ def _write_env_file(path: Path, env: dict[str, str]) -> None:
     path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
 
 
+def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> bool:
+    """Best effort: sync key envs into instance's own runtime .env (e.g., zylos-data/.env)."""
+    try:
+        zylos_env = Path(runtime_dir) / "zylos-data" / ".env"
+        if not zylos_env.exists():
+            return False
+        env = _read_env_file(zylos_env)
+        env.update(updates)
+        _write_env_file(zylos_env, env)
+        return True
+    except Exception:
+        return False
+
+
 def configure_instance_telegram(
     instance_id: str,
     telegram_bot_token: str,
@@ -286,7 +300,7 @@ def configure_instance_telegram(
     env_path = Path(runtime_dir) / ".env"
 
     env = _read_env_file(env_path)
-    env.update({
+    updates = {
         "TELEGRAM_BOT_TOKEN": telegram_bot_token,
         "TELEGRAM_ENABLE_GROUPS": "true",
         "TELEGRAM_ENABLE_DMS": "true",
@@ -296,8 +310,11 @@ def configure_instance_telegram(
         "ORG_TOKEN": org_token,
         "HXA_PLUGIN": plugin,
         "PLUGIN_NAME": plugin,
-    })
+    }
+    env.update(updates)
     _write_env_file(env_path, env)
+
+    runtime_env_synced = _sync_instance_runtime_env(runtime_dir, updates)
 
     wd = Path(runtime_dir)
     env_file = str(env_path)
@@ -333,6 +350,19 @@ def configure_instance_telegram(
         )
         conn.commit()
 
-    _add_install_event(instance_id, "running", f"Telegram configured. Plugin {plugin} linked to org {_ORG_ID}.")
+    plugin_installed = (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists() or (Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / plugin).exists()
+
+    notes: list[str] = ["配置完成：可通过 Telegram 在群聊和私信联系该实例。"]
+    if runtime_env_synced:
+        notes.append("实例内部 .env 已同步。")
+    else:
+        notes.append("实例内部 .env 未找到，已仅写入 runtime .env。")
+    if plugin_installed:
+        notes.append(f"插件 {plugin} 已检测到。")
+    else:
+        notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
+
+    msg = " ".join(notes)
+    _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
-    return True, "配置完成：可通过 Telegram 在群聊和私信联系该实例。", org_token, plugin
+    return True, msg, org_token, plugin
