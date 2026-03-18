@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -46,15 +45,18 @@ def _add_install_event(instance_id: str, state: str, message: str) -> None:
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    out = (proc.stdout or "").strip()
-    return proc.returncode, out
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        out = (proc.stdout or "").strip()
+        return proc.returncode, out
+    except FileNotFoundError as exc:
+        return 127, str(exc)
 
 
 def _compose_up(compose_file: Path, project: str, workdir: Path) -> tuple[int, str]:
@@ -144,59 +146,42 @@ def _run_install(instance_id: str) -> None:
 
     product = row["product"]
     repo_url = row["repo_url"]
-    project = f"hire_{instance_id.replace('-', '')[:16]}"
-    workdir = RUNTIME_ROOT / instance_id
-    repo_dir = workdir / "repo"
 
     try:
         RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
-        workdir.mkdir(parents=True, exist_ok=True)
 
         _set_instance_state(instance_id, "pulling", status="installing")
         _add_install_event(instance_id, "pulling", f"Preparing source for {product}: {repo_url}")
-
-        if repo_dir.exists():
-            if (repo_dir / ".git").exists():
-                rc, out = _run(["git", "-C", str(repo_dir), "fetch", "--all", "--prune"])
-                if rc != 0:
-                    raise RuntimeError(f"git fetch failed: {out[:800]}")
-                rc, out = _run(["git", "-C", str(repo_dir), "reset", "--hard", "origin/HEAD"])
-                if rc != 0:
-                    rc, out = _run(["git", "-C", str(repo_dir), "pull", "--ff-only"])
-                    if rc != 0:
-                        raise RuntimeError(f"git pull failed: {out[:800]}")
-            else:
-                shutil.rmtree(repo_dir, ignore_errors=True)
-                rc, out = _run(["git", "clone", "--depth", "1", repo_url, str(repo_dir)])
-                if rc != 0:
-                    raise RuntimeError(f"git clone failed: {out[:800]}")
-        else:
-            rc, out = _run(["git", "clone", "--depth", "1", repo_url, str(repo_dir)])
-            if rc != 0:
-                raise RuntimeError(f"git clone failed: {out[:800]}")
-
         _set_instance_state(instance_id, "configuring")
-        _add_install_event(instance_id, "configuring", "Detecting docker compose file...")
+        _add_install_event(instance_id, "configuring", "Running installer script and detecting compose file...")
+        _set_instance_state(instance_id, "starting")
 
-        compose_file = _find_compose_file(repo_dir)
-        if compose_file is None:
-            raise RuntimeError("No docker compose file found (checked docker-compose.yml/compose.yml and docker/* variants).")
+        script = Path("/home/wwwroot/openclaw-hire/scripts/install_instance.sh")
+        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)])
+        if rc != 0:
+            raise RuntimeError(out[:2000])
+
+        # Parse machine-readable installer output
+        meta: dict[str, str] = {}
+        for line in out.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                meta[k.strip()] = v.strip()
+
+        project = meta.get("COMPOSE_PROJECT")
+        compose_file = meta.get("COMPOSE_FILE")
+        runtime_dir = meta.get("RUNTIME_DIR")
+        if not project or not compose_file or not runtime_dir:
+            raise RuntimeError(f"Installer output missing metadata: {out[:500]}")
 
         with get_connection() as conn:
             conn.execute(
                 "UPDATE instances SET compose_project = ?, compose_file = ?, runtime_dir = ?, updated_at = ? WHERE id = ?",
-                (project, str(compose_file), str(workdir), _utc_now(), instance_id),
+                (project, compose_file, runtime_dir, _utc_now(), instance_id),
             )
             conn.commit()
 
-        _set_instance_state(instance_id, "starting")
-        _add_install_event(instance_id, "starting", f"Running docker compose up for project {project}...")
-
-        rc, out = _compose_up(compose_file, project, repo_dir)
-        if rc != 0:
-            raise RuntimeError(out[:2000])
-
-        _add_install_event(instance_id, "starting", "docker compose command finished, verifying containers...")
+        _add_install_event(instance_id, "starting", f"Installer finished, verifying containers for project {project}...")
         _sync_runtime_status(instance_id, project)
 
     except Exception as exc:
