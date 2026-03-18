@@ -796,10 +796,3 @@ def configure_instance_telegram(
     _sync_runtime_status(instance_id, project)
     return True, msg, org_token_display, plugin, agent_name
 
-ssage[:180]}")
-
-    msg = " ".join(notes)
-    _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
-    _sync_runtime_status(instance_id, project)
-    return True, msg, org_token_display, plugin, agent_name
-
