@@ -590,11 +590,14 @@ def configure_instance_telegram(
     env_file = str(env_path)
 
     # Bring down then up with updated env-file.
-    _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "down"], cwd=wd)
-    rc, out = _run(["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
+    # Use _compose_control/_compose_up which already handle docker compose vs docker-compose fallback.
+    _compose_control(compose_file, project, runtime_dir, "down")
+    rc, out = _run(
+        ["docker", "compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd
+    )
     if rc != 0:
-        _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "down"], cwd=wd)
-        rc, out = _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
+        # Fallback: use _compose_up which also tries docker-compose
+        rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
 
     if rc != 0:
         return False, f"Compose restart failed: {out[:500]}", org_token_display, plugin, agent_name
