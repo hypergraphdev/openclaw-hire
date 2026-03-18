@@ -2,16 +2,20 @@ import { useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard", icon: "▦" },
-  { to: "/catalog", label: "Product Catalog", icon: "◈" },
-  { to: "/instances", label: "My Instances", icon: "⊞" },
-];
+function navItems(isAdmin: boolean) {
+  return [
+    { to: "/dashboard", label: "Dashboard", icon: "▦" },
+    { to: "/catalog", label: "Product Catalog", icon: "◈" },
+    { to: "/instances", label: "My Instances", icon: "⊞" },
+    ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: "⚙" }] : []),
+  ];
+}
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const items = navItems(Boolean(user?.is_admin));
 
   function handleLogout() {
     logout();
@@ -34,7 +38,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {mobileMenuOpen && (
           <div className="border-t border-gray-800 px-3 py-3 space-y-1">
-            {NAV_ITEMS.map(({ to, label, icon }) => (
+            {items.map(({ to, label, icon }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -78,7 +82,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
 
           <nav className="flex-1 px-3 py-4 space-y-1">
-            {NAV_ITEMS.map(({ to, label, icon }) => (
+            {items.map(({ to, label, icon }) => (
               <NavLink
                 key={to}
                 to={to}

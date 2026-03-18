@@ -1,4 +1,4 @@
-import type { AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -98,4 +98,9 @@ export const api = {
     };
     return { user, summary } as DashboardData;
   }),
+
+  adminUsers: () => request<User[]>("/api/admin/users"),
+
+  adminUserInstances: (userId: string) =>
+    request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
 };

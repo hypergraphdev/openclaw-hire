@@ -8,6 +8,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { InstancesPage } from "./pages/InstancesPage";
 import { InstanceDetailPage } from "./pages/InstanceDetailPage";
+import { AdminPage } from "./pages/AdminPage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -38,6 +39,20 @@ function PublicRoute({ children }: { children: ReactNode }) {
   }
   if (user) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="text-gray-500 text-sm">Loading...</div>
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/dashboard" replace />;
+  return <Layout>{children}</Layout>;
 }
 
 export default function App() {
@@ -91,6 +106,14 @@ export default function App() {
               <ProtectedRoute>
                 <InstanceDetailPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             }
           />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -6,6 +6,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "openclaw_hire.db"
+ADMIN_EMAIL = "web8stars@gmail.com"
 
 
 def get_connection() -> sqlite3.Connection:
@@ -24,6 +25,7 @@ def init_db() -> None:
                 email TEXT NOT NULL UNIQUE,
                 company_name TEXT,
                 password_hash TEXT,
+                is_admin INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )
         """)
@@ -81,10 +83,15 @@ def init_db() -> None:
 def _migrate_existing_db() -> None:
     """Add new columns and tables to existing database without data loss."""
     with get_connection() as conn:
-        # Add password_hash to users if missing
+        # Add password_hash / is_admin to users if missing
         user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
         if "password_hash" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        if "is_admin" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
+        # Keep specific admin account promoted
+        conn.execute("UPDATE users SET is_admin = 1 WHERE lower(email) = lower(?)", (ADMIN_EMAIL,))
 
         # Create instances table from employees if needed
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}

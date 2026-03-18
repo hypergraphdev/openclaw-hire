@@ -3,6 +3,7 @@ export type User = {
   name: string;
   email: string;
   company_name?: string | null;
+  is_admin?: boolean;
   created_at: string;
 };
 
@@ -93,4 +94,9 @@ export type DashboardSummary = {
 export type DashboardData = {
   user: User;
   summary: DashboardSummary;
+};
+
+export type AdminUserInstances = {
+  user: User;
+  instances: Instance[];
 };

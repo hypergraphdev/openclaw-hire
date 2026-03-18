@@ -69,6 +69,14 @@ def create_instance(
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceResponse:
     product = PRODUCT_MAP[payload.product]
+    if not bool(current_user.get("is_admin", 0)):
+        cnt = db.execute("SELECT COUNT(*) AS c FROM instances WHERE owner_id = ?", (current_user["id"],)).fetchone()["c"]
+        if cnt >= 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Regular users can only create one instance. Contact admin for quota increase.",
+            )
+
     instance_id = f"inst_{uuid4().hex[:12]}"
     now = _utc_now()
 

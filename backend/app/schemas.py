@@ -45,6 +45,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     company_name: Optional[str] = None
+    is_admin: bool = False
     created_at: str
 
 
@@ -184,6 +185,11 @@ class InstanceLogsResponse(BaseModel):
     instance_id: str
     compose_project: Optional[str] = None
     logs: str
+
+
+class AdminUserInstancesResponse(BaseModel):
+    user: UserResponse
+    instances: list[InstanceResponse]
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
