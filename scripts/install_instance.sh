@@ -252,17 +252,36 @@ if [[ "$PRODUCT" == "zylos" ]]; then
   COMPOSE_ARGS+=(--env-file "$WORKDIR/.env")
 fi
 
-# First attempt
-if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build; then
-  # legacy cleanup path for old upstream hardcoded zylos container name
-  if [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
+# First attempt (with zylos bind-conflict auto-heal)
+compose_log="$(mktemp)"
+if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1; then
+  if [[ "$PRODUCT" == "zylos" ]] && grep -qi 'failed to bind host port' "$compose_log"; then
+    echo "WARN: bind port conflict detected, auto-allocating new ports" >&2
+    for _ in $(seq 1 8); do
+      WEB_CONSOLE_PORT=$((WEB_CONSOLE_PORT + 1))
+      HTTP_PORT=$((HTTP_PORT + 1))
+      sed -i "s/^WEB_CONSOLE_PORT=.*/WEB_CONSOLE_PORT=${WEB_CONSOLE_PORT}/" "$WORKDIR/.env"
+      sed -i "s/^HTTP_PORT=.*/HTTP_PORT=${HTTP_PORT}/" "$WORKDIR/.env"
+      write_zylos_proxy_route "$INSTANCE_ID" "$WEB_CONSOLE_PORT"
+      if "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1; then
+        break
+      fi
+      if ! grep -qi 'failed to bind host port' "$compose_log"; then
+        break
+      fi
+    done
+  elif [[ "$PRODUCT" == "zylos" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'zylos'; then
+    # legacy cleanup path for old upstream hardcoded zylos container name
     echo "WARN: retry after removing conflicting legacy 'zylos' container" >&2
     docker rm -f zylos >/dev/null 2>&1 || true
-    "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build
+    "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1
   else
+    cat "$compose_log" >&2 || true
+    rm -f "$compose_log" >/dev/null 2>&1 || true
     exit 22
   fi
 fi
+rm -f "$compose_log" >/dev/null 2>&1 || true
 
 if [[ "$PRODUCT" == "zylos" ]]; then
   # zylos can show container=Up while app ports are still dead; verify runtime endpoints are reachable.
