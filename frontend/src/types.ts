@@ -30,6 +30,7 @@ export type Instance = {
   compose_file?: string | null;
   runtime_dir?: string | null;
   web_console_port?: number | null;
+  web_console_url?: string | null;
   http_port?: number | null;
   telegram_bot_token?: string | null;
   org_token?: string | null;

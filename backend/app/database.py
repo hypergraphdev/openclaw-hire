@@ -40,6 +40,7 @@ def init_db() -> None:
                 compose_file TEXT,
                 runtime_dir TEXT,
                 web_console_port INTEGER,
+                web_console_url TEXT,
                 http_port INTEGER,
                 telegram_bot_token TEXT,
                 org_token TEXT,
@@ -135,6 +136,8 @@ def _migrate_existing_db() -> None:
                 conn.execute("ALTER TABLE instances ADD COLUMN web_console_port INTEGER")
             if "http_port" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN http_port INTEGER")
+            if "web_console_url" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN web_console_url TEXT")
             if "telegram_bot_token" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN telegram_bot_token TEXT")
             if "org_token" not in inst_cols:

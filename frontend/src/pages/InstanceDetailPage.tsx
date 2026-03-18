@@ -217,8 +217,24 @@ export function InstanceDetailPage() {
                 <dd className="text-gray-300 text-xs font-mono">{instance.web_console_port ?? "-"}</dd>
               </div>
               <div>
+                <dt className="text-xs text-gray-500">Web Console URL</dt>
+                <dd className="text-xs break-all">
+                  {instance.web_console_url ? (
+                    <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+                      {instance.web_console_url}
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-xs text-gray-500">HTTP Port</dt>
                 <dd className="text-gray-300 text-xs font-mono">{instance.http_port ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Console Password</dt>
+                <dd className="text-gray-400 text-xs">Not managed by platform (use app-side credentials if prompted)</dd>
               </div>
               <div>
                 <dt className="text-xs text-gray-500">Runtime Dir</dt>

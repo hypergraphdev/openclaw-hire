@@ -136,6 +136,7 @@ class InstanceResponse(BaseModel):
     compose_file: Optional[str] = None
     runtime_dir: Optional[str] = None
     web_console_port: Optional[int] = None
+    web_console_url: Optional[str] = None
     http_port: Optional[int] = None
     telegram_bot_token: Optional[str] = None
     org_token: Optional[str] = None

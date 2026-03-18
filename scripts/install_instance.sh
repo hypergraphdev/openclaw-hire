@@ -25,6 +25,41 @@ REPO_DIR="$WORKDIR/repo"
 PROJECT="hire_${INSTANCE_ID//-/}"
 PROJECT="${PROJECT:0:24}"
 
+NGINX_VHOST_CONF="/usr/local/nginx/conf/vhost/www.ucai.net.conf"
+ZYLOS_PROXY_DIR="/usr/local/nginx/conf/vhost/zylos-instances"
+
+ensure_zylos_proxy_include() {
+  mkdir -p "$ZYLOS_PROXY_DIR"
+  if [[ -f "$NGINX_VHOST_CONF" ]] && ! grep -q "zylos-instances/\*.conf" "$NGINX_VHOST_CONF"; then
+    # Insert include before generic /connect location so specific zylos routes are available.
+    sed -i '/# HXA-Connect/i\    include /usr/local/nginx/conf/vhost/zylos-instances/*.conf;' "$NGINX_VHOST_CONF"
+  fi
+}
+
+write_zylos_proxy_route() {
+  local id="$1"
+  local port="$2"
+  local conf="$ZYLOS_PROXY_DIR/${id}.conf"
+  cat > "$conf" <<EOF
+location = /connect/zylos/${id} {
+    return 301 /connect/zylos/${id}/;
+}
+location ^~ /connect/zylos/${id}/ {
+    proxy_pass http://127.0.0.1:${port}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+}
+EOF
+  nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1 || true
+}
+
 mkdir -p "$WORKDIR"
 
 if [[ -d "$REPO_DIR/.git" ]]; then
@@ -105,6 +140,10 @@ EOF
 
   COMPOSE_FILE="$PATCHED_COMPOSE"
   export WEB_CONSOLE_PORT HTTP_PORT INSTANCE_DATA_DIR INSTANCE_CLAUDE_DIR
+
+  # Public reverse proxy path: https://www.ucai.net/connect/zylos/<instance_id>/
+  ensure_zylos_proxy_include
+  write_zylos_proxy_route "$INSTANCE_ID" "$WEB_CONSOLE_PORT"
 fi
 
 COMPOSE_ARGS=(-f "$COMPOSE_FILE" -p "$PROJECT")
@@ -165,3 +204,6 @@ printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
 printf 'REPO_DIR=%s\n' "$REPO_DIR"
 printf 'WEB_CONSOLE_PORT=%s\n' "$WEB_CONSOLE_PORT"
 printf 'HTTP_PORT=%s\n' "$HTTP_PORT"
+if [[ "$PRODUCT" == "zylos" ]]; then
+  printf 'WEB_CONSOLE_URL=%s\n' "https://www.ucai.net/connect/zylos/${INSTANCE_ID}/"
+fi
