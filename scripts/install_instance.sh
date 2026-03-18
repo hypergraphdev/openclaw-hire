@@ -227,7 +227,7 @@ text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INST
 # Ensure default auth + model are injected for every new zylos instance
 if "ANTHROPIC_BASE_URL:" not in text:
     anchor = "      CLAUDE_BYPASS_PERMISSIONS: ${CLAUDE_BYPASS_PERMISSIONS:-true}"
-    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"${ANTHROPIC_AUTH_TOKEN:-}\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
+    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"${ANTHROPIC_AUTH_TOKEN:-}\"\n      ANTHROPIC_API_KEY: \"${ANTHROPIC_API_KEY:-${ANTHROPIC_AUTH_TOKEN:-}}\"\n      CLAUDE_CODE_OAUTH_TOKEN: \"${CLAUDE_CODE_OAUTH_TOKEN:-}\"\n      OPENAI_API_KEY: \"${OPENAI_API_KEY:-${CODEX_API_KEY:-}}\"\n      CODEX_API_KEY: \"${CODEX_API_KEY:-${OPENAI_API_KEY:-}}\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
     text = text.replace(anchor, insert)
 
 out.write_text(text)
@@ -237,7 +237,10 @@ PY
   cat > "$WORKDIR/.env" <<EOF
 ANTHROPIC_BASE_URL=http://172.17.0.1:18080
 ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-${ANTHROPIC_AUTH_TOKEN:-}}
+CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+OPENAI_API_KEY=${OPENAI_API_KEY:-${CODEX_API_KEY:-}}
+CODEX_API_KEY=${CODEX_API_KEY:-${OPENAI_API_KEY:-}}
 ANTHROPIC_MODEL=claude-sonnet-4-5
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 TELEGRAM_ENABLE_GROUPS=${TELEGRAM_ENABLE_GROUPS:-true}

@@ -427,6 +427,13 @@ def configure_instance_telegram(
     org_token_display = f"server-managed:{_ORG_SECRET[-6:]}" if len(_ORG_SECRET) >= 6 else "server-managed"
 
     env = _read_env_file(env_path)
+    # propagate auth envs into runtime zylos/.env so startup auth checks pass
+    auth_token = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    anthropic_api_key = env.get("ANTHROPIC_API_KEY", "") or auth_token
+    claude_oauth = env.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    openai_api_key = env.get("OPENAI_API_KEY", "")
+    codex_api_key = env.get("CODEX_API_KEY", "")
+
     updates = {
         "TELEGRAM_BOT_TOKEN": telegram_bot_token,
         "TELEGRAM_ENABLE_GROUPS": "true",
@@ -442,6 +449,11 @@ def configure_instance_telegram(
         "HXA_CONNECT_AGENT_NAME": agent_name,
         "HXA_PLUGIN": plugin,
         "PLUGIN_NAME": plugin,
+        "ANTHROPIC_AUTH_TOKEN": auth_token,
+        "ANTHROPIC_API_KEY": anthropic_api_key,
+        "CLAUDE_CODE_OAUTH_TOKEN": claude_oauth,
+        "OPENAI_API_KEY": openai_api_key,
+        "CODEX_API_KEY": codex_api_key,
     }
     env.update(updates)
     _write_env_file(env_path, env)
