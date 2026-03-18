@@ -240,6 +240,7 @@ def stop_instance(instance_id: str, compose_file: str, project: str, runtime_dir
 def restart_instance(instance_id: str, compose_file: str, project: str, runtime_dir: str) -> tuple[bool, str]:
     rc, out = _compose_control(compose_file, project, runtime_dir, "restart")
     if rc == 0:
+        _patch_zylos_web_console(runtime_dir)
         _sync_runtime_status(instance_id, project)
         _add_install_event(instance_id, "running", "Instance restarted.")
         return True, out
@@ -270,6 +271,25 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 def _write_env_file(path: Path, env: dict[str, str]) -> None:
     path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+
+
+def _patch_zylos_web_console(runtime_dir: str) -> bool:
+    """Best effort: keep web-console basePath compatible with /connect/zylos/<id>."""
+    try:
+        app_js = Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / "web-console" / "public" / "app.js"
+        if not app_js.exists():
+            return False
+        text = app_js.read_text()
+        old_detect = """  detectBasePath() {\n    const path = window.location.pathname;\n    if (path.startsWith('/console')) {\n      return '/console';\n    }\n    return '';\n  }\n"""
+        new_detect = """  detectBasePath() {\n    const path = window.location.pathname;\n    if (path.startsWith('/console')) {\n      return '/console';\n    }\n    const m = path.match(/^\\/(connect\\/zylos\\/[^/]+)/);\n    if (m) {\n      return `/${m[1]}`;\n    }\n    return '';\n  }\n"""
+        text = text.replace(old_detect, new_detect)
+        old_auth = "const basePath = window.location.pathname.startsWith('/console') ? '/console' : '';"
+        new_auth = "const m = window.location.pathname.match(/^\\/(connect\\/zylos\\/[^/]+)/);\\n  const basePath = window.location.pathname.startsWith('/console') ? '/console' : (m ? `/${m[1]}` : '');"
+        text = text.replace(old_auth, new_auth)
+        app_js.write_text(text)
+        return True
+    except Exception:
+        return False
 
 
 def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> bool:
@@ -315,6 +335,7 @@ def configure_instance_telegram(
     _write_env_file(env_path, env)
 
     runtime_env_synced = _sync_instance_runtime_env(runtime_dir, updates)
+    web_console_patched = _patch_zylos_web_console(runtime_dir) if product == "zylos" else False
 
     wd = Path(runtime_dir)
     env_file = str(env_path)
@@ -361,6 +382,8 @@ def configure_instance_telegram(
         notes.append(f"插件 {plugin} 已检测到。")
     else:
         notes.append(f"插件 {plugin} 未检测到（需在实例内安装后才会真正入组织）。")
+    if product == "zylos":
+        notes.append("Web Console 路径补丁已应用。" if web_console_patched else "Web Console 路径补丁未应用。")
 
     msg = " ".join(notes)
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
