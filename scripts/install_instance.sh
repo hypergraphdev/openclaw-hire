@@ -68,6 +68,8 @@ from pathlib import Path
 import os, re
 p = Path(os.environ['APP_JS'])
 text = p.read_text()
+
+# 1) Patch class detectBasePath()
 old = '''  detectBasePath() {
     const path = window.location.pathname;
     if (path.startsWith('/console')) {
@@ -97,6 +99,12 @@ if old in text:
     text = text.replace(old, new)
 else:
     text = re.sub(r"detectBasePath\(\) \{[\s\S]*?\n  \}\n", new, text, count=1)
+
+# 2) Patch auth-guard basePath computation
+old2 = "const basePath = window.location.pathname.startsWith('/console') ? '/console' : '';"
+new2 = "const m = window.location.pathname.match(/^\\\/(connect\\\/zylos\\\/[^/]+)/);\n  const basePath = window.location.pathname.startsWith('/console') ? '/console' : (m ? `/${m[1]}` : '');"
+text = text.replace(old2, new2)
+
 p.write_text(text)
 print('patched', p)
 PY
