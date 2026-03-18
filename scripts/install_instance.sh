@@ -207,10 +207,9 @@ text = text.replace("- zylos-data:/home/zylos/zylos", f"- {os.environ['INSTANCE_
 text = text.replace("- claude-config:/home/zylos/.claude", f"- {os.environ['INSTANCE_CLAUDE_DIR']}:/home/zylos/.claude")
 
 # Ensure default auth + model are injected for every new zylos instance
-text = text.replace("${ANTHROPIC_API_KEY:-}", "sk-ant-proxy-via-sub2api")
 if "ANTHROPIC_BASE_URL:" not in text:
     anchor = "      CLAUDE_BYPASS_PERMISSIONS: ${CLAUDE_BYPASS_PERMISSIONS:-true}"
-    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"${ANTHROPIC_AUTH_TOKEN:-}\"\n      ANTHROPIC_API_KEY: \"${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
+    insert = anchor + "\n      ANTHROPIC_BASE_URL: \"http://172.17.0.1:18080\"\n      ANTHROPIC_AUTH_TOKEN: \"${ANTHROPIC_AUTH_TOKEN:-}\"\n      ANTHROPIC_MODEL: \"claude-sonnet-4-5\""
     text = text.replace(anchor, insert)
 
 out.write_text(text)
@@ -220,7 +219,6 @@ PY
   cat > "$WORKDIR/.env" <<EOF
 ANTHROPIC_BASE_URL=http://172.17.0.1:18080
 ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-proxy-via-sub2api}
 ANTHROPIC_MODEL=claude-sonnet-4-5
 WEB_CONSOLE_PORT=$WEB_CONSOLE_PORT
 HTTP_PORT=$HTTP_PORT
