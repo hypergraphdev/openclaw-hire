@@ -252,7 +252,8 @@ def configure_instance(
     )
 
     if not ok:
-        raise HTTPException(status_code=500, detail=message)
+        duplicate_hint = "already used by instance" in (message or "")
+        raise HTTPException(status_code=409 if duplicate_hint else 500, detail=message)
 
     return ConfigureTelegramResponse(
         instance_id=instance_id,
