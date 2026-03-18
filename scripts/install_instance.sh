@@ -62,6 +62,11 @@ EOF
 
 patch_zylos_web_console_basepath() {
   local app_js="$1/.claude/skills/web-console/public/app.js"
+  # web-console assets may appear a bit later after first boot; wait briefly.
+  for _ in $(seq 1 30); do
+    [[ -f "$app_js" ]] && break
+    sleep 2
+  done
   [[ -f "$app_js" ]] || return 0
   APP_JS="$app_js" python3 - <<'PY'
 from pathlib import Path
@@ -69,16 +74,8 @@ import os, re
 p = Path(os.environ['APP_JS'])
 text = p.read_text()
 
-# 1) Patch class detectBasePath()
-old = '''  detectBasePath() {
-    const path = window.location.pathname;
-    if (path.startsWith('/console')) {
-      return '/console';
-    }
-    return '';
-  }
-'''
-new = '''  detectBasePath() {
+# 1) Robustly patch detectBasePath()
+new_detect = '''  detectBasePath() {
     const path = window.location.pathname;
 
     // /console -> /console
@@ -95,15 +92,15 @@ new = '''  detectBasePath() {
     return '';
   }
 '''
-if old in text:
-    text = text.replace(old, new)
-else:
-    text = re.sub(r"detectBasePath\(\) \{[\s\S]*?\n  \}\n", new, text, count=1)
+text = re.sub(r"\n\s*detectBasePath\(\) \{[\s\S]*?\n\s*\}\n", "\n" + new_detect, text, count=1)
 
-# 2) Patch auth-guard basePath computation
-old2 = "const basePath = window.location.pathname.startsWith('/console') ? '/console' : '';"
-new2 = "const m = window.location.pathname.match(/^\\\/(connect\\\/zylos\\\/[^/]+)/);\n  const basePath = window.location.pathname.startsWith('/console') ? '/console' : (m ? `/${m[1]}` : '');"
-text = text.replace(old2, new2)
+# 2) Robustly patch auth-guard basePath computation
+text = re.sub(
+    r"const basePath = window\.location\.pathname\.startsWith\('/console'\) \? '/console' : '';",
+    "const m = window.location.pathname.match(/^\\/(connect\\/zylos\\/[^/]+)/);\n  const basePath = window.location.pathname.startsWith('/console') ? '/console' : (m ? `/${m[1]}` : '');",
+    text,
+    count=1,
+)
 
 p.write_text(text)
 print('patched', p)
@@ -318,6 +315,28 @@ if [[ "$PRODUCT" == "zylos" ]]; then
 
   # Patch web console base-path handling so /connect/zylos/<id>/ keeps API/WS prefix.
   patch_zylos_web_console_basepath "$INSTANCE_DATA_DIR"
+  # Also patch repo template to survive future self-heal restarts/re-inits.
+  if [[ -f "$REPO_DIR/skills/web-console/public/app.js" ]]; then
+    APP_JS="$REPO_DIR/skills/web-console/public/app.js" python3 - <<'PY'
+from pathlib import Path
+import os, re
+p = Path(os.environ['APP_JS'])
+text = p.read_text()
+text = re.sub(r"\n\s*detectBasePath\(\) \{[\s\S]*?\n\s*\}\n", '''
+  detectBasePath() {
+    const path = window.location.pathname;
+    if (path.startsWith('/console')) return '/console';
+    const m = path.match(/^\/(connect\/zylos\/[^/]+)/);
+    return m ? `/${m[1]}` : '';
+  }
+''', text, count=1)
+text = re.sub(r"const basePath = window\.location\.pathname\.startsWith\('/console'\) \? '/console' : '';",
+              "const m = window.location.pathname.match(/^\\/(connect\\/zylos\\/[^/]+)/);\n  const basePath = window.location.pathname.startsWith('/console') ? '/console' : (m ? `/${m[1]}` : '');",
+              text, count=1)
+p.write_text(text)
+print('patched', p)
+PY
+  fi
   # Relax false-negative health gate for comm-bridge when agent is actually idle/busy.
   patch_zylos_c4_health_gate "$INSTANCE_DATA_DIR"
 fi
