@@ -106,9 +106,9 @@ export function InstanceDetailPage() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="mb-6 space-y-4">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold text-white">{instance.name}</h1>
             <StatusPill state={instance.install_state} size="md" />
           </div>
@@ -118,7 +118,7 @@ export function InstanceDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canInstall && (
             <button
               onClick={handleInstall}
