@@ -135,6 +135,8 @@ class InstanceResponse(BaseModel):
     compose_project: Optional[str] = None
     compose_file: Optional[str] = None
     runtime_dir: Optional[str] = None
+    web_console_port: Optional[int] = None
+    http_port: Optional[int] = None
     created_at: str
     updated_at: str
 

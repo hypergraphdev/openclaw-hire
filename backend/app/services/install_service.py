@@ -171,13 +171,23 @@ def _run_install(instance_id: str) -> None:
         project = meta.get("COMPOSE_PROJECT")
         compose_file = meta.get("COMPOSE_FILE")
         runtime_dir = meta.get("RUNTIME_DIR")
+        web_console_port = meta.get("WEB_CONSOLE_PORT") or None
+        http_port = meta.get("HTTP_PORT") or None
         if not project or not compose_file or not runtime_dir:
             raise RuntimeError(f"Installer output missing metadata: {out[:500]}")
 
         with get_connection() as conn:
             conn.execute(
-                "UPDATE instances SET compose_project = ?, compose_file = ?, runtime_dir = ?, updated_at = ? WHERE id = ?",
-                (project, compose_file, runtime_dir, _utc_now(), instance_id),
+                "UPDATE instances SET compose_project = ?, compose_file = ?, runtime_dir = ?, web_console_port = ?, http_port = ?, updated_at = ? WHERE id = ?",
+                (
+                    project,
+                    compose_file,
+                    runtime_dir,
+                    int(web_console_port) if web_console_port else None,
+                    int(http_port) if http_port else None,
+                    _utc_now(),
+                    instance_id,
+                ),
             )
             conn.commit()
 

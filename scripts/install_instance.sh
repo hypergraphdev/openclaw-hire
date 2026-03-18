@@ -50,6 +50,9 @@ fi
 
 # For zylos, patch to instance-specific runtime paths + unique container name/ports.
 # This avoids multi-instance conflicts (container_name/ports/volumes).
+WEB_CONSOLE_PORT=""
+HTTP_PORT=""
+
 if [[ "$PRODUCT" == "zylos" ]]; then
   HASH=$(echo -n "$INSTANCE_ID" | cksum | awk '{print $1}')
   WEB_CONSOLE_PORT=$((34000 + HASH % 1000))
@@ -99,3 +102,5 @@ printf 'COMPOSE_PROJECT=%s\n' "$PROJECT"
 printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
 printf 'RUNTIME_DIR=%s\n' "$WORKDIR"
 printf 'REPO_DIR=%s\n' "$REPO_DIR"
+printf 'WEB_CONSOLE_PORT=%s\n' "$WEB_CONSOLE_PORT"
+printf 'HTTP_PORT=%s\n' "$HTTP_PORT"

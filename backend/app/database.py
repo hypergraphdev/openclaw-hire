@@ -39,6 +39,8 @@ def init_db() -> None:
                 compose_project TEXT,
                 compose_file TEXT,
                 runtime_dir TEXT,
+                web_console_port INTEGER,
+                http_port INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (owner_id) REFERENCES users (id)
@@ -112,6 +114,10 @@ def _migrate_existing_db() -> None:
                 conn.execute("ALTER TABLE instances ADD COLUMN compose_file TEXT")
             if "runtime_dir" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN runtime_dir TEXT")
+            if "web_console_port" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN web_console_port INTEGER")
+            if "http_port" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN http_port INTEGER")
 
         if "install_events" not in tables:
             conn.execute("""

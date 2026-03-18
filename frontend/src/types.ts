@@ -29,6 +29,8 @@ export type Instance = {
   compose_project?: string | null;
   compose_file?: string | null;
   runtime_dir?: string | null;
+  web_console_port?: number | null;
+  http_port?: number | null;
   created_at: string;
   updated_at: string;
 };

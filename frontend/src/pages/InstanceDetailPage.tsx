@@ -181,8 +181,28 @@ export function InstanceDetailPage() {
                 <dd className="text-gray-300 capitalize">{PRODUCT_LABELS[instance.product] ?? instance.product}</dd>
               </div>
               <div>
+                <dt className="text-xs text-gray-500">Instance ID</dt>
+                <dd className="text-gray-300 text-xs font-mono break-all">{instance.id}</dd>
+              </div>
+              <div>
                 <dt className="text-xs text-gray-500">Status</dt>
                 <dd><StatusPill state={instance.status} /></dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Compose Project</dt>
+                <dd className="text-gray-300 text-xs font-mono break-all">{instance.compose_project || "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Web Console Port</dt>
+                <dd className="text-gray-300 text-xs font-mono">{instance.web_console_port ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">HTTP Port</dt>
+                <dd className="text-gray-300 text-xs font-mono">{instance.http_port ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Runtime Dir</dt>
+                <dd className="text-gray-300 text-xs font-mono break-all">{instance.runtime_dir || "-"}</dd>
               </div>
               <div>
                 <dt className="text-xs text-gray-500">Deployed</dt>
