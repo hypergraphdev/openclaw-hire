@@ -37,6 +37,7 @@ export function InstanceDetailPage() {
   const [configuring, setConfiguring] = useState(false);
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
   const [configError, setConfigError] = useState("");
+  const [showConfigureForm, setShowConfigureForm] = useState(true);
 
   const fetchDetail = useCallback(() => {
     if (!instanceId) return Promise.resolve();
@@ -49,6 +50,11 @@ export function InstanceDetailPage() {
     const interval = setInterval(fetchDetail, 5_000);
     return () => clearInterval(interval);
   }, [fetchDetail]);
+
+  useEffect(() => {
+    const configured = Boolean(detail?.config?.org_token) || Boolean(configResult);
+    setShowConfigureForm(!configured);
+  }, [detail?.config?.org_token, configResult]);
 
   async function handleInstall() {
     if (!instanceId) return;
@@ -266,61 +272,62 @@ export function InstanceDetailPage() {
           {/* Telegram Integration */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
-            {configResult ? (
-              <div className="space-y-3">
+            <div className="space-y-3">
+              {(configResult || config?.org_token) && (
                 <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                  {configResult.message}
+                  {configResult?.message || "Already configured"}
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Org Token</p>
-                  <p className="text-xs text-gray-200 font-mono break-all bg-gray-950 border border-gray-800 rounded p-2">
-                    {configResult.org_token}
-                  </p>
-                </div>
+              )}
+
+              {(configResult || config?.org_token) && (
                 <dl className="space-y-1 text-xs">
-                  <div><dt className="text-gray-500">Plugin</dt><dd className="text-gray-300 font-mono">{configResult.plugin_name}</dd></div>
-                  <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{configResult.org_id}</dd></div>
-                  <div><dt className="text-gray-500">Hub URL</dt><dd className="text-gray-300 break-all">{configResult.hub_url}</dd></div>
+                  <div><dt className="text-gray-500">Plugin</dt><dd className="text-gray-300 font-mono">{configResult?.plugin_name || config?.plugin_name || "-"}</dd></div>
+                  <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{configResult?.org_id || config?.org_id || "-"}</dd></div>
+                  <div><dt className="text-gray-500">Hub URL</dt><dd className="text-gray-300 break-all">{configResult?.hub_url || config?.hub_url || "-"}</dd></div>
+                  <div><dt className="text-gray-500">组织内名字</dt><dd className="text-gray-300 font-mono">{configResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
                 </dl>
-                <p className="text-xs text-gray-500">· Send /start to your bot to verify the connection.</p>
+              )}
+
+              {!showConfigureForm && (configResult || config?.org_token) && (
                 <button
-                  onClick={() => setConfigResult(null)}
+                  onClick={() => {
+                    setConfigResult(null);
+                    setConfigError("");
+                    setShowConfigureForm(true);
+                  }}
                   className="text-xs text-gray-500 hover:text-gray-300 underline"
                 >
-                  Configure again
+                  重新配置 Telegram
                 </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {config?.org_token && !configResult && (
-                  <div className="p-2 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400">
-                    Already configured · Org token ends in <span className="font-mono text-gray-300">{config.org_token.slice(-8)}</span>
-                  </div>
-                )}
-                <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
-                <input
-                  type="text"
-                  placeholder="Bot token (e.g. 123456:ABC…)"
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  disabled={!instance.compose_project || configuring}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 disabled:opacity-50 focus:outline-none focus:border-gray-500"
-                />
-                {configError && (
-                  <p className="text-xs text-red-400">{configError}</p>
-                )}
-                <button
-                  onClick={handleConfigure}
-                  disabled={!botToken.trim() || !instance.compose_project || configuring}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
-                >
-                  {configuring ? "Configuring…" : "Configure"}
-                </button>
-                {!instance.compose_project && (
-                  <p className="text-xs text-gray-600">Install the instance first to enable configuration.</p>
-                )}
-              </div>
-            )}
+              )}
+
+              {showConfigureForm && (
+                <>
+                  <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
+                  <input
+                    type="text"
+                    placeholder="Bot token (e.g. 123456:ABC…)"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    disabled={!instance.compose_project || configuring}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 disabled:opacity-50 focus:outline-none focus:border-gray-500"
+                  />
+                  {configError && (
+                    <p className="text-xs text-red-400">{configError}</p>
+                  )}
+                  <button
+                    onClick={handleConfigure}
+                    disabled={!botToken.trim() || !instance.compose_project || configuring}
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+                  >
+                    {configuring ? "Configuring…" : "Configure"}
+                  </button>
+                  {!instance.compose_project && (
+                    <p className="text-xs text-gray-600">Install the instance first to enable configuration.</p>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

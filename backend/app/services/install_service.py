@@ -442,13 +442,13 @@ def configure_instance_telegram(
     runtime_dir: str,
     compose_file: str,
     project: str,
-) -> tuple[bool, str, str, str]:
+) -> tuple[bool, str, str, str, str]:
     """Configure Telegram + org integration after install using only user-provided bot token."""
     plugin = _PLUGIN_MAP.get(product, "hxa-connect")
     env_path = Path(runtime_dir) / ".env"
 
     if not _ORG_SECRET:
-        return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot auto-join org.", "", plugin
+        return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot auto-join org.", "", plugin, ""
 
     duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
     if duplicated_by:
@@ -457,6 +457,7 @@ def configure_instance_telegram(
             f"Telegram bot token is already used by instance {duplicated_by}. Use a unique token per running instance.",
             "",
             plugin,
+            "",
         )
 
     agent_name = _safe_agent_name(instance_id)
@@ -507,7 +508,7 @@ def configure_instance_telegram(
         rc, out = _run(["docker-compose", "-f", compose_file, "-p", project, "--env-file", env_file, "up", "-d"], cwd=wd)
 
     if rc != 0:
-        return False, f"Compose restart failed: {out[:500]}", org_token_display, plugin
+        return False, f"Compose restart failed: {out[:500]}", org_token_display, plugin, agent_name
 
     web_console_patched = False
     comm_bridge_patched = False
@@ -523,24 +524,25 @@ def configure_instance_telegram(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, allow_group, allow_dm, configured_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+            INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
             ON CONFLICT(instance_id) DO UPDATE SET
               telegram_bot_token=excluded.telegram_bot_token,
               plugin_name=excluded.plugin_name,
               hub_url=excluded.hub_url,
               org_id=excluded.org_id,
               org_token=excluded.org_token,
+              agent_name=excluded.agent_name,
               allow_group=1,
               allow_dm=1,
               configured_at=excluded.configured_at,
               updated_at=excluded.updated_at
             """,
-            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token_display, now, now),
+            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID, org_token_display, agent_name, now, now),
         )
         conn.execute(
-            "UPDATE instances SET telegram_bot_token = ?, org_token = ?, updated_at = ? WHERE id = ?",
-            (telegram_bot_token, org_token_display, now, instance_id),
+            "UPDATE instances SET telegram_bot_token = ?, org_token = ?, agent_name = ?, updated_at = ? WHERE id = ?",
+            (telegram_bot_token, org_token_display, agent_name, now, instance_id),
         )
         conn.commit()
 
@@ -563,4 +565,4 @@ def configure_instance_telegram(
     msg = " ".join(notes)
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
-    return True, msg, org_token_display, plugin
+    return True, msg, org_token_display, plugin, agent_name

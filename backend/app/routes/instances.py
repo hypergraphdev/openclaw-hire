@@ -130,7 +130,7 @@ def get_instance(
         (instance_id,),
     ).fetchall()
     cfg = db.execute(
-        "SELECT plugin_name, hub_url, org_id, org_token, allow_group, allow_dm, configured_at FROM instance_configs WHERE instance_id = ?",
+        "SELECT plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at FROM instance_configs WHERE instance_id = ?",
         (instance_id,),
     ).fetchone()
     config = None
@@ -141,6 +141,7 @@ def get_instance(
             hub_url=c.get("hub_url"),
             org_id=c.get("org_id"),
             org_token=c.get("org_token"),
+            agent_name=c.get("agent_name"),
             allow_group=bool(c.get("allow_group", 1)),
             allow_dm=bool(c.get("allow_dm", 1)),
             configured_at=c.get("configured_at"),
@@ -250,7 +251,7 @@ def configure_instance(
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     compose_file, project, runtime_dir = _require_compose(inst)
 
-    ok, message, org_token, plugin = configure_instance_telegram(
+    ok, message, org_token, plugin, agent_name = configure_instance_telegram(
         instance_id,
         payload.telegram_bot_token,
         inst["product"],
@@ -269,6 +270,7 @@ def configure_instance(
         hub_url=_HUB_URL,
         org_id=_ORG_ID,
         org_token=org_token,
+        agent_name=agent_name,
         message=f"Telegram bot configured. Plugin: {plugin}. DMs and group messages enabled.",
     )
 

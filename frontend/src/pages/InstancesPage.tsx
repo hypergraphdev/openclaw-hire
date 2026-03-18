@@ -5,7 +5,19 @@ import { StatusPill } from "../components/StatusPill";
 import type { Instance } from "../types";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function configStatus(inst: Instance) {
+  if (!inst.telegram_bot_token) return "Telegram 未配置";
+  if (!inst.agent_name) return "组织名未绑定";
+  return "已配置";
 }
 
 export function InstancesPage() {
@@ -79,8 +91,10 @@ export function InstancesPage() {
                   <StatusPill state={inst.install_state} />
                 </div>
 
-                <div className="mt-3 text-xs text-gray-400">
+                <div className="mt-3 text-xs text-gray-400 space-y-1">
                   <div>Product: <span className="capitalize text-gray-300">{inst.product}</span></div>
+                  <div>配置: <span className={inst.telegram_bot_token && inst.agent_name ? "text-green-400" : "text-amber-400"}>{configStatus(inst)}</span></div>
+                  <div>组织内名字: <span className="text-gray-300 font-mono">{inst.agent_name || "-"}</span></div>
                   <div>Deployed: <span className="text-gray-300">{formatDate(inst.created_at)}</span></div>
                 </div>
 
@@ -108,6 +122,8 @@ export function InstancesPage() {
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Name</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Product</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Install State</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Configured</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Org Name</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Deployed</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -125,6 +141,12 @@ export function InstancesPage() {
                     <td className="px-5 py-3">
                       <StatusPill state={inst.install_state} />
                     </td>
+                    <td className="px-5 py-3">
+                      <span className={`text-xs ${inst.telegram_bot_token && inst.agent_name ? "text-green-400" : "text-amber-400"}`}>
+                        {configStatus(inst)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-300 text-xs font-mono">{inst.agent_name || "-"}</td>
                     <td className="px-5 py-3 text-gray-500">{formatDate(inst.created_at)}</td>
                     <td className="px-5 py-3 text-right">
                       <div className="inline-flex items-center gap-3">

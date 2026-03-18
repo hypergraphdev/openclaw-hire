@@ -141,6 +141,7 @@ class InstanceResponse(BaseModel):
     http_port: Optional[int] = None
     telegram_bot_token: Optional[str] = None
     org_token: Optional[str] = None
+    agent_name: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -150,6 +151,7 @@ class InstanceConfigResponse(BaseModel):
     hub_url: Optional[str] = None
     org_id: Optional[str] = None
     org_token: Optional[str] = None
+    agent_name: Optional[str] = None
     allow_group: bool = True
     allow_dm: bool = True
     configured_at: Optional[str] = None
@@ -178,6 +180,7 @@ class ConfigureTelegramResponse(BaseModel):
     hub_url: str
     org_id: str
     org_token: str
+    agent_name: str
     message: str
 
 

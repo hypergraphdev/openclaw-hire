@@ -35,6 +35,7 @@ export type Instance = {
   http_port?: number | null;
   telegram_bot_token?: string | null;
   org_token?: string | null;
+  agent_name?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -45,6 +46,7 @@ export type TelegramConfigResponse = {
   hub_url: string;
   org_id: string;
   org_token: string;
+  agent_name: string;
   message: string;
 };
 
@@ -53,6 +55,7 @@ export type InstanceConfig = {
   hub_url?: string | null;
   org_id?: string | null;
   org_token?: string | null;
+  agent_name?: string | null;
   allow_group?: boolean;
   allow_dm?: boolean;
   configured_at?: string | null;

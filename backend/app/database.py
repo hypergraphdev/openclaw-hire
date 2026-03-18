@@ -46,6 +46,7 @@ def init_db() -> None:
                 http_port INTEGER,
                 telegram_bot_token TEXT,
                 org_token TEXT,
+                agent_name TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (owner_id) REFERENCES users (id)
@@ -69,6 +70,7 @@ def init_db() -> None:
                 hub_url TEXT,
                 org_id TEXT,
                 org_token TEXT,
+                agent_name TEXT,
                 allow_group INTEGER NOT NULL DEFAULT 1,
                 allow_dm INTEGER NOT NULL DEFAULT 1,
                 configured_at TEXT,
@@ -106,6 +108,7 @@ def _migrate_existing_db() -> None:
                     repo_url TEXT NOT NULL DEFAULT 'https://github.com/openclaw/openclaw',
                     status TEXT NOT NULL DEFAULT 'active',
                     install_state TEXT NOT NULL DEFAULT 'idle',
+                    agent_name TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (owner_id) REFERENCES users (id)
@@ -149,6 +152,8 @@ def _migrate_existing_db() -> None:
                 conn.execute("ALTER TABLE instances ADD COLUMN telegram_bot_token TEXT")
             if "org_token" not in inst_cols:
                 conn.execute("ALTER TABLE instances ADD COLUMN org_token TEXT")
+            if "agent_name" not in inst_cols:
+                conn.execute("ALTER TABLE instances ADD COLUMN agent_name TEXT")
 
         if "install_events" not in tables:
             conn.execute("""
@@ -171,6 +176,7 @@ def _migrate_existing_db() -> None:
                     hub_url TEXT,
                     org_id TEXT,
                     org_token TEXT,
+                    agent_name TEXT,
                     allow_group INTEGER NOT NULL DEFAULT 1,
                     allow_dm INTEGER NOT NULL DEFAULT 1,
                     configured_at TEXT,
@@ -178,5 +184,9 @@ def _migrate_existing_db() -> None:
                     FOREIGN KEY (instance_id) REFERENCES instances (id)
                 )
             """)
+        else:
+            cfg_cols = {r[1] for r in conn.execute("PRAGMA table_info(instance_configs)").fetchall()}
+            if "agent_name" not in cfg_cols:
+                conn.execute("ALTER TABLE instance_configs ADD COLUMN agent_name TEXT")
 
         conn.commit()
