@@ -277,8 +277,17 @@ CONTAINER_CLI="${PROJECT}-openclaw-cli-1"
 # ── Fix ownership/permissions post-start (workspace mounted separately, may be root-owned) ──
 # OpenClaw writes AGENTS.md etc on first run; node user (uid 1000) must own them.
 # User explicitly requested permissive runtime permissions, so open the host mounts too.
-docker exec --user root "$CONTAINER_GATEWAY" sh -c 'chown -R node:node /home/node/.openclaw && chmod -R a+rwX /home/node/.openclaw' 2>/dev/null || true
-chmod -R a+rwX "$CONFIG_DIR" "$WORKSPACE_DIR" 2>/dev/null || true
+docker exec --user root "$CONTAINER_GATEWAY" sh -c '
+  chown -R node:node /home/node/.openclaw 2>/dev/null || true
+  find /home/node/.openclaw/extensions -type d -exec chmod 755 {} + 2>/dev/null || true
+  find /home/node/.openclaw/extensions -type f -exec chmod 644 {} + 2>/dev/null || true
+  find /home/node/.openclaw/workspace -type d -exec chmod 755 {} + 2>/dev/null || true
+  find /home/node/.openclaw/workspace -type f -exec chmod 644 {} + 2>/dev/null || true
+' 2>/dev/null || true
+find "$CONFIG_DIR/extensions" -type d -exec chmod 755 {} + 2>/dev/null || true
+find "$CONFIG_DIR/extensions" -type f -exec chmod 644 {} + 2>/dev/null || true
+find "$WORKSPACE_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
+find "$WORKSPACE_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
 
 # ── npm install plugin inside container (in case host npm wasn't available) ──
 docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/openclaw-hxa-connect ] && cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
