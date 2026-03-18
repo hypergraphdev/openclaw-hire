@@ -177,10 +177,16 @@ if command -v npm >/dev/null 2>&1; then
 fi
 
 # ── Start compose ─────────────────────────────────────────────────────────────
-# Purge host-inherited port vars that would shadow --env-file values for docker compose
+# Values already computed above; just unset host-inherited vars then re-set with our values.
+# (Do NOT rely on previously exported vars after unset — reassign explicitly.)
+_GW_PORT="$OPENCLAW_GATEWAY_PORT"
+_BR_PORT="$OPENCLAW_BRIDGE_PORT"
+_GW_TOKEN="$OPENCLAW_GATEWAY_TOKEN"
 unset OPENCLAW_GATEWAY_PORT OPENCLAW_BRIDGE_PORT OPENCLAW_GATEWAY_TOKEN OPENCLAW_GATEWAY_BIND
 unset WEB_CONSOLE_PORT HTTP_PORT
-# Now re-export the per-instance values we computed above
+OPENCLAW_GATEWAY_PORT="$_GW_PORT"
+OPENCLAW_BRIDGE_PORT="$_BR_PORT"
+OPENCLAW_GATEWAY_TOKEN="$_GW_TOKEN"
 export OPENCLAW_GATEWAY_PORT OPENCLAW_BRIDGE_PORT OPENCLAW_GATEWAY_TOKEN
 
 COMPOSE_ARGS=(-f "$COMPOSE_FILE" -p "$PROJECT" --env-file "$WORKDIR/.env")
