@@ -779,7 +779,7 @@ def configure_instance_telegram(
     plugin_installed = (
         (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists()
         or (Path(runtime_dir) / "zylos-data" / ".claude" / "skills" / plugin).exists()
-        or (Path(runtime_dir) / "openclaw-config" / "extensions" / "hxa-connect").exists()
+        or (Path(runtime_dir) / "openclaw-config" / "extensions" / "openclaw-hxa-connect").exists()
     )
 
     notes: list[str] = ["配置完成：实例已自动注入组织参数并启用 Telegram。"]
@@ -802,3 +802,4 @@ def configure_instance_telegram(
     _add_install_event(instance_id, "running", f"Telegram configured. {msg}")
     _sync_runtime_status(instance_id, project)
     return True, msg, org_token_display, plugin, agent_name
+ent_name

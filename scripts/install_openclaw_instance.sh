@@ -281,7 +281,7 @@ docker exec --user root "$CONTAINER_GATEWAY" sh -c 'chown -R node:node /home/nod
 chmod -R a+rwX "$CONFIG_DIR" "$WORKSPACE_DIR" 2>/dev/null || true
 
 # ── npm install plugin inside container (in case host npm wasn't available) ──
-docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/hxa-connect ] && cd /home/node/.openclaw/extensions/hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
+docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/openclaw-hxa-connect ] && cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
 
 # ── Telegram channel ──────────────────────────────────────────────────────────
 TG_TOKEN_VAL="${TELEGRAM_BOT_TOKEN:-}"
