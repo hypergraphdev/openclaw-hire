@@ -815,16 +815,30 @@ def configure_telegram_only(
     runtime_dir: str,
     compose_file: str,
     project: str,
+    product: str = "openclaw",
 ) -> tuple[bool, str]:
-    """Configure only the Telegram channel. Write to host openclaw.json, restart, verify."""
-    gateway_container = f"{project}-openclaw-gateway-1"
-    config_dir = Path(runtime_dir) / "openclaw-config"
-    openclaw_json = config_dir / "openclaw.json"
-
-    # Duplicate-token check
+    """Configure only the Telegram channel. Routes to product-specific impl."""
+    # Duplicate-token check (shared)
     duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
     if duplicated_by:
         return False, f"Telegram bot token is already used by instance {duplicated_by}."
+
+    if product == "zylos":
+        return _configure_zylos_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
+    else:
+        return _configure_openclaw_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
+
+
+def _configure_openclaw_telegram_only(
+    instance_id: str,
+    telegram_bot_token: str,
+    runtime_dir: str,
+    project: str,
+) -> tuple[bool, str]:
+    """Configure Telegram for OpenClaw: write to openclaw.json, restart gateway."""
+    gateway_container = f"{project}-openclaw-gateway-1"
+    config_dir = Path(runtime_dir) / "openclaw-config"
+    openclaw_json = config_dir / "openclaw.json"
 
     if not openclaw_json.exists():
         return False, f"Missing config file: {openclaw_json}"
@@ -858,14 +872,12 @@ def configure_telegram_only(
 
     _run(["docker", "restart", gateway_container])
 
-    # Verify: wait up to 30s for Telegram provider to start
     for _ in range(10):
         time.sleep(3)
         _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
         if "[telegram]" in logs and "starting provider" in logs:
             return True, "Telegram configured and verified."
 
-    # Retry once
     _run(["docker", "restart", gateway_container])
     for _ in range(10):
         time.sleep(3)
@@ -874,6 +886,50 @@ def configure_telegram_only(
             return True, "Telegram configured and verified (after retry)."
 
     return False, "Telegram configured but provider did not start within 60s. Check bot token and container logs."
+
+
+def _configure_zylos_telegram_only(
+    instance_id: str,
+    telegram_bot_token: str,
+    runtime_dir: str,
+    project: str,
+) -> tuple[bool, str]:
+    """Configure Telegram for Zylos: write to zylos-data/.env, restart container."""
+    container = f"zylos_{instance_id}"
+    zylos_env = Path(runtime_dir) / "zylos-data" / ".env"
+    runtime_env = Path(runtime_dir) / ".env"
+
+    # Write token to both runtime .env and zylos-data/.env
+    for env_path in [runtime_env, zylos_env]:
+        if env_path.exists():
+            env = _read_env_file(str(env_path))
+            env["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
+            env["TELEGRAM_ENABLE_GROUPS"] = "true"
+            env["TELEGRAM_ENABLE_DMS"] = "true"
+            _write_env_file(env_path, env)
+
+    # Inject token directly into running container env via zylos CLI if available
+    inject_cmd = (
+        f"export TELEGRAM_BOT_TOKEN={telegram_bot_token!r}; "
+        f"export TELEGRAM_ENABLE_GROUPS=true; "
+        f"export TELEGRAM_ENABLE_DMS=true; "
+        f"if [ -x /home/zylos/.npm-global/bin/zylos ]; then "
+        f"  /home/zylos/.npm-global/bin/zylos config set telegram.botToken {telegram_bot_token!r} 2>/dev/null || true; "
+        f"fi; "
+        f"pm2 restart zylos-telegram 2>/dev/null || true"
+    )
+    _run(["docker", "exec", container, "sh", "-c", inject_cmd])
+
+    # Restart container to pick up new env
+    _run(["docker", "restart", container])
+
+    for _ in range(10):
+        time.sleep(3)
+        _, logs = _run(["docker", "logs", "--tail", "30", container])
+        if "telegram" in logs.lower() and ("starting" in logs.lower() or "connected" in logs.lower() or "provider" in logs.lower()):
+            return True, "Telegram configured and verified (Zylos)."
+
+    return True, "Telegram token written. Container restarted. Verify bot response manually."
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────

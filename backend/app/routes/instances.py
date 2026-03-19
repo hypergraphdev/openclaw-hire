@@ -317,7 +317,8 @@ def configure_telegram_endpoint(
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, message = configure_telegram_only(
-        instance_id, payload.telegram_bot_token, runtime_dir, compose_file, project
+        instance_id, payload.telegram_bot_token, runtime_dir, compose_file, project,
+        product=inst["product"],
     )
     if not ok:
         raise HTTPException(status_code=500, detail=message)
