@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -316,15 +317,15 @@ def configure_telegram_endpoint(
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     compose_file, project, runtime_dir = _require_compose(inst)
-    ok, message = configure_telegram_only(
-        instance_id, payload.telegram_bot_token, runtime_dir, compose_file, project,
-        product=inst["product"],
-    )
-    if not ok:
-        raise HTTPException(status_code=500, detail=message)
-    # Write to DB so list page shows configured status
+
+    # Quick duplicate check (synchronous, fast)
+    from ..services.install_service import _telegram_token_in_use
+    dup = _telegram_token_in_use(instance_id, payload.telegram_bot_token)
+    if dup:
+        raise HTTPException(status_code=409, detail=f"Telegram bot token is already used by instance {dup}.")
+
+    # Write to DB immediately so UI reflects the change
     now = _utc_now()
-    agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
     plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
     db.execute(
         "UPDATE instances SET telegram_bot_token=?, updated_at=? WHERE id=?",
@@ -344,7 +345,16 @@ def configure_telegram_endpoint(
         (instance_id, payload.telegram_bot_token, plugin_name, now, now),
     )
     db.commit()
-    return {"ok": True, "message": message, "is_telegram_configured": True}
+
+    # Run the actual docker/pm2 work in background thread
+    threading.Thread(
+        target=configure_telegram_only,
+        args=(instance_id, payload.telegram_bot_token, runtime_dir, compose_file, project),
+        kwargs={"product": inst["product"]},
+        daemon=True,
+    ).start()
+
+    return {"ok": True, "message": "Telegram 配置已提交，后台执行中。", "is_telegram_configured": True}
 
 
 @router.post("/{instance_id}/configure-hxa")
@@ -355,10 +365,8 @@ def configure_hxa_endpoint(
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     compose_file, project, runtime_dir = _require_compose(inst)
-    ok, message = configure_hxa_only(instance_id, runtime_dir, project, product=inst["product"], compose_file=compose_file)
-    if not ok:
-        raise HTTPException(status_code=500, detail=message)
-    # Update agent_name in both instances and instance_configs tables
+
+    # Write to DB immediately so UI reflects the change
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
     plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
@@ -380,7 +388,16 @@ def configure_hxa_endpoint(
         (instance_id, agent_name, plugin_name, _HUB_URL, _ORG_ID, now, now),
     )
     db.commit()
-    return {"ok": True, "message": message, "agent_name": agent_name}
+
+    # Run the actual docker/compose/registration work in background thread
+    threading.Thread(
+        target=configure_hxa_only,
+        args=(instance_id, runtime_dir, project),
+        kwargs={"product": inst["product"], "compose_file": compose_file},
+        daemon=True,
+    ).start()
+
+    return {"ok": True, "message": "HXA 配置已提交，后台执行中。", "agent_name": agent_name}
 
 
 @router.delete("/{instance_id}")
