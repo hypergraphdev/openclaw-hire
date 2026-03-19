@@ -998,7 +998,7 @@ def _configure_zylos_telegram_only(
     env_path = Path(runtime_dir) / ".env"
     container = f"zylos_{instance_id}"
 
-    # Only write Telegram-related env vars
+    # Write to host .env files
     env = _read_env_file(env_path)
     updates = {
         "TELEGRAM_BOT_TOKEN": telegram_bot_token,
@@ -1009,17 +1009,21 @@ def _configure_zylos_telegram_only(
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Must use compose down+up (not docker restart) because docker restart
-    # keeps the original container env vars. The .env file is only read
-    # by compose at "up" time, so compose down+up is needed to apply new values.
-    _compose_control(compose_file, project, runtime_dir, "down")
-    wd = Path(runtime_dir)
-    rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
-    if rc != 0:
-        return False, f"Compose restart failed: {out[:500]}"
+    # Write directly into running container's ~/zylos/.env (the mounted volume)
+    # AND inject into container process env so dotenv sees the value.
+    # We must NOT compose down+up because that would break hxa-connect.
+    inject_cmd = (
+        f"grep -q '^TELEGRAM_BOT_TOKEN=' /home/zylos/zylos/.env && "
+        f"sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN={telegram_bot_token}|' /home/zylos/zylos/.env || "
+        f"echo 'TELEGRAM_BOT_TOKEN={telegram_bot_token}' >> /home/zylos/zylos/.env; "
+        f"grep -q '^TELEGRAM_ENABLE_GROUPS=' /home/zylos/zylos/.env || "
+        f"echo 'TELEGRAM_ENABLE_GROUPS=true' >> /home/zylos/zylos/.env; "
+        f"grep -q '^TELEGRAM_ENABLE_DMS=' /home/zylos/zylos/.env || "
+        f"echo 'TELEGRAM_ENABLE_DMS=true' >> /home/zylos/zylos/.env"
+    )
+    _run(["docker", "exec", container, "sh", "-c", inject_cmd])
 
-    # Wait for container to be ready, then reset telegram pm2 process
-    time.sleep(5)
+    # Reset telegram pm2 process (delete + start to clear crash counter)
     _run(["docker", "exec", container, "sh", "-lc",
           "pm2 delete zylos-telegram 2>/dev/null || true; "
           "cd /home/zylos/zylos/.claude/skills/telegram && "
@@ -1038,7 +1042,7 @@ def _configure_zylos_telegram_only(
 
     _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
     _sync_runtime_status(instance_id, project)
-    return True, "Telegram bot token 已写入，容器已重建。"
+    return True, "Telegram bot token 已写入。"
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
