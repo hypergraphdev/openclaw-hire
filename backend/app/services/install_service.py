@@ -177,6 +177,7 @@ def _apply_container_limits(project: str) -> None:
             continue
         _run(["docker", "update",
               "--memory", _CONTAINER_MEMORY,
+              "--memory-swap", str(int(_CONTAINER_MEMORY.rstrip('g')) * 2) + "g",
               "--cpus", _CONTAINER_CPUS,
               "--pids-limit", _CONTAINER_PIDS,
               cid])
