@@ -1009,8 +1009,14 @@ def _configure_zylos_telegram_only(
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Restart container so it picks up the updated .env
-    _run(["docker", "restart", container])
+    # Must use compose down+up (not docker restart) because docker restart
+    # keeps the original container env vars. The .env file is only read
+    # by compose at "up" time, so compose down+up is needed to apply new values.
+    _compose_control(compose_file, project, runtime_dir, "down")
+    wd = Path(runtime_dir)
+    rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
+    if rc != 0:
+        return False, f"Compose restart failed: {out[:500]}"
 
     # Wait for container to be ready, then reset telegram pm2 process
     time.sleep(5)
@@ -1023,16 +1029,16 @@ def _configure_zylos_telegram_only(
     # Verify telegram started (max ~15s)
     for _ in range(5):
         time.sleep(3)
-        rc, out = _run(["docker", "exec", container, "sh", "-lc",
-                        "pm2 jlist 2>/dev/null || true"])
-        if "zylos-telegram" in out and "online" in out:
+        rc2, out2 = _run(["docker", "exec", container, "sh", "-lc",
+                          "pm2 jlist 2>/dev/null || true"])
+        if "zylos-telegram" in out2 and "online" in out2:
             _add_install_event(instance_id, "running", "Telegram configured and verified (Zylos).")
             _sync_runtime_status(instance_id, project)
             return True, "Telegram 已配置并验证启动。"
 
     _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
     _sync_runtime_status(instance_id, project)
-    return True, "Telegram bot token 已写入，容器已重启。"
+    return True, "Telegram bot token 已写入，容器已重建。"
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
