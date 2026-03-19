@@ -328,7 +328,7 @@ export function InstanceDetailPage() {
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
             <div className="space-y-3">
-              {(configResult || instance.is_telegram_configured) && (
+              {(configResult || instance.is_telegram_configured) && !showConfigureForm ? (
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
                     {configResult?.message || "Already configured"}
@@ -344,9 +344,7 @@ export function InstanceDetailPage() {
                     重新配置 Telegram
                   </button>
                 </>
-              )}
-
-              {showConfigureForm && (
+              ) : (
                 <>
                   <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
                   <input
