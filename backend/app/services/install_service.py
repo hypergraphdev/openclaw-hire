@@ -478,8 +478,7 @@ pm2 ls --no-color || true
 
 def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool, str]:
     """Register Zylos agent with HXA Connect as member via ticket, write config.json into container.
-    Retries up to 3 times with short delays to handle transient 401s caused by
-    concurrent bootstrap inside the container."""
+    Called BEFORE bootstrap so hxa-connect starts with a valid config.json."""
     agent_name = _safe_agent_name(instance_id)
     _ORG_SECRET_LIVE = _get_org_secret()
     _ORG_ID_LIVE = _get_org_id()
@@ -488,60 +487,46 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
 
     hub = _get_hub_url().rstrip("/")
     origin = "https://www.ucai.net"
-    last_error = ""
 
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(3)
+    # Step 1: Admin login to get session cookie
+    try:
+        login_data = json.dumps({"type": "org_admin", "org_secret": _ORG_SECRET_LIVE, "org_id": _ORG_ID_LIVE}).encode()
+        login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
+                                           headers={"Content-Type": "application/json", "Origin": origin}, method="POST")
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+    except Exception as e:
+        return False, f"Admin login failed: {e}"
 
-        # Step 1: Admin login to get session cookie
-        try:
-            login_data = json.dumps({"type": "org_admin", "org_secret": _ORG_SECRET_LIVE, "org_id": _ORG_ID_LIVE}).encode()
-            login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
-                                               headers={"Content-Type": "application/json", "Origin": origin}, method="POST")
-            with urllib.request.urlopen(login_req, timeout=10) as resp:
-                cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
-        except Exception as e:
-            last_error = f"Admin login failed: {e}"
-            continue
+    # Step 2: Cleanup existing bot if any
+    _cleanup_zylos_hxa_bot(agent_name, _ORG_ID_LIVE, _ORG_SECRET_LIVE)
 
-        # Step 2: Cleanup existing bot if any
-        _cleanup_zylos_hxa_bot(agent_name, _ORG_ID_LIVE, _ORG_SECRET_LIVE)
+    # Step 3: Create a one-time ticket
+    try:
+        ticket_data = json.dumps({"reusable": False}).encode()
+        ticket_req = urllib.request.Request(f"{hub}/api/org/tickets", data=ticket_data,
+                                            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin}, method="POST")
+        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
+            ticket_result = json.loads(resp.read().decode())
+        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
+        if not ticket_secret:
+            return False, f"Ticket creation returned no secret: {ticket_result}"
+    except Exception as e:
+        return False, f"Ticket creation failed: {e}"
 
-        # Step 3: Create a one-time ticket
-        try:
-            ticket_data = json.dumps({"reusable": False}).encode()
-            ticket_req = urllib.request.Request(f"{hub}/api/org/tickets", data=ticket_data,
-                                                headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin}, method="POST")
-            with urllib.request.urlopen(ticket_req, timeout=10) as resp:
-                ticket_result = json.loads(resp.read().decode())
-            ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
-            if not ticket_secret:
-                last_error = f"Ticket creation returned no secret: {ticket_result}"
-                continue
-        except Exception as e:
-            last_error = f"Ticket creation failed: {e}"
-            continue
-
-        # Step 4: Register agent using ticket (member role)
-        reg_url = f"{hub}/api/auth/register"
-        reg_data = json.dumps({
-            "org_id": _ORG_ID_LIVE,
-            "ticket": ticket_secret,
-            "name": agent_name,
-        }).encode()
-        try:
-            reg_req = urllib.request.Request(reg_url, data=reg_data, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(reg_req, timeout=15) as resp:
-                result = json.loads(resp.read().decode())
-        except Exception as e:
-            last_error = f"HXA registration failed: {e}"
-            continue
-
-        # Success — break out of retry loop
-        break
-    else:
-        return False, last_error
+    # Step 4: Register agent using ticket (member role)
+    reg_url = f"{hub}/api/auth/register"
+    reg_data = json.dumps({
+        "org_id": _ORG_ID_LIVE,
+        "ticket": ticket_secret,
+        "name": agent_name,
+    }).encode()
+    try:
+        reg_req = urllib.request.Request(reg_url, data=reg_data, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(reg_req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+    except Exception as e:
+        return False, f"HXA registration failed: {e}"
 
     agent_token = result.get("token", "")
     agent_id = result.get("agent_id") or result.get("id", "")
@@ -1158,11 +1143,12 @@ def _configure_zylos_hxa_only(
 
     _patch_zylos_web_console(runtime_dir)
     _patch_zylos_comm_bridge(runtime_dir)
+
+    # Register agent BEFORE bootstrap so hxa-connect starts with valid config.json
+    reg_ok, reg_msg = _register_zylos_hxa_agent(instance_id, runtime_dir)
+
     _restart_zylos_pm2_services(instance_id)
     bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
-
-    # Register agent with HXA Connect and write config.json
-    reg_ok, reg_msg = _register_zylos_hxa_agent(instance_id, runtime_dir)
     if not reg_ok:
         return False, f"HXA registration failed: {reg_msg}"
 
