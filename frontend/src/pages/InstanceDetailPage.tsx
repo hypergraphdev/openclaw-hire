@@ -37,7 +37,7 @@ export function InstanceDetailPage() {
   const [configuring, setConfiguring] = useState(false);
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
   const [configError, setConfigError] = useState("");
-  const [showConfigureForm, setShowConfigureForm] = useState(true);
+  const [showTelegramReconfig, setShowTelegramReconfig] = useState(false);
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
@@ -54,10 +54,12 @@ export function InstanceDetailPage() {
     return () => clearInterval(interval);
   }, [fetchDetail]);
 
+  // Reset reconfig form when telegram gets configured
   useEffect(() => {
-    const configured = Boolean(detail?.instance?.is_telegram_configured) || Boolean(configResult);
-    setShowConfigureForm(!configured);
-  }, [detail?.instance?.is_telegram_configured, configResult]);
+    if (detail?.instance?.is_telegram_configured) {
+      setShowTelegramReconfig(false);
+    }
+  }, [detail?.instance?.is_telegram_configured]);
 
   async function handleInstall() {
     if (!instanceId) return;
@@ -101,7 +103,7 @@ export function InstanceDetailPage() {
       const result = await api.configureTelegram(instanceId, botToken.trim());
       setConfigResult(result as unknown as TelegramConfigResponse);
       setBotToken("");
-      setShowConfigureForm(false);
+      setShowTelegramReconfig(false);
       await fetchDetail();
     } catch (err: unknown) {
       setConfigError(err instanceof Error ? err.message : "Configuration failed.");
@@ -328,7 +330,7 @@ export function InstanceDetailPage() {
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
             <div className="space-y-3">
-              {(configResult || instance.is_telegram_configured) && !showConfigureForm ? (
+              {(configResult || instance.is_telegram_configured) && !showTelegramReconfig && (
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
                     {configResult?.message || "Already configured"}
@@ -337,14 +339,16 @@ export function InstanceDetailPage() {
                     onClick={() => {
                       setConfigResult(null);
                       setConfigError("");
-                      setShowConfigureForm(true);
+                      setShowTelegramReconfig(true);
                     }}
                     className="text-xs text-gray-500 hover:text-gray-300 underline"
                   >
                     重新配置 Telegram
                   </button>
                 </>
-              ) : (
+              )}
+
+              {(!instance.is_telegram_configured || showTelegramReconfig) && !configResult && (
                 <>
                   <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
                   <input
@@ -353,7 +357,7 @@ export function InstanceDetailPage() {
                     value={botToken}
                     onChange={(e) => setBotToken(e.target.value)}
                     disabled={!instance.compose_project || configuring}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 disabled:opacity-50 focus:outline-none focus:border-gray-500"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 disabled:opacity-none focus:outline-none focus:border-gray-500"
                   />
                   {configError && (
                     <p className="text-xs text-red-400">{configError}</p>
