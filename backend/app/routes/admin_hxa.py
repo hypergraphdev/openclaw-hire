@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from ..database import get_setting
+from ..database import get_setting, set_setting
 from ..deps import get_current_user
 from ..database import get_connection
 from .admin import _require_admin
@@ -79,8 +80,42 @@ def get_hxa_config(current_user: dict = Depends(get_current_user)):
     return {
         "org_id": get_setting("hxa_org_id", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"),
         "org_secret": get_setting("hxa_org_secret"),
-        "hub_url": "https://www.ucai.net/connect",
+        "hub_url": get_setting("hxa_hub_url", "https://www.ucai.net/connect"),
     }
+
+
+class UpdateHubUrlRequest(BaseModel):
+    hub_url: str
+
+
+@router.put("/config/hub-url")
+def update_hub_url(payload: UpdateHubUrlRequest, current_user: dict = Depends(get_current_user)):
+    _require_admin(current_user)
+    url = payload.hub_url.strip().rstrip("/")
+    if not url:
+        raise HTTPException(status_code=400, detail="Hub URL cannot be empty.")
+    set_setting("hxa_hub_url", url)
+    return {"ok": True, "hub_url": url}
+
+
+class UpdateAgentNameRequest(BaseModel):
+    agent_name: str
+
+
+@router.put("/agents/{instance_id}/name")
+def update_agent_name(instance_id: str, payload: UpdateAgentNameRequest, current_user: dict = Depends(get_current_user)):
+    _require_admin(current_user)
+    name = payload.agent_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Agent name cannot be empty.")
+    with get_connection() as conn:
+        conn.execute("UPDATE instances SET agent_name = ? WHERE id = ?", (name, instance_id))
+        conn.execute(
+            "UPDATE instance_configs SET agent_name = ? WHERE instance_id = ?",
+            (name, instance_id),
+        )
+        conn.commit()
+    return {"ok": True, "agent_name": name}
 
 
 @router.get("/agents")

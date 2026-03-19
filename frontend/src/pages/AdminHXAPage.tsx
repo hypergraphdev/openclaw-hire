@@ -26,6 +26,16 @@ export default function AdminHXAPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
 
+  // Hub URL editing
+  const [editingHubUrl, setEditingHubUrl] = useState(false);
+  const [hubUrlDraft, setHubUrlDraft] = useState("");
+  const [hubUrlSaving, setHubUrlSaving] = useState(false);
+
+  // Agent name editing
+  const [editingAgentId, setEditingAgentId] = useState<string>("");
+  const [agentNameDraft, setAgentNameDraft] = useState("");
+  const [agentNameSaving, setAgentNameSaving] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api.get("/api/admin/hxa/config").then((r) => r.json()),
@@ -47,6 +57,32 @@ export default function AdminHXAPage() {
 
   const copy = (text: string) => navigator.clipboard?.writeText(text);
 
+  async function saveHubUrl() {
+    const url = hubUrlDraft.trim().replace(/\/+$/, "");
+    if (!url) return;
+    setHubUrlSaving(true);
+    try {
+      await api.put("/api/admin/hxa/config/hub-url", { hub_url: url });
+      setConfig((prev) => prev ? { ...prev, hub_url: url } : prev);
+      setEditingHubUrl(false);
+    } finally {
+      setHubUrlSaving(false);
+    }
+  }
+
+  async function saveAgentName(instanceId: string) {
+    const name = agentNameDraft.trim();
+    if (!name) return;
+    setAgentNameSaving(true);
+    try {
+      await api.put(`/api/admin/hxa/agents/${instanceId}/name`, { agent_name: name });
+      setAgents((prev) => prev.map((a) => a.instance_id === instanceId ? { ...a, agent_name: name } : a));
+      setEditingAgentId("");
+    } finally {
+      setAgentNameSaving(false);
+    }
+  }
+
   if (loading) return <div className="text-gray-400 text-sm p-6">Loading...</div>;
 
   return (
@@ -60,7 +96,32 @@ export default function AdminHXAPage() {
       {config && (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
           <h2 className="text-sm font-medium text-gray-300">Organization Config</h2>
-          <div className="text-xs text-gray-500">Hub: {config.hub_url}</div>
+
+          {/* Hub URL - editable */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400 w-20">Hub URL</span>
+            {editingHubUrl ? (
+              <>
+                <input
+                  type="text"
+                  value={hubUrlDraft}
+                  onChange={(e) => setHubUrlDraft(e.target.value)}
+                  className="text-xs font-mono text-gray-200 bg-gray-800 border border-gray-700 px-2 py-1 rounded flex-1 focus:outline-none focus:border-gray-500"
+                  onKeyDown={(e) => e.key === "Enter" && saveHubUrl()}
+                />
+                <button onClick={saveHubUrl} disabled={hubUrlSaving} className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">
+                  {hubUrlSaving ? "..." : "Save"}
+                </button>
+                <button onClick={() => setEditingHubUrl(false)} className="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+              </>
+            ) : (
+              <>
+                <code className="text-xs font-mono text-gray-200 bg-gray-800 px-2 py-1 rounded flex-1">{config.hub_url}</code>
+                <button onClick={() => { setHubUrlDraft(config.hub_url); setEditingHubUrl(true); }} className="text-xs text-gray-500 hover:text-gray-300">Edit</button>
+              </>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 w-20">Org ID</span>
             <code className="text-xs font-mono text-gray-200 bg-gray-800 px-2 py-1 rounded flex-1">{config.org_id}</code>
@@ -103,7 +164,33 @@ export default function AdminHXAPage() {
                   <tr key={a.instance_id} className="border-b border-gray-800/50">
                     <td className="py-2 pr-4 text-gray-300">{a.instance_name}</td>
                     <td className="py-2 pr-4 text-gray-400 capitalize">{a.product}</td>
-                    <td className="py-2 pr-4 text-gray-300 font-mono">{a.agent_name || "-"}</td>
+                    <td className="py-2 pr-4 text-gray-300 font-mono">
+                      {editingAgentId === a.instance_id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={agentNameDraft}
+                            onChange={(e) => setAgentNameDraft(e.target.value)}
+                            className="text-xs font-mono text-gray-200 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded w-36 focus:outline-none focus:border-gray-500"
+                            onKeyDown={(e) => e.key === "Enter" && saveAgentName(a.instance_id)}
+                          />
+                          <button onClick={() => saveAgentName(a.instance_id)} disabled={agentNameSaving} className="text-blue-400 hover:text-blue-300 disabled:opacity-50">
+                            {agentNameSaving ? "..." : "OK"}
+                          </button>
+                          <button onClick={() => setEditingAgentId("")} className="text-gray-500 hover:text-gray-300">X</button>
+                        </div>
+                      ) : (
+                        <span className="group">
+                          {a.agent_name || "-"}
+                          <button
+                            onClick={() => { setAgentNameDraft(a.agent_name); setEditingAgentId(a.instance_id); }}
+                            className="ml-2 text-gray-600 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            Edit
+                          </button>
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 pr-4 font-mono text-gray-400">
                       {revealedTokens.has(a.instance_id) ? a.agent_token : a.agent_token_prefix || "-"}
                     </td>

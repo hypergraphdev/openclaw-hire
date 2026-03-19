@@ -22,7 +22,7 @@ from ..schemas import (
     InstanceResponse,
 )
 from ..services.install_service import (
-    _HUB_URL,
+    _get_hub_url,
     _ORG_ID,
     compose_logs,
     configure_instance_telegram,
@@ -300,7 +300,7 @@ def configure_instance(
     return ConfigureTelegramResponse(
         instance_id=instance_id,
         plugin_name=plugin,
-        hub_url=_HUB_URL,
+        hub_url=_get_hub_url(),
         org_id=_ORG_ID,
         org_token=org_token,
         agent_name=agent_name,
@@ -394,7 +394,7 @@ async def configure_hxa_endpoint(
           org_id=excluded.org_id,
           updated_at=excluded.updated_at
         """,
-        (instance_id, agent_name, plugin_name, _HUB_URL, _ORG_ID, now, now),
+        (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, now, now),
     )
     db.commit()
     return {"ok": True, "message": message, "agent_name": agent_name}

@@ -14,7 +14,17 @@ from ..database import get_connection, get_setting
 
 RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
-_HUB_URL = "https://www.ucai.net/connect"
+_HUB_URL_DEFAULT = "https://www.ucai.net/connect"
+
+
+def _get_hub_url() -> str:
+    """Read HXA hub URL from DB settings (fall back to default)."""
+    from_db = get_setting("hxa_hub_url", "")
+    return from_db or _HUB_URL_DEFAULT
+
+
+# Backward-compat alias for import
+_HUB_URL = _HUB_URL_DEFAULT
 
 
 def _get_org_id() -> str:
@@ -451,7 +461,7 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
     if not _ORG_SECRET_LIVE:
         return False, "Server missing ORG_SECRET."
 
-    hub = _HUB_URL.rstrip("/")
+    hub = _get_hub_url().rstrip("/")
     origin = "https://www.ucai.net"
 
     # Step 1: Admin login to get session cookie
@@ -501,7 +511,7 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
 
     # Write config.json into container
     config = {
-        "default_hub_url": _HUB_URL,
+        "default_hub_url": _get_hub_url(),
         "orgs": {
             "default": {
                 "org_id": _ORG_ID_LIVE,
@@ -526,21 +536,21 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
     """Best effort: delete existing bot by name via admin API."""
     try:
         # Login as org admin
-        login_url = f"{_HUB_URL.rstrip('/')}/api/auth/login"
+        login_url = f"{_get_hub_url().rstrip('/')}/api/auth/login"
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
         req = urllib.request.Request(login_url, data=login_data, headers={"Content-Type": "application/json", "Origin": "https://www.ucai.net"}, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
             cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 
         # List bots
-        list_req = urllib.request.Request(f"{_HUB_URL.rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"})
+        list_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"})
         with urllib.request.urlopen(list_req, timeout=10) as resp:
             bots = json.loads(resp.read().decode())
 
         # Find and delete matching bot
         for bot in (bots if isinstance(bots, list) else []):
             if bot.get("name") == agent_name:
-                del_req = urllib.request.Request(f"{_HUB_URL.rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"}, method="DELETE")
+                del_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"}, method="DELETE")
                 urllib.request.urlopen(del_req, timeout=10)
                 break
     except Exception:
@@ -705,7 +715,7 @@ def _configure_openclaw_channels(
   if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
   const {{ HxaConnectClient }} = sdk;
   try {{
-    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)});
+    const reg = await HxaConnectClient.register({repr(_get_hub_url())}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)});
     const token = reg.token || reg.agent_token || reg.bot_token || '';
     const agentId = reg.agent_id || reg.id || reg.bot_id || '';
     console.log('HXA_REG_OK::' + JSON.stringify({{ token, agentId }}));
@@ -810,9 +820,9 @@ def configure_instance_telegram(
         "TELEGRAM_BOT_TOKEN": telegram_bot_token,
         "TELEGRAM_ENABLE_GROUPS": "true",
         "TELEGRAM_ENABLE_DMS": "true",
-        "HUB_URL": _HUB_URL,
-        "HXA_CONNECT_HUB_URL": _HUB_URL,
-        "HXA_CONNECT_URL": _HUB_URL,
+        "HUB_URL": _get_hub_url(),
+        "HXA_CONNECT_HUB_URL": _get_hub_url(),
+        "HXA_CONNECT_URL": _get_hub_url(),
         "ORG_ID": _ORG_ID_LIVE,
         "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
         # Note: post-install hook currently expects org_secret in this field.
@@ -876,7 +886,7 @@ def configure_instance_telegram(
               configured_at=excluded.configured_at,
               updated_at=excluded.updated_at
             """,
-            (instance_id, telegram_bot_token, plugin, _HUB_URL, _ORG_ID_LIVE, org_token_display, agent_name, now, now),
+            (instance_id, telegram_bot_token, plugin, _get_hub_url(), _ORG_ID_LIVE, org_token_display, agent_name, now, now),
         )
         conn.execute(
             "UPDATE instances SET telegram_bot_token = ?, org_token = ?, agent_name = ?, updated_at = ? WHERE id = ?",
@@ -1085,9 +1095,9 @@ def _configure_zylos_hxa_only(
 
     env = _read_env_file(env_path)
     updates = {
-        "HUB_URL": _HUB_URL,
-        "HXA_CONNECT_HUB_URL": _HUB_URL,
-        "HXA_CONNECT_URL": _HUB_URL,
+        "HUB_URL": _get_hub_url(),
+        "HXA_CONNECT_HUB_URL": _get_hub_url(),
+        "HXA_CONNECT_URL": _get_hub_url(),
         "ORG_ID": _ORG_ID_LIVE,
         "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
         "ORG_TOKEN": _ORG_SECRET_LIVE,
@@ -1156,7 +1166,7 @@ def _configure_openclaw_hxa_only(
         js = f"""
 (async () => {{
   const origin = {repr(origin)};
-  const hub = {repr(_HUB_URL)};
+  const hub = {repr(_get_hub_url())};
   try {{
     // Step 1: Admin login
     const loginR = await fetch(hub + "/api/auth/login", {{
@@ -1218,15 +1228,15 @@ def _configure_openclaw_hxa_only(
 (async () => {{
   try {{
     const origin = {repr(origin)};
-    const loginR = await fetch({repr(_HUB_URL + "/api/auth/login")}, {{
+    const loginR = await fetch({repr(_get_hub_url() + "/api/auth/login")}, {{
       method: "POST", headers: {{"Content-Type": "application/json", Origin: origin}},
       body: JSON.stringify({{type: "org_admin", org_secret: {repr(_live_org_secret)}, org_id: {repr(_live_org_id)}}})
     }});
     const cookie = loginR.headers.get("set-cookie").split(";")[0];
-    const bots = await (await fetch({repr(_HUB_URL + "/api/bots")}, {{headers: {{Cookie: cookie, Origin: origin}}}})).json();
+    const bots = await (await fetch({repr(_get_hub_url() + "/api/bots")}, {{headers: {{Cookie: cookie, Origin: origin}}}})).json();
     const bot = Array.isArray(bots) ? bots.find(b => b.name === {repr(agent_name)}) : null;
-    if (bot) await fetch({repr(_HUB_URL)} + "/api/bots/" + bot.id, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
-    await fetch({repr(_HUB_URL + "/api/orgs/")} + {repr(_live_org_id)} + "/tombstones/" + {repr(agent_name)}, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
+    if (bot) await fetch({repr(_get_hub_url())} + "/api/bots/" + bot.id, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
+    await fetch({repr(_get_hub_url() + "/api/orgs/")} + {repr(_live_org_id)} + "/tombstones/" + {repr(agent_name)}, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
     console.log("CLEANUP_OK");
   }} catch(e) {{ console.log("CLEANUP_ERR::" + e.message); }}
 }})();
@@ -1251,7 +1261,7 @@ def _configure_openclaw_hxa_only(
         cfg["channels"] = {}
     cfg["channels"]["hxa-connect"] = {
         "enabled": True,
-        "hubUrl": _HUB_URL,
+        "hubUrl": _get_hub_url(),
         "agentToken": token,
         "agentName": agent_name,
         "orgId": _live_org_id,
