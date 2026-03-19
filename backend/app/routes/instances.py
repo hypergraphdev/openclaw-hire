@@ -325,25 +325,26 @@ def configure_telegram_endpoint(
     # Write to DB so list page shows configured status
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
+    plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
     db.execute(
-        "UPDATE instances SET telegram_bot_token=?, agent_name=?, updated_at=? WHERE id=?",
-        (payload.telegram_bot_token, agent_name, now, instance_id),
+        "UPDATE instances SET telegram_bot_token=?, updated_at=? WHERE id=?",
+        (payload.telegram_bot_token, now, instance_id),
     )
     db.execute(
         """
-        INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+        INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, allow_group, allow_dm, configured_at, updated_at)
+        VALUES (?, ?, ?, 1, 1, ?, ?)
         ON CONFLICT(instance_id) DO UPDATE SET
           telegram_bot_token=excluded.telegram_bot_token,
-          agent_name=excluded.agent_name,
+          plugin_name=excluded.plugin_name,
           allow_group=1, allow_dm=1,
           configured_at=excluded.configured_at,
           updated_at=excluded.updated_at
         """,
-        (instance_id, payload.telegram_bot_token, "openclaw-hxa-connect", _HUB_URL, _ORG_ID, "server-managed", agent_name, now, now),
+        (instance_id, payload.telegram_bot_token, plugin_name, now, now),
     )
     db.commit()
-    return {"ok": True, "message": message, "agent_name": agent_name, "is_telegram_configured": True}
+    return {"ok": True, "message": message, "is_telegram_configured": True}
 
 
 @router.post("/{instance_id}/configure-hxa")
@@ -360,21 +361,23 @@ def configure_hxa_endpoint(
     # Update agent_name in both instances and instance_configs tables
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
+    plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
     db.execute(
         "UPDATE instances SET agent_name=?, updated_at=? WHERE id=?",
         (agent_name, now, instance_id),
     )
     db.execute(
         """
-        INSERT INTO instance_configs (instance_id, agent_name, hub_url, org_id, configured_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO instance_configs (instance_id, agent_name, plugin_name, hub_url, org_id, configured_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id) DO UPDATE SET
           agent_name=excluded.agent_name,
+          plugin_name=excluded.plugin_name,
           hub_url=excluded.hub_url,
           org_id=excluded.org_id,
           updated_at=excluded.updated_at
         """,
-        (instance_id, agent_name, _HUB_URL, _ORG_ID, now, now),
+        (instance_id, agent_name, plugin_name, _HUB_URL, _ORG_ID, now, now),
     )
     db.commit()
     return {"ok": True, "message": message, "agent_name": agent_name}
