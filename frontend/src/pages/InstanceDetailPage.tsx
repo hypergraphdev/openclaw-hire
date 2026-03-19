@@ -55,9 +55,9 @@ export function InstanceDetailPage() {
   }, [fetchDetail]);
 
   useEffect(() => {
-    const configured = Boolean(detail?.instance?.is_telegram_configured) || Boolean(detail?.config?.agent_name) || Boolean(configResult);
+    const configured = Boolean(detail?.instance?.is_telegram_configured) || Boolean(configResult);
     setShowConfigureForm(!configured);
-  }, [detail?.instance?.is_telegram_configured, detail?.config?.agent_name, configResult]);
+  }, [detail?.instance?.is_telegram_configured, configResult]);
 
   async function handleInstall() {
     if (!instanceId) return;
@@ -328,32 +328,22 @@ export function InstanceDetailPage() {
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
             <div className="space-y-3">
-              {(configResult || config?.agent_name) && (
-                <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                  {configResult?.message || "Already configured"}
-                </div>
-              )}
-
-              {(configResult || config?.agent_name) && (
-                <dl className="space-y-1 text-xs">
-                  <div><dt className="text-gray-500">Plugin</dt><dd className="text-gray-300 font-mono">{configResult?.plugin_name || config?.plugin_name || "-"}</dd></div>
-                  <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{configResult?.org_id || config?.org_id || "-"}</dd></div>
-                  <div><dt className="text-gray-500">Hub URL</dt><dd className="text-gray-300 break-all">{configResult?.hub_url || config?.hub_url || "-"}</dd></div>
-                  <div><dt className="text-gray-500">组织内名字</dt><dd className="text-gray-300 font-mono">{configResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
-                </dl>
-              )}
-
-              {!showConfigureForm && (configResult || config?.agent_name) && (
-                <button
-                  onClick={() => {
-                    setConfigResult(null);
-                    setConfigError("");
-                    setShowConfigureForm(true);
-                  }}
-                  className="text-xs text-gray-500 hover:text-gray-300 underline"
-                >
-                  重新配置 Telegram
-                </button>
+              {(configResult || instance.is_telegram_configured) && (
+                <>
+                  <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
+                    {configResult?.message || "Already configured"}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setConfigResult(null);
+                      setConfigError("");
+                      setShowConfigureForm(true);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-300 underline"
+                  >
+                    重新配置 Telegram
+                  </button>
+                </>
               )}
 
               {showConfigureForm && (
