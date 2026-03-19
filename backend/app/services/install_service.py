@@ -983,68 +983,41 @@ def _configure_zylos_telegram_only(
     compose_file: str,
     project: str,
 ) -> tuple[bool, str]:
-    """Configure Telegram for Zylos: inject full HXA + Telegram env, restart, bootstrap components."""
+    """Configure only Telegram for Zylos: write bot token to .env, restart, start telegram component."""
     env_path = Path(runtime_dir) / ".env"
-    agent_name = _safe_agent_name(instance_id)
-    plugin = _PLUGIN_MAP.get("zylos", "hxa-connect")
+    container = f"zylos_{instance_id}"
 
-    _ORG_SECRET_LIVE = _get_org_secret()
-    _ORG_ID_LIVE = _get_org_id()
-    if not _ORG_SECRET_LIVE:
-        return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot configure."
-
-    # Read current env and inject full updates (Telegram + HXA)
+    # Only write Telegram-related env vars
     env = _read_env_file(env_path)
     updates = {
         "TELEGRAM_BOT_TOKEN": telegram_bot_token,
         "TELEGRAM_ENABLE_GROUPS": "true",
         "TELEGRAM_ENABLE_DMS": "true",
-        "HUB_URL": _HUB_URL,
-        "HXA_CONNECT_HUB_URL": _HUB_URL,
-        "HXA_CONNECT_URL": _HUB_URL,
-        "ORG_ID": _ORG_ID_LIVE,
-        "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
-        "ORG_TOKEN": _ORG_SECRET_LIVE,
-        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET_LIVE,
-        "HXA_CONNECT_AGENT_NAME": agent_name,
-        "HXA_PLUGIN": plugin,
-        "PLUGIN_NAME": plugin,
     }
     env.update(updates)
     _write_env_file(env_path, env)
-
-    # Sync to zylos-data/.env inside container
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Docker compose down/up to pick up new env
-    wd = Path(runtime_dir)
-    _compose_control(compose_file, project, runtime_dir, "down")
-    rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
-    if rc != 0:
-        return False, f"Compose restart failed: {out[:500]}"
+    # Restart container to pick up new env
+    _run(["docker", "restart", container])
 
-    # Bootstrap hxa-connect + telegram components, apply patches
-    _patch_zylos_web_console(runtime_dir)
-    _patch_zylos_comm_bridge(runtime_dir)
-    _restart_zylos_pm2_services(instance_id)
-    bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
+    # Wait for container, then start/restart telegram pm2 process
+    time.sleep(5)
+    _run(["docker", "exec", container, "sh", "-lc",
+          "pm2 restart zylos-telegram 2>/dev/null || true"])
 
-    # Register agent with HXA Connect and write config.json
-    reg_ok, reg_msg = _register_zylos_hxa_agent(instance_id, runtime_dir)
+    # Verify telegram started
+    for _ in range(8):
+        time.sleep(3)
+        _, logs = _run(["docker", "logs", "--tail", "30", container])
+        if "telegram" in logs.lower() and ("start" in logs.lower() or "connect" in logs.lower() or "provider" in logs.lower()):
+            _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
+            _sync_runtime_status(instance_id, project)
+            return True, "Telegram bot token 已写入，容器已重启。"
 
-    notes = ["Telegram + HXA 环境变量已注入，容器已重启。"]
-    if bootstrap_ok:
-        notes.append("hxa-connect/telegram 组件已启动。")
-    else:
-        notes.append(f"组件启动部分失败: {bootstrap_msg[:180]}")
-    if reg_ok:
-        notes.append(f"HXA 注册成功: {reg_msg}")
-    else:
-        notes.append(f"HXA 注册失败: {reg_msg}")
-
-    _add_install_event(instance_id, "running", f"Telegram configured (Zylos). {' '.join(notes)}")
+    _add_install_event(instance_id, "running", "Telegram token written, verify manually.")
     _sync_runtime_status(instance_id, project)
-    return True, " ".join(notes)
+    return True, "Telegram bot token 已写入，容器已重启。请手动验证 bot 是否响应。"
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
