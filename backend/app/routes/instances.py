@@ -326,6 +326,10 @@ def configure_telegram_endpoint(
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
     db.execute(
+        "UPDATE instances SET telegram_bot_token=?, agent_name=?, updated_at=? WHERE id=?",
+        (payload.telegram_bot_token, agent_name, now, instance_id),
+    )
+    db.execute(
         """
         INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
@@ -353,12 +357,24 @@ def configure_hxa_endpoint(
     ok, message = configure_hxa_only(instance_id, runtime_dir, project, product=inst["product"], compose_file=compose_file)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
-    # Update agent_name in DB
+    # Update agent_name in both instances and instance_configs tables
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
     db.execute(
-        "UPDATE instance_configs SET agent_name=?, updated_at=? WHERE instance_id=?",
+        "UPDATE instances SET agent_name=?, updated_at=? WHERE id=?",
         (agent_name, now, instance_id),
+    )
+    db.execute(
+        """
+        INSERT INTO instance_configs (instance_id, agent_name, hub_url, org_id, configured_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(instance_id) DO UPDATE SET
+          agent_name=excluded.agent_name,
+          hub_url=excluded.hub_url,
+          org_id=excluded.org_id,
+          updated_at=excluded.updated_at
+        """,
+        (instance_id, agent_name, _HUB_URL, _ORG_ID, now, now),
     )
     db.commit()
     return {"ok": True, "message": message, "agent_name": agent_name}

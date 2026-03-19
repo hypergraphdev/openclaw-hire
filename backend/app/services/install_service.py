@@ -6,6 +6,7 @@ import re
 import subprocess
 import threading
 import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -440,6 +441,93 @@ pm2 ls --no-color || true
     )
     _run(["docker", "exec", container, "sh", "-lc", fix_cmd], cwd=Path(runtime_dir))
     return True, out
+
+
+def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool, str]:
+    """Register Zylos agent with HXA Connect using org_secret, write config.json into container."""
+    agent_name = _safe_agent_name(instance_id)
+    _ORG_SECRET_LIVE = _get_org_secret()
+    _ORG_ID_LIVE = _get_org_id()
+    if not _ORG_SECRET_LIVE:
+        return False, "Server missing ORG_SECRET."
+
+    # Call HXA Connect register API with org_secret (admin path)
+    url = f"{_HUB_URL.rstrip('/')}/api/auth/register"
+    payload = json.dumps({
+        "org_id": _ORG_ID_LIVE,
+        "org_secret": _ORG_SECRET_LIVE,
+        "name": agent_name,
+    }).encode()
+    try:
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+    except Exception as e:
+        # If agent already exists, try cleanup + retry
+        err_msg = str(e)
+        if "409" in err_msg or "NAME_CONFLICT" in err_msg:
+            # Delete existing bot and retry
+            try:
+                _cleanup_zylos_hxa_bot(agent_name, _ORG_ID_LIVE, _ORG_SECRET_LIVE)
+                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+            except Exception as e2:
+                return False, f"HXA registration retry failed: {e2}"
+        else:
+            return False, f"HXA registration failed: {e}"
+
+    agent_token = result.get("token", "")
+    agent_id = result.get("agent_id") or result.get("id", "")
+    if not agent_token:
+        return False, f"HXA registration returned no token: {result}"
+
+    # Write config.json into container
+    config = {
+        "default_hub_url": _HUB_URL,
+        "orgs": {
+            "default": {
+                "org_id": _ORG_ID_LIVE,
+                "agent_id": agent_id,
+                "agent_token": agent_token,
+                "agent_name": agent_name,
+                "hub_url": None,
+                "access": {"dmPolicy": "open", "groupPolicy": "open", "threadMode": "mention"},
+            }
+        },
+    }
+    config_json = json.dumps(config, indent=2) + "\n"
+    container = f"zylos_{instance_id}"
+    config_path = "/home/zylos/zylos/components/hxa-connect/config.json"
+    _run(["docker", "exec", container, "sh", "-c", f"mkdir -p $(dirname {config_path}) && cat > {config_path} << 'CFGEOF'\n{config_json}CFGEOF"])
+    _run(["docker", "exec", container, "sh", "-lc", "pm2 restart zylos-hxa-connect 2>/dev/null || true"])
+
+    return True, f"Agent {agent_name} registered (id: {agent_id})"
+
+
+def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> None:
+    """Best effort: delete existing bot by name via admin API."""
+    try:
+        # Login as org admin
+        login_url = f"{_HUB_URL.rstrip('/')}/api/auth/login"
+        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+        req = urllib.request.Request(login_url, data=login_data, headers={"Content-Type": "application/json", "Origin": "https://www.ucai.net"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+
+        # List bots
+        list_req = urllib.request.Request(f"{_HUB_URL.rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"})
+        with urllib.request.urlopen(list_req, timeout=10) as resp:
+            bots = json.loads(resp.read().decode())
+
+        # Find and delete matching bot
+        for bot in (bots if isinstance(bots, list) else []):
+            if bot.get("name") == agent_name:
+                del_req = urllib.request.Request(f"{_HUB_URL.rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"}, method="DELETE")
+                urllib.request.urlopen(del_req, timeout=10)
+                break
+    except Exception:
+        pass
 
 
 def _patch_zylos_web_console(runtime_dir: str) -> bool:
@@ -941,11 +1029,18 @@ def _configure_zylos_telegram_only(
     _restart_zylos_pm2_services(instance_id)
     bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
 
+    # Register agent with HXA Connect and write config.json
+    reg_ok, reg_msg = _register_zylos_hxa_agent(instance_id, runtime_dir)
+
     notes = ["Telegram + HXA 环境变量已注入，容器已重启。"]
     if bootstrap_ok:
         notes.append("hxa-connect/telegram 组件已启动。")
     else:
         notes.append(f"组件启动部分失败: {bootstrap_msg[:180]}")
+    if reg_ok:
+        notes.append(f"HXA 注册成功: {reg_msg}")
+    else:
+        notes.append(f"HXA 注册失败: {reg_msg}")
 
     _add_install_event(instance_id, "running", f"Telegram configured (Zylos). {' '.join(notes)}")
     _sync_runtime_status(instance_id, project)
@@ -1012,8 +1107,10 @@ def _configure_zylos_hxa_only(
     _restart_zylos_pm2_services(instance_id)
     bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
 
-    if not bootstrap_ok:
-        return False, f"HXA env injected but component bootstrap failed: {bootstrap_msg[:300]}"
+    # Register agent with HXA Connect and write config.json
+    reg_ok, reg_msg = _register_zylos_hxa_agent(instance_id, runtime_dir)
+    if not reg_ok:
+        return False, f"HXA registration failed: {reg_msg}"
 
     _add_install_event(instance_id, "running", f"HXA configured (Zylos). Agent: {agent_name}")
     _sync_runtime_status(instance_id, project)
