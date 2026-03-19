@@ -181,7 +181,7 @@ def get_instance(
         )
 
     return InstanceDetailResponse(
-        instance=InstanceResponse(**inst),
+        instance=_row_to_instance(inst),
         install_timeline=[InstallEventResponse(**dict(e)) for e in events],
         config=config,
     )
