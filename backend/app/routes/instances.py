@@ -349,8 +349,8 @@ def configure_hxa_endpoint(
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
-    _, project, runtime_dir = _require_compose(inst)
-    ok, message = configure_hxa_only(instance_id, runtime_dir, project, product=inst["product"])
+    compose_file, project, runtime_dir = _require_compose(inst)
+    ok, message = configure_hxa_only(instance_id, runtime_dir, project, product=inst["product"], compose_file=compose_file)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
     # Update agent_name in DB

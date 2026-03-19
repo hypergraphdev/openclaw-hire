@@ -824,7 +824,7 @@ def configure_telegram_only(
         return False, f"Telegram bot token is already used by instance {duplicated_by}."
 
     if product == "zylos":
-        return _configure_zylos_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
+        return _configure_zylos_telegram_only(instance_id, telegram_bot_token, runtime_dir, compose_file, project)
     else:
         return _configure_openclaw_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
 
@@ -892,6 +892,7 @@ def _configure_zylos_telegram_only(
     instance_id: str,
     telegram_bot_token: str,
     runtime_dir: str,
+    compose_file: str,
     project: str,
 ) -> tuple[bool, str]:
     """Configure Telegram for Zylos: inject full HXA + Telegram env, restart, bootstrap components."""
@@ -929,17 +930,8 @@ def _configure_zylos_telegram_only(
 
     # Docker compose down/up to pick up new env
     wd = Path(runtime_dir)
-    compose_file = None
-    for candidate in COMPOSE_CANDIDATES:
-        cf = wd / candidate
-        if cf.exists():
-            compose_file = cf
-            break
-    if not compose_file:
-        return False, f"No compose file found in {runtime_dir}"
-
-    _compose_control(str(compose_file), project, runtime_dir, "down")
-    rc, out = _compose_up(compose_file, project, wd, runtime_dir)
+    _compose_control(compose_file, project, runtime_dir, "down")
+    rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
     if rc != 0:
         return False, f"Compose restart failed: {out[:500]}"
 
@@ -967,16 +959,18 @@ def configure_hxa_only(
     runtime_dir: str,
     project: str,
     product: str = "openclaw",
+    compose_file: str = "",
 ) -> tuple[bool, str]:
     """Register with HXA org. Routes to product-specific impl."""
     if product == "zylos":
-        return _configure_zylos_hxa_only(instance_id, runtime_dir, project)
+        return _configure_zylos_hxa_only(instance_id, runtime_dir, compose_file, project)
     return _configure_openclaw_hxa_only(instance_id, runtime_dir, project)
 
 
 def _configure_zylos_hxa_only(
     instance_id: str,
     runtime_dir: str,
+    compose_file: str,
     project: str,
 ) -> tuple[bool, str]:
     """Register Zylos instance with HXA org: inject env vars, restart, bootstrap components."""
@@ -1008,17 +1002,8 @@ def _configure_zylos_hxa_only(
 
     # Docker compose down/up
     wd = Path(runtime_dir)
-    compose_file = None
-    for candidate in COMPOSE_CANDIDATES:
-        cf = wd / candidate
-        if cf.exists():
-            compose_file = cf
-            break
-    if not compose_file:
-        return False, f"No compose file found in {runtime_dir}"
-
-    _compose_control(str(compose_file), project, runtime_dir, "down")
-    rc, out = _compose_up(compose_file, project, wd, runtime_dir)
+    _compose_control(compose_file, project, runtime_dir, "down")
+    rc, out = _compose_up(Path(compose_file), project, wd, runtime_dir)
     if rc != 0:
         return False, f"Compose restart failed: {out[:500]}"
 
