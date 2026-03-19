@@ -111,6 +111,12 @@ def update_agent_name(instance_id: str, payload: UpdateAgentNameRequest, current
     if not new_name:
         raise HTTPException(status_code=400, detail="Agent name cannot be empty.")
 
+    # Check duplicate name across all agents in org
+    existing_agents = _get_agents()
+    for a in existing_agents:
+        if a["agent_name"] == new_name and a["instance_id"] != instance_id:
+            raise HTTPException(status_code=409, detail=f"名字 '{new_name}' 已被实例 {a['instance_name']} 使用。")
+
     # Read bot token from runtime config to call HXA rename API
     agent_token = _get_agent_token(instance_id)
     if not agent_token:
