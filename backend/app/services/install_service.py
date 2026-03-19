@@ -444,38 +444,55 @@ pm2 ls --no-color || true
 
 
 def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool, str]:
-    """Register Zylos agent with HXA Connect using org_secret, write config.json into container."""
+    """Register Zylos agent with HXA Connect as member via ticket, write config.json into container."""
     agent_name = _safe_agent_name(instance_id)
     _ORG_SECRET_LIVE = _get_org_secret()
     _ORG_ID_LIVE = _get_org_id()
     if not _ORG_SECRET_LIVE:
         return False, "Server missing ORG_SECRET."
 
-    # Call HXA Connect register API with org_secret (admin path)
-    url = f"{_HUB_URL.rstrip('/')}/api/auth/register"
-    payload = json.dumps({
+    hub = _HUB_URL.rstrip("/")
+    origin = "https://www.ucai.net"
+
+    # Step 1: Admin login to get session cookie
+    try:
+        login_data = json.dumps({"type": "org_admin", "org_secret": _ORG_SECRET_LIVE, "org_id": _ORG_ID_LIVE}).encode()
+        login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
+                                           headers={"Content-Type": "application/json", "Origin": origin}, method="POST")
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+    except Exception as e:
+        return False, f"Admin login failed: {e}"
+
+    # Step 2: Cleanup existing bot if any
+    _cleanup_zylos_hxa_bot(agent_name, _ORG_ID_LIVE, _ORG_SECRET_LIVE)
+
+    # Step 3: Create a one-time ticket
+    try:
+        ticket_data = json.dumps({"reusable": False}).encode()
+        ticket_req = urllib.request.Request(f"{hub}/api/org/tickets", data=ticket_data,
+                                            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin}, method="POST")
+        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
+            ticket_result = json.loads(resp.read().decode())
+        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
+        if not ticket_secret:
+            return False, f"Ticket creation returned no secret: {ticket_result}"
+    except Exception as e:
+        return False, f"Ticket creation failed: {e}"
+
+    # Step 4: Register agent using ticket (member role)
+    reg_url = f"{hub}/api/auth/register"
+    reg_data = json.dumps({
         "org_id": _ORG_ID_LIVE,
-        "org_secret": _ORG_SECRET_LIVE,
+        "ticket": ticket_secret,
         "name": agent_name,
     }).encode()
     try:
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        reg_req = urllib.request.Request(reg_url, data=reg_data, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(reg_req, timeout=15) as resp:
             result = json.loads(resp.read().decode())
     except Exception as e:
-        # If agent already exists, try cleanup + retry
-        err_msg = str(e)
-        if "409" in err_msg or "NAME_CONFLICT" in err_msg:
-            # Delete existing bot and retry
-            try:
-                _cleanup_zylos_hxa_bot(agent_name, _ORG_ID_LIVE, _ORG_SECRET_LIVE)
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    result = json.loads(resp.read().decode())
-            except Exception as e2:
-                return False, f"HXA registration retry failed: {e2}"
-        else:
-            return False, f"HXA registration failed: {e}"
+        return False, f"HXA registration failed: {e}"
 
     agent_token = result.get("token", "")
     agent_id = result.get("agent_id") or result.get("id", "")
@@ -992,13 +1009,30 @@ def _configure_zylos_telegram_only(
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Restart telegram pm2 process inside container (no need to restart whole container)
+    # Restart container so it picks up the updated .env
+    _run(["docker", "restart", container])
+
+    # Wait for container to be ready, then reset telegram pm2 process
+    time.sleep(5)
     _run(["docker", "exec", container, "sh", "-lc",
-          "pm2 restart zylos-telegram 2>/dev/null || true"])
+          "pm2 delete zylos-telegram 2>/dev/null || true; "
+          "cd /home/zylos/zylos/.claude/skills/telegram && "
+          "pm2 start ecosystem.config.cjs 2>/dev/null || true; "
+          "pm2 save 2>/dev/null || true"])
+
+    # Verify telegram started (max ~15s)
+    for _ in range(5):
+        time.sleep(3)
+        rc, out = _run(["docker", "exec", container, "sh", "-lc",
+                        "pm2 jlist 2>/dev/null || true"])
+        if "zylos-telegram" in out and "online" in out:
+            _add_install_event(instance_id, "running", "Telegram configured and verified (Zylos).")
+            _sync_runtime_status(instance_id, project)
+            return True, "Telegram 已配置并验证启动。"
 
     _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
     _sync_runtime_status(instance_id, project)
-    return True, "Telegram bot token 已写入，pm2 已重启。"
+    return True, "Telegram bot token 已写入，容器已重启。"
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
