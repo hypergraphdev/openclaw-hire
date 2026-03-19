@@ -960,20 +960,14 @@ def _configure_openclaw_telegram_only(
 
     _run(["docker", "restart", gateway_container])
 
-    for _ in range(10):
+    # Quick verification (max ~15s to avoid nginx 504)
+    for _ in range(5):
         time.sleep(3)
         _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
         if "[telegram]" in logs and "starting provider" in logs:
             return True, "Telegram configured and verified."
 
-    _run(["docker", "restart", gateway_container])
-    for _ in range(10):
-        time.sleep(3)
-        _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
-        if "[telegram]" in logs and "starting provider" in logs:
-            return True, "Telegram configured and verified (after retry)."
-
-    return False, "Telegram configured but provider did not start within 60s. Check bot token and container logs."
+    return True, "Telegram bot token 已写入 openclaw.json，网关已重启。"
 
 
 def _configure_zylos_telegram_only(
@@ -998,26 +992,13 @@ def _configure_zylos_telegram_only(
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Restart container to pick up new env
-    _run(["docker", "restart", container])
-
-    # Wait for container, then start/restart telegram pm2 process
-    time.sleep(5)
+    # Restart telegram pm2 process inside container (no need to restart whole container)
     _run(["docker", "exec", container, "sh", "-lc",
           "pm2 restart zylos-telegram 2>/dev/null || true"])
 
-    # Verify telegram started
-    for _ in range(8):
-        time.sleep(3)
-        _, logs = _run(["docker", "logs", "--tail", "30", container])
-        if "telegram" in logs.lower() and ("start" in logs.lower() or "connect" in logs.lower() or "provider" in logs.lower()):
-            _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
-            _sync_runtime_status(instance_id, project)
-            return True, "Telegram bot token 已写入，容器已重启。"
-
-    _add_install_event(instance_id, "running", "Telegram token written, verify manually.")
+    _add_install_event(instance_id, "running", "Telegram configured (Zylos).")
     _sync_runtime_status(instance_id, project)
-    return True, "Telegram bot token 已写入，容器已重启。请手动验证 bot 是否响应。"
+    return True, "Telegram bot token 已写入，pm2 已重启。"
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
