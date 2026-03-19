@@ -902,7 +902,7 @@ def _configure_zylos_telegram_only(
     # Write token to both runtime .env and zylos-data/.env
     for env_path in [runtime_env, zylos_env]:
         if env_path.exists():
-            env = _read_env_file(str(env_path))
+            env = _read_env_file(env_path)
             env["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
             env["TELEGRAM_ENABLE_GROUPS"] = "true"
             env["TELEGRAM_ENABLE_DMS"] = "true"
