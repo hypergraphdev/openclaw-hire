@@ -350,7 +350,7 @@ def configure_hxa_endpoint(
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     _, project, runtime_dir = _require_compose(inst)
-    ok, message = configure_hxa_only(instance_id, runtime_dir, project)
+    ok, message = configure_hxa_only(instance_id, runtime_dir, project, product=inst["product"])
     if not ok:
         raise HTTPException(status_code=500, detail=message)
     # Update agent_name in DB

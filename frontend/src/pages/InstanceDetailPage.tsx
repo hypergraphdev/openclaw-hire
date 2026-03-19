@@ -278,8 +278,8 @@ export function InstanceDetailPage() {
             </a>
           </div>
 
-          {/* Join Organization (HXA Connect) - OpenClaw only */}
-          {instance.product === "openclaw" && (
+          {/* Join Organization (HXA Connect) */}
+          {(
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
               <h2 className="text-sm font-medium text-gray-300 mb-3">Join Organization</h2>
               <div className="space-y-3">

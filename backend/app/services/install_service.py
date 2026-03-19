@@ -894,47 +894,148 @@ def _configure_zylos_telegram_only(
     runtime_dir: str,
     project: str,
 ) -> tuple[bool, str]:
-    """Configure Telegram for Zylos: write to zylos-data/.env, restart container."""
-    container = f"zylos_{instance_id}"
-    zylos_env = Path(runtime_dir) / "zylos-data" / ".env"
-    runtime_env = Path(runtime_dir) / ".env"
+    """Configure Telegram for Zylos: inject full HXA + Telegram env, restart, bootstrap components."""
+    env_path = Path(runtime_dir) / ".env"
+    agent_name = _safe_agent_name(instance_id)
+    plugin = _PLUGIN_MAP.get("zylos", "hxa-connect")
 
-    # Write token to both runtime .env and zylos-data/.env
-    for env_path in [runtime_env, zylos_env]:
-        if env_path.exists():
-            env = _read_env_file(env_path)
-            env["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
-            env["TELEGRAM_ENABLE_GROUPS"] = "true"
-            env["TELEGRAM_ENABLE_DMS"] = "true"
-            _write_env_file(env_path, env)
+    _ORG_SECRET_LIVE = _get_org_secret()
+    _ORG_ID_LIVE = _get_org_id()
+    if not _ORG_SECRET_LIVE:
+        return False, "Server missing ORG_SECRET/HXA_CONNECT_ORG_SECRET; cannot configure."
 
-    # Inject token directly into running container env via zylos CLI if available
-    inject_cmd = (
-        f"export TELEGRAM_BOT_TOKEN={telegram_bot_token!r}; "
-        f"export TELEGRAM_ENABLE_GROUPS=true; "
-        f"export TELEGRAM_ENABLE_DMS=true; "
-        f"if [ -x /home/zylos/.npm-global/bin/zylos ]; then "
-        f"  /home/zylos/.npm-global/bin/zylos config set telegram.botToken {telegram_bot_token!r} 2>/dev/null || true; "
-        f"fi; "
-        f"pm2 restart zylos-telegram 2>/dev/null || true"
-    )
-    _run(["docker", "exec", container, "sh", "-c", inject_cmd])
+    # Read current env and inject full updates (Telegram + HXA)
+    env = _read_env_file(env_path)
+    updates = {
+        "TELEGRAM_BOT_TOKEN": telegram_bot_token,
+        "TELEGRAM_ENABLE_GROUPS": "true",
+        "TELEGRAM_ENABLE_DMS": "true",
+        "HUB_URL": _HUB_URL,
+        "HXA_CONNECT_HUB_URL": _HUB_URL,
+        "HXA_CONNECT_URL": _HUB_URL,
+        "ORG_ID": _ORG_ID_LIVE,
+        "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
+        "ORG_TOKEN": _ORG_SECRET_LIVE,
+        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET_LIVE,
+        "HXA_CONNECT_AGENT_NAME": agent_name,
+        "HXA_PLUGIN": plugin,
+        "PLUGIN_NAME": plugin,
+    }
+    env.update(updates)
+    _write_env_file(env_path, env)
 
-    # Restart container to pick up new env
-    _run(["docker", "restart", container])
+    # Sync to zylos-data/.env inside container
+    _sync_instance_runtime_env(runtime_dir, updates)
 
-    for _ in range(10):
-        time.sleep(3)
-        _, logs = _run(["docker", "logs", "--tail", "30", container])
-        if "telegram" in logs.lower() and ("starting" in logs.lower() or "connected" in logs.lower() or "provider" in logs.lower()):
-            return True, "Telegram configured and verified (Zylos)."
+    # Docker compose down/up to pick up new env
+    wd = Path(runtime_dir)
+    compose_file = None
+    for candidate in COMPOSE_CANDIDATES:
+        cf = wd / candidate
+        if cf.exists():
+            compose_file = cf
+            break
+    if not compose_file:
+        return False, f"No compose file found in {runtime_dir}"
 
-    return True, "Telegram token written. Container restarted. Verify bot response manually."
+    _compose_control(str(compose_file), project, runtime_dir, "down")
+    rc, out = _compose_up(compose_file, project, wd, runtime_dir)
+    if rc != 0:
+        return False, f"Compose restart failed: {out[:500]}"
+
+    # Bootstrap hxa-connect + telegram components, apply patches
+    _patch_zylos_web_console(runtime_dir)
+    _patch_zylos_comm_bridge(runtime_dir)
+    _restart_zylos_pm2_services(instance_id)
+    bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
+
+    notes = ["Telegram + HXA 环境变量已注入，容器已重启。"]
+    if bootstrap_ok:
+        notes.append("hxa-connect/telegram 组件已启动。")
+    else:
+        notes.append(f"组件启动部分失败: {bootstrap_msg[:180]}")
+
+    _add_install_event(instance_id, "running", f"Telegram configured (Zylos). {' '.join(notes)}")
+    _sync_runtime_status(instance_id, project)
+    return True, " ".join(notes)
 
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
 
 def configure_hxa_only(
+    instance_id: str,
+    runtime_dir: str,
+    project: str,
+    product: str = "openclaw",
+) -> tuple[bool, str]:
+    """Register with HXA org. Routes to product-specific impl."""
+    if product == "zylos":
+        return _configure_zylos_hxa_only(instance_id, runtime_dir, project)
+    return _configure_openclaw_hxa_only(instance_id, runtime_dir, project)
+
+
+def _configure_zylos_hxa_only(
+    instance_id: str,
+    runtime_dir: str,
+    project: str,
+) -> tuple[bool, str]:
+    """Register Zylos instance with HXA org: inject env vars, restart, bootstrap components."""
+    env_path = Path(runtime_dir) / ".env"
+    agent_name = _safe_agent_name(instance_id)
+    plugin = _PLUGIN_MAP.get("zylos", "hxa-connect")
+
+    _ORG_SECRET_LIVE = _get_org_secret()
+    _ORG_ID_LIVE = _get_org_id()
+    if not _ORG_SECRET_LIVE:
+        return False, "Server missing ORG_SECRET."
+
+    env = _read_env_file(env_path)
+    updates = {
+        "HUB_URL": _HUB_URL,
+        "HXA_CONNECT_HUB_URL": _HUB_URL,
+        "HXA_CONNECT_URL": _HUB_URL,
+        "ORG_ID": _ORG_ID_LIVE,
+        "HXA_CONNECT_ORG_ID": _ORG_ID_LIVE,
+        "ORG_TOKEN": _ORG_SECRET_LIVE,
+        "HXA_CONNECT_ORG_TICKET": _ORG_SECRET_LIVE,
+        "HXA_CONNECT_AGENT_NAME": agent_name,
+        "HXA_PLUGIN": plugin,
+        "PLUGIN_NAME": plugin,
+    }
+    env.update(updates)
+    _write_env_file(env_path, env)
+    _sync_instance_runtime_env(runtime_dir, updates)
+
+    # Docker compose down/up
+    wd = Path(runtime_dir)
+    compose_file = None
+    for candidate in COMPOSE_CANDIDATES:
+        cf = wd / candidate
+        if cf.exists():
+            compose_file = cf
+            break
+    if not compose_file:
+        return False, f"No compose file found in {runtime_dir}"
+
+    _compose_control(str(compose_file), project, runtime_dir, "down")
+    rc, out = _compose_up(compose_file, project, wd, runtime_dir)
+    if rc != 0:
+        return False, f"Compose restart failed: {out[:500]}"
+
+    _patch_zylos_web_console(runtime_dir)
+    _patch_zylos_comm_bridge(runtime_dir)
+    _restart_zylos_pm2_services(instance_id)
+    bootstrap_ok, bootstrap_msg = _bootstrap_zylos_components(instance_id, runtime_dir)
+
+    if not bootstrap_ok:
+        return False, f"HXA env injected but component bootstrap failed: {bootstrap_msg[:300]}"
+
+    _add_install_event(instance_id, "running", f"HXA configured (Zylos). Agent: {agent_name}")
+    _sync_runtime_status(instance_id, project)
+    return True, f"HXA connected. Agent: {agent_name}"
+
+
+def _configure_openclaw_hxa_only(
     instance_id: str,
     runtime_dir: str,
     project: str,
