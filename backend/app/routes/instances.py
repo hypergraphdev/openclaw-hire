@@ -321,7 +321,24 @@ def configure_telegram_endpoint(
     )
     if not ok:
         raise HTTPException(status_code=500, detail=message)
-    return {"ok": True, "message": message}
+    # Write to DB so list page shows configured status
+    now = _utc_now()
+    agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
+    db.execute(
+        """
+        INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+        ON CONFLICT(instance_id) DO UPDATE SET
+          telegram_bot_token=excluded.telegram_bot_token,
+          agent_name=excluded.agent_name,
+          allow_group=1, allow_dm=1,
+          configured_at=excluded.configured_at,
+          updated_at=excluded.updated_at
+        """,
+        (instance_id, payload.telegram_bot_token, "openclaw-hxa-connect", _HUB_URL, _ORG_ID, "server-managed", agent_name, now, now),
+    )
+    db.commit()
+    return {"ok": True, "message": message, "agent_name": agent_name, "is_telegram_configured": True}
 
 
 @router.post("/{instance_id}/configure-hxa")
@@ -335,7 +352,15 @@ def configure_hxa_endpoint(
     ok, message = configure_hxa_only(instance_id, runtime_dir, project)
     if not ok:
         raise HTTPException(status_code=500, detail=message)
-    return {"ok": True, "message": message}
+    # Update agent_name in DB
+    now = _utc_now()
+    agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
+    db.execute(
+        "UPDATE instance_configs SET agent_name=?, updated_at=? WHERE instance_id=?",
+        (agent_name, now, instance_id),
+    )
+    db.commit()
+    return {"ok": True, "message": message, "agent_name": agent_name}
 
 
 @router.delete("/{instance_id}")

@@ -920,7 +920,7 @@ def configure_hxa_only(
   if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
   const {{ HxaConnectClient }} = sdk;
   try {{
-    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)});
+    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)}, {{ role: "member" }});
     const token = reg.token || reg.agent_token || reg.bot_token || "";
     const agentId = reg.id || reg.bot_id || reg.agent_id || "";
     console.log("HXA_REG_OK::" + JSON.stringify({{ token, agentId }}));

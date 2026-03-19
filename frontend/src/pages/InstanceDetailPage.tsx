@@ -101,6 +101,7 @@ export function InstanceDetailPage() {
       const result = await api.configureTelegram(instanceId, botToken.trim());
       setConfigResult(result as unknown as TelegramConfigResponse);
       setBotToken("");
+      setShowConfigureForm(false);
       await fetchDetail();
     } catch (err: unknown) {
       setConfigError(err instanceof Error ? err.message : "Configuration failed.");
@@ -240,6 +241,18 @@ export function InstanceDetailPage() {
                       Open Console ↗
                     </a>
                   </dd>
+                </div>
+              )}
+              {instance.web_console_port && (
+                <div>
+                  <dt className="text-xs text-gray-500">Gateway Port</dt>
+                  <dd className="text-gray-400 font-mono text-xs">{instance.web_console_port}</dd>
+                </div>
+              )}
+              {instance.http_port && (
+                <div>
+                  <dt className="text-xs text-gray-500">Bridge Port</dt>
+                  <dd className="text-gray-400 font-mono text-xs">{instance.http_port}</dd>
                 </div>
               )}
               <div>
