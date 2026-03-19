@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 import type { AdminUserInstances, User } from "../types";
 
 export function AdminPage() {
+  const t = useT();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [detail, setDetail] = useState<AdminUserInstances | null>(null);
@@ -18,9 +20,9 @@ export function AdminPage() {
         setUsers(rows);
         if (rows.length > 0) setSelectedUserId(rows[0].id);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load users"))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : t("admin.loadFailed")))
       .finally(() => setLoadingUsers(false));
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!selectedUserId) return;
@@ -28,30 +30,30 @@ export function AdminPage() {
     api
       .adminUserInstances(selectedUserId)
       .then(setDetail)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load user instances"))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : t("admin.loadInstancesFailed")))
       .finally(() => setLoadingDetail(false));
-  }, [selectedUserId]);
+  }, [selectedUserId, t]);
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-white">Admin Console</h1>
+        <h1 className="text-xl font-semibold text-white">{t("admin.title")}</h1>
         <div className="flex gap-3 mt-2">
-          <Link to="/admin/settings" className="text-xs text-blue-400 hover:text-blue-300">⚙️ Settings</Link>
-          <Link to="/admin/hxa" className="text-xs text-blue-400 hover:text-blue-300">🔗 HXA Orgs</Link>
+          <Link to="/admin/settings" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.settingsLink")}</Link>
+          <Link to="/admin/hxa" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.hxaLink")}</Link>
         </div>
-        <p className="text-gray-500 text-sm mt-1">Users and their instances</p>
+        <p className="text-gray-500 text-sm mt-1">{t("admin.subtitle")}</p>
       </div>
 
       {error && <div className="mb-4 p-3 text-sm rounded bg-red-900/40 border border-red-700 text-red-300">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h2 className="text-sm font-medium text-gray-300 mb-3">Users</h2>
+          <h2 className="text-sm font-medium text-gray-300 mb-3">{t("admin.users")}</h2>
           {loadingUsers ? (
-            <div className="text-sm text-gray-500">Loading users...</div>
+            <div className="text-sm text-gray-500">{t("admin.loadingUsers")}</div>
           ) : users.length === 0 ? (
-            <div className="text-sm text-gray-500">No users</div>
+            <div className="text-sm text-gray-500">{t("admin.noUsers")}</div>
           ) : (
             <div className="space-y-2 max-h-[520px] overflow-auto pr-1">
               {users.map((u) => (
@@ -75,29 +77,30 @@ export function AdminPage() {
         </div>
 
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h2 className="text-sm font-medium text-gray-300 mb-3">User Instances</h2>
+          <h2 className="text-sm font-medium text-gray-300 mb-3">{t("admin.userInstances")}</h2>
           {loadingDetail ? (
-            <div className="text-sm text-gray-500">Loading instances...</div>
+            <div className="text-sm text-gray-500">{t("common.loading")}</div>
           ) : !detail ? (
-            <div className="text-sm text-gray-500">Select a user</div>
+            <div className="text-sm text-gray-500">{t("admin.selectUser")}</div>
           ) : (
             <>
               <div className="mb-3 text-xs text-gray-400">
-                <span className="text-gray-500">User:</span> {detail.user.name} · {detail.user.email}
+                <span className="text-gray-500">{t("admin.user")}</span> {detail.user.name} · {detail.user.email}
                 {detail.user.is_admin ? " · admin" : ""}
               </div>
               {detail.instances.length === 0 ? (
-                <div className="text-sm text-gray-500">No instances</div>
+                <div className="text-sm text-gray-500">{t("admin.noInstances")}</div>
               ) : (
                 <div className="overflow-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-800">
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">Name</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">Product</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">State</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">Status</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">Created</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.name")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.product")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.state")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.orgBound")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.telegramBound")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.created")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -109,7 +112,16 @@ export function AdminPage() {
                           </td>
                           <td className="py-2 pr-3 text-gray-300 capitalize">{i.product}</td>
                           <td className="py-2 pr-3 text-gray-300">{i.install_state}</td>
-                          <td className="py-2 pr-3 text-gray-300">{i.status}</td>
+                          <td className="py-2 pr-3">
+                            {i.agent_name
+                              ? <span className="text-green-400 text-xs">{i.agent_name}</span>
+                              : <span className="text-gray-600 text-xs">-</span>}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {i.is_telegram_configured
+                              ? <span className="text-green-400 text-xs">✓</span>
+                              : <span className="text-gray-600 text-xs">-</span>}
+                          </td>
                           <td className="py-2 pr-3 text-gray-500">{new Date(i.created_at).toLocaleString()}</td>
                         </tr>
                       ))}

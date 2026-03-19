@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 
 interface HXAConfig {
   org_id: string;
@@ -20,18 +21,17 @@ interface Agent {
 
 export default function AdminHXAPage() {
   const navigate = useNavigate();
+  const t = useT();
   const [config, setConfig] = useState<HXAConfig | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSecret, setShowSecret] = useState(false);
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
 
-  // Hub URL editing
   const [editingHubUrl, setEditingHubUrl] = useState(false);
   const [hubUrlDraft, setHubUrlDraft] = useState("");
   const [hubUrlSaving, setHubUrlSaving] = useState(false);
 
-  // Agent name editing
   const [editingAgentId, setEditingAgentId] = useState<string>("");
   const [agentNameDraft, setAgentNameDraft] = useState("");
   const [agentNameSaving, setAgentNameSaving] = useState(false);
@@ -83,23 +83,21 @@ export default function AdminHXAPage() {
     }
   }
 
-  if (loading) return <div className="text-gray-400 text-sm p-6">Loading...</div>;
+  if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-200 text-sm">← Back</button>
-        <h1 className="text-lg font-semibold text-white">HXA Organization</h1>
+        <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-200 text-sm">{t("common.back")}</button>
+        <h1 className="text-lg font-semibold text-white">{t("adminHxa.title")}</h1>
       </div>
 
-      {/* Org Config */}
       {config && (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-medium text-gray-300">Organization Config</h2>
+          <h2 className="text-sm font-medium text-gray-300">{t("adminHxa.orgConfig")}</h2>
 
-          {/* Hub URL - editable */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-20">Hub URL</span>
+            <span className="text-xs text-gray-400 w-20">{t("adminHxa.hubUrl")}</span>
             {editingHubUrl ? (
               <>
                 <input
@@ -110,52 +108,51 @@ export default function AdminHXAPage() {
                   onKeyDown={(e) => e.key === "Enter" && saveHubUrl()}
                 />
                 <button onClick={saveHubUrl} disabled={hubUrlSaving} className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">
-                  {hubUrlSaving ? "..." : "Save"}
+                  {hubUrlSaving ? "..." : t("common.save")}
                 </button>
-                <button onClick={() => setEditingHubUrl(false)} className="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+                <button onClick={() => setEditingHubUrl(false)} className="text-xs text-gray-500 hover:text-gray-300">{t("common.cancel")}</button>
               </>
             ) : (
               <>
                 <code className="text-xs font-mono text-gray-200 bg-gray-800 px-2 py-1 rounded flex-1">{config.hub_url}</code>
-                <button onClick={() => { setHubUrlDraft(config.hub_url); setEditingHubUrl(true); }} className="text-xs text-gray-500 hover:text-gray-300">Edit</button>
+                <button onClick={() => { setHubUrlDraft(config.hub_url); setEditingHubUrl(true); }} className="text-xs text-gray-500 hover:text-gray-300">{t("common.edit")}</button>
               </>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-20">Org ID</span>
+            <span className="text-xs text-gray-400 w-20">{t("adminHxa.orgId")}</span>
             <code className="text-xs font-mono text-gray-200 bg-gray-800 px-2 py-1 rounded flex-1">{config.org_id}</code>
-            <button onClick={() => copy(config.org_id)} className="text-xs text-gray-500 hover:text-gray-300">Copy</button>
+            <button onClick={() => copy(config.org_id)} className="text-xs text-gray-500 hover:text-gray-300">{t("common.copy")}</button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-20">Org Secret</span>
+            <span className="text-xs text-gray-400 w-20">{t("adminHxa.orgSecret")}</span>
             <code className="text-xs font-mono text-gray-200 bg-gray-800 px-2 py-1 rounded flex-1">
               {showSecret ? config.org_secret : "••••••••••••••••"}
             </code>
             <button onClick={() => setShowSecret((v) => !v)} className="text-xs text-gray-500 hover:text-gray-300">
-              {showSecret ? "Hide" : "Show"}
+              {showSecret ? t("common.hide") : t("common.show")}
             </button>
             {showSecret && (
-              <button onClick={() => copy(config.org_secret)} className="text-xs text-gray-500 hover:text-gray-300">Copy</button>
+              <button onClick={() => copy(config.org_secret)} className="text-xs text-gray-500 hover:text-gray-300">{t("common.copy")}</button>
             )}
           </div>
         </div>
       )}
 
-      {/* Agent Tokens */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-        <h2 className="text-sm font-medium text-gray-300 mb-3">Agent Tokens ({agents.length})</h2>
+        <h2 className="text-sm font-medium text-gray-300 mb-3">{t("adminHxa.agentTokens")} ({agents.length})</h2>
         {agents.length === 0 ? (
-          <p className="text-gray-500 text-sm">No agents found.</p>
+          <p className="text-gray-500 text-sm">{t("adminHxa.noAgents")}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-800">
-                  <th className="text-left py-2 pr-4">Instance</th>
-                  <th className="text-left py-2 pr-4">Product</th>
-                  <th className="text-left py-2 pr-4">Agent Name</th>
-                  <th className="text-left py-2 pr-4">Token</th>
+                  <th className="text-left py-2 pr-4">{t("adminHxa.instance")}</th>
+                  <th className="text-left py-2 pr-4">{t("adminHxa.product")}</th>
+                  <th className="text-left py-2 pr-4">{t("adminHxa.agentName")}</th>
+                  <th className="text-left py-2 pr-4">{t("adminHxa.token")}</th>
                   <th className="text-left py-2"></th>
                 </tr>
               </thead>
@@ -175,7 +172,7 @@ export default function AdminHXAPage() {
                             onKeyDown={(e) => e.key === "Enter" && saveAgentName(a.instance_id)}
                           />
                           <button onClick={() => saveAgentName(a.instance_id)} disabled={agentNameSaving} className="text-blue-400 hover:text-blue-300 disabled:opacity-50">
-                            {agentNameSaving ? "..." : "OK"}
+                            {agentNameSaving ? "..." : t("common.ok")}
                           </button>
                           <button onClick={() => setEditingAgentId("")} className="text-gray-500 hover:text-gray-300">X</button>
                         </div>
@@ -186,7 +183,7 @@ export default function AdminHXAPage() {
                             onClick={() => { setAgentNameDraft(a.agent_name); setEditingAgentId(a.instance_id); }}
                             className="ml-2 text-gray-600 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
                           >
-                            Edit
+                            {t("common.edit")}
                           </button>
                         </span>
                       )}
@@ -198,10 +195,10 @@ export default function AdminHXAPage() {
                       {a.agent_token && (
                         <>
                           <button onClick={() => toggleToken(a.instance_id)} className="text-gray-500 hover:text-gray-300">
-                            {revealedTokens.has(a.instance_id) ? "Hide" : "Show"}
+                            {revealedTokens.has(a.instance_id) ? t("common.hide") : t("common.show")}
                           </button>
                           {revealedTokens.has(a.instance_id) && (
-                            <button onClick={() => copy(a.agent_token)} className="text-gray-500 hover:text-gray-300">Copy</button>
+                            <button onClick={() => copy(a.agent_token)} className="text-gray-500 hover:text-gray-300">{t("common.copy")}</button>
                           )}
                         </>
                       )}

@@ -1,16 +1,19 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 import type { ProductCatalog } from "../types";
 
 function DeployModal({
   product,
   onClose,
   onDeploy,
+  t,
 }: {
   product: ProductCatalog;
   onClose: () => void;
   onDeploy: (name: string) => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const [name, setName] = useState(`${product.id}-${Date.now().toString(36).slice(-4)}`);
   const [loading, setLoading] = useState(false);
@@ -23,7 +26,7 @@ function DeployModal({
     try {
       await onDeploy(name);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Deploy failed.");
+      setError(err instanceof Error ? err.message : t("catalog.deployFailed"));
       setLoading(false);
     }
   }
@@ -31,7 +34,7 @@ function DeployModal({
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
       <div className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-md p-6">
-        <h2 className="text-white font-semibold mb-1">Deploy {product.name}</h2>
+        <h2 className="text-white font-semibold mb-1">{t("catalog.deployTitle", { name: product.name })}</h2>
         <p className="text-gray-400 text-sm mb-5">{product.tagline}</p>
 
         {error && (
@@ -42,7 +45,7 @@ function DeployModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Instance name</label>
+            <label className="block text-sm text-gray-400 mb-1.5">{t("catalog.instanceName")}</label>
             <input
               type="text"
               value={name}
@@ -52,7 +55,7 @@ function DeployModal({
             />
           </div>
           <div className="bg-gray-800 rounded-md p-3 text-xs text-gray-400">
-            <span className="text-gray-500">Repository: </span>
+            <span className="text-gray-500">{t("catalog.repository")}</span>
             <a href={product.repo_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">
               {product.repo_url}
             </a>
@@ -63,14 +66,14 @@ function DeployModal({
               onClick={onClose}
               className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-md transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-md transition-colors"
             >
-              {loading ? "Deploying..." : "Deploy"}
+              {loading ? t("catalog.deploying") : t("catalog.deploySubmit")}
             </button>
           </div>
         </form>
@@ -81,6 +84,7 @@ function DeployModal({
 
 export function CatalogPage() {
   const navigate = useNavigate();
+  const t = useT();
   const [products, setProducts] = useState<ProductCatalog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<ProductCatalog | null>(null);
@@ -98,14 +102,14 @@ export function CatalogPage() {
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-sm">Loading catalog...</div>;
+    return <div className="text-gray-500 text-sm">{t("catalog.loading")}</div>;
   }
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-white">Product Catalog</h1>
-        <p className="text-gray-500 text-sm mt-1">Deploy self-hosted AI infrastructure to your environment</p>
+        <h1 className="text-xl font-semibold text-white">{t("catalog.title")}</h1>
+        <p className="text-gray-500 text-sm mt-1">{t("catalog.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -149,13 +153,13 @@ export function CatalogPage() {
                 rel="noopener noreferrer"
                 className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
-                View source ↗
+                {t("catalog.viewSource")}
               </a>
               <button
                 onClick={() => setSelectedProduct(product)}
                 className="ml-auto bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md transition-colors"
               >
-                Deploy →
+                {t("catalog.deploy")}
               </button>
             </div>
           </div>
@@ -167,6 +171,7 @@ export function CatalogPage() {
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
           onDeploy={handleDeploy}
+          t={t}
         />
       )}
     </div>

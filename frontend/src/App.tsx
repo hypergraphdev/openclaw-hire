@@ -11,6 +11,7 @@ import { InstanceDetailPage } from "./pages/InstanceDetailPage";
 import { AdminPage } from "./pages/AdminPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminHXAPage from "./pages/AdminHXAPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -132,6 +133,14 @@ export default function App() {
               <AdminRoute>
                 <AdminHXAPage />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <SettingsPage />
+              </ProtectedRoute>
             }
           />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

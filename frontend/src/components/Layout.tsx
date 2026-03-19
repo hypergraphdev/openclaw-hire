@@ -1,21 +1,21 @@
 import { useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-
-function navItems(isAdmin: boolean) {
-  return [
-    { to: "/dashboard", label: "Dashboard", icon: "▦" },
-    { to: "/catalog", label: "Product Catalog", icon: "◈" },
-    { to: "/instances", label: "My Instances", icon: "⊞" },
-    ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: "⚙" }] : []),
-  ];
-}
+import { useT } from "../contexts/LanguageContext";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const items = navItems(Boolean(user?.is_admin));
+  const t = useT();
+
+  const items = [
+    { to: "/dashboard", label: t("nav.dashboard"), icon: "▦" },
+    { to: "/catalog", label: t("nav.catalog"), icon: "◈" },
+    { to: "/instances", label: t("nav.instances"), icon: "⊞" },
+    ...(user?.is_admin ? [{ to: "/admin", label: t("nav.admin"), icon: "⚙" }] : []),
+    { to: "/settings", label: t("nav.settings"), icon: "☰" },
+  ];
 
   function handleLogout() {
     logout();
@@ -27,12 +27,12 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Mobile top bar */}
       <header className="md:hidden sticky top-0 z-40 bg-gray-900/95 border-b border-gray-800 backdrop-blur">
         <div className="h-14 px-4 flex items-center justify-between">
-          <div className="text-blue-400 text-base font-bold tracking-tight">◈ OpenClaw Hire</div>
+          <div className="text-blue-400 text-base font-bold tracking-tight">{t("layout.brand")} <span className="text-xs text-gray-500">{t("layout.brandSuffix")}</span></div>
           <button
             onClick={() => setMobileMenuOpen((v) => !v)}
             className="text-sm px-3 py-1.5 rounded-md bg-gray-800 text-gray-200"
           >
-            {mobileMenuOpen ? "Close" : "Menu"}
+            {mobileMenuOpen ? t("layout.close") : t("layout.menu")}
           </button>
         </div>
 
@@ -62,7 +62,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   onClick={handleLogout}
                   className="mt-2 text-xs text-gray-500 hover:text-red-400 transition-colors"
                 >
-                  Sign out →
+                  {t("nav.signout")}
                 </button>
               </div>
             )}
@@ -75,10 +75,10 @@ export function Layout({ children }: { children: ReactNode }) {
         <aside className="hidden md:flex w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex-col">
           <div className="px-6 py-5 border-b border-gray-800">
             <div className="flex items-center gap-2">
-              <span className="text-blue-400 text-lg font-bold tracking-tight">◈ OpenClaw</span>
-              <span className="text-xs text-gray-500 ml-1">Hire</span>
+              <span className="text-blue-400 text-lg font-bold tracking-tight">{t("layout.brand")}</span>
+              <span className="text-xs text-gray-500 ml-1">{t("layout.brandSuffix")}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Cloud Console</p>
+            <p className="text-xs text-gray-500 mt-1">{t("layout.subtitle")}</p>
           </div>
 
           <nav className="flex-1 px-3 py-4 space-y-1">
@@ -107,7 +107,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 onClick={handleLogout}
                 className="mt-3 w-full text-xs text-gray-500 hover:text-red-400 transition-colors text-left"
               >
-                Sign out →
+                {t("nav.signout")}
               </button>
             </div>
           )}

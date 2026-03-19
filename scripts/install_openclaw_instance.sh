@@ -258,6 +258,11 @@ if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d >"$compose_log" 2>&1; then
 fi
 rm -f "$compose_log"
 
+# Apply resource limits to all containers in this project
+for _cid in $(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
+  docker update --memory 4g --cpus 2.0 --pids-limit 512 "$_cid" >/dev/null 2>&1 || true
+done
+
 # ── Wait for gateway to start ─────────────────────────────────────────────────
 CONTAINER_GATEWAY="${PROJECT}-openclaw-gateway-1"
 ok=0

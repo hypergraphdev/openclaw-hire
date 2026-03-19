@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useT } from "../contexts/LanguageContext";
 
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const t = useT();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", company_name: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,7 +19,7 @@ export function RegisterPage() {
     e.preventDefault();
     setError("");
     if (form.password !== form.confirm) {
-      setError("Passwords do not match.");
+      setError(t("register.passwordMismatch"));
       return;
     }
     setLoading(true);
@@ -30,7 +32,7 @@ export function RegisterPage() {
       });
       navigate("/dashboard");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
+      setError(err instanceof Error ? err.message : t("register.failed"));
     } finally {
       setLoading(false);
     }
@@ -40,12 +42,12 @@ export function RegisterPage() {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-blue-400 text-2xl font-bold tracking-tight mb-1">◈ OpenClaw Hire</div>
-          <p className="text-gray-500 text-sm">Create your cloud console account</p>
+          <div className="text-blue-400 text-2xl font-bold tracking-tight mb-1">{t("register.brand")}</div>
+          <p className="text-gray-500 text-sm">{t("register.subtitle")}</p>
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-8">
-          <h1 className="text-lg font-semibold text-white mb-6">Create account</h1>
+          <h1 className="text-lg font-semibold text-white mb-6">{t("register.title")}</h1>
 
           {error && (
             <div className="mb-4 p-3 bg-red-900/40 border border-red-700 rounded-md text-red-300 text-sm">
@@ -55,7 +57,7 @@ export function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Full name</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("register.name")}</label>
               <input
                 type="text"
                 value={form.name}
@@ -66,7 +68,7 @@ export function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Email address</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("register.email")}</label>
               <input
                 type="email"
                 value={form.email}
@@ -78,7 +80,7 @@ export function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Company (optional)</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("register.company")}</label>
               <input
                 type="text"
                 value={form.company_name}
@@ -88,7 +90,7 @@ export function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Password</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("register.password")}</label>
               <input
                 type="password"
                 value={form.password}
@@ -100,7 +102,7 @@ export function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Confirm password</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("register.confirm")}</label>
               <input
                 type="password"
                 value={form.confirm}
@@ -116,14 +118,14 @@ export function RegisterPage() {
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-md transition-colors"
             >
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? t("register.submitting") : t("register.submit")}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-500">
-            Already have an account?{" "}
+            {t("register.hasAccount")}{" "}
             <Link to="/login" className="text-blue-400 hover:text-blue-300">
-              Sign in
+              {t("register.signin")}
             </Link>
           </p>
         </div>

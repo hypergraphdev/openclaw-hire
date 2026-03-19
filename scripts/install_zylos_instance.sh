@@ -307,6 +307,11 @@ if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1; th
 fi
 rm -f "$compose_log" >/dev/null 2>&1 || true
 
+# Apply resource limits to all containers in this project
+for _cid in $(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
+  docker update --memory 4g --cpus 2.0 --pids-limit 512 "$_cid" >/dev/null 2>&1 || true
+done
+
 if [[ "$PRODUCT" == "zylos" ]]; then
   # zylos can show container=Up while app ports are still dead; verify runtime endpoints are reachable.
   ok=0

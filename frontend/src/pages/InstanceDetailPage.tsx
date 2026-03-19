@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { InstallTimeline } from "../components/InstallTimeline";
 import { StatusPill } from "../components/StatusPill";
+import { useT } from "../contexts/LanguageContext";
 import type { InstanceDetail, TelegramConfigResponse } from "../types";
 
 const PRODUCT_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ function formatDate(iso: string) {
 
 export function InstanceDetailPage() {
   const { instanceId } = useParams<{ instanceId: string }>();
+  const t = useT();
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
@@ -38,6 +40,7 @@ export function InstanceDetailPage() {
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
   const [configError, setConfigError] = useState("");
   const [showTelegramReconfig, setShowTelegramReconfig] = useState(false);
+  const [showTelegramHelp, setShowTelegramHelp] = useState(false);
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
@@ -54,7 +57,6 @@ export function InstanceDetailPage() {
     return () => clearInterval(interval);
   }, [fetchDetail]);
 
-  // Reset reconfig form when telegram gets configured
   useEffect(() => {
     if (detail?.instance?.is_telegram_configured) {
       setShowTelegramReconfig(false);
@@ -69,7 +71,7 @@ export function InstanceDetailPage() {
       await api.startInstall(instanceId);
       await fetchDetail();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Install failed.");
+      setError(err instanceof Error ? err.message : t("detail.installFailed"));
     } finally {
       setInstalling(false);
     }
@@ -89,7 +91,7 @@ export function InstanceDetailPage() {
       }
       await fetchDetail();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : `${action} failed.`);
+      setError(err instanceof Error ? err.message : t("detail.actionFailed", { action }));
     } finally {
       setActionLoading("");
     }
@@ -106,7 +108,7 @@ export function InstanceDetailPage() {
       setShowTelegramReconfig(false);
       await fetchDetail();
     } catch (err: unknown) {
-      setConfigError(err instanceof Error ? err.message : "Configuration failed.");
+      setConfigError(err instanceof Error ? err.message : t("telegram.configFailed"));
     } finally {
       setConfiguring(false);
     }
@@ -121,20 +123,20 @@ export function InstanceDetailPage() {
       setHxaResult(result);
       await fetchDetail();
     } catch (err: unknown) {
-      setHxaError(err instanceof Error ? err.message : "HXA configuration failed.");
+      setHxaError(err instanceof Error ? err.message : t("org.configFailed"));
     } finally {
       setHxaConfiguring(false);
     }
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-sm">Loading instance...</div>;
+    return <div className="text-gray-500 text-sm">{t("detail.loading")}</div>;
   }
 
   if (!detail) {
     return (
       <div className="text-gray-500 text-sm">
-        Instance not found. <Link to="/instances" className="text-blue-400">Back to instances</Link>
+        {t("detail.notFound")} <Link to="/instances" className="text-blue-400">{t("detail.backToInstances")}</Link>
       </div>
     );
   }
@@ -147,7 +149,7 @@ export function InstanceDetailPage() {
     <div>
       {/* Breadcrumb */}
       <div className="text-xs text-gray-500 mb-5">
-        <Link to="/instances" className="hover:text-gray-300">Instances</Link>
+        <Link to="/instances" className="hover:text-gray-300">{t("nav.instances")}</Link>
         <span className="mx-2">›</span>
         <span className="text-gray-300">{instance.name}</span>
       </div>
@@ -172,26 +174,26 @@ export function InstanceDetailPage() {
               disabled={installing}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
             >
-              {installing ? "Starting..." : instance.install_state === "failed" ? "Retry Install" : "Install"}
+              {installing ? t("detail.starting") : instance.install_state === "failed" ? t("detail.retryInstall") : t("detail.install")}
             </button>
           )}
-          <button onClick={() => handleAction("logs")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Logs</button>
-          <button onClick={() => handleAction("stop")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Stop</button>
-          <button onClick={() => handleAction("restart")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Restart</button>
-          <button onClick={() => handleAction("uninstall")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">Uninstall</button>
+          <button onClick={() => handleAction("logs")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.logs")}</button>
+          <button onClick={() => handleAction("stop")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.stop")}</button>
+          <button onClick={() => handleAction("restart")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.restart")}</button>
+          <button onClick={() => handleAction("uninstall")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.uninstall")}</button>
         </div>
 
         {isInstalling && (
           <div className="flex items-center gap-2 text-blue-400 text-sm">
             <span className="inline-block h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-            Installing...
+            {t("detail.installing")}
           </div>
         )}
 
         {instance.install_state === "running" && (
           <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
             <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
-            Running
+            {t("detail.runningStatus")}
           </div>
         )}
       </div>
@@ -205,15 +207,15 @@ export function InstanceDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Install timeline */}
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-5">
-          <h2 className="text-sm font-medium text-gray-300 mb-4">Install Progress</h2>
+          <h2 className="text-sm font-medium text-gray-300 mb-4">{t("detail.installProgress")}</h2>
           <InstallTimeline events={install_timeline} />
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-300">Docker Logs</h3>
-              {actionLoading === "logs" ? <span className="text-xs text-gray-500">Loading...</span> : null}
+              <h3 className="text-sm font-medium text-gray-300">{t("detail.dockerLogs")}</h3>
+              {actionLoading === "logs" ? <span className="text-xs text-gray-500">{t("detail.loadingLogs")}</span> : null}
             </div>
             <pre className="bg-gray-950 border border-gray-800 rounded-md p-3 text-xs text-gray-300 overflow-auto max-h-80 whitespace-pre-wrap">
-              {logs || "Click Logs to fetch the latest container output."}
+              {logs || t("detail.logsPlaceholder")}
             </pre>
           </div>
         </div>
@@ -221,55 +223,55 @@ export function InstanceDetailPage() {
         {/* Instance info */}
         <div className="space-y-4">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">Instance Details</h2>
+            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.instanceDetails")}</h2>
             <dl className="space-y-2 text-sm">
               <div>
-                <dt className="text-xs text-gray-500">Product</dt>
+                <dt className="text-xs text-gray-500">{t("detail.product")}</dt>
                 <dd className="text-gray-300 capitalize">{PRODUCT_LABELS[instance.product] ?? instance.product}</dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Instance ID</dt>
+                <dt className="text-xs text-gray-500">{t("detail.instanceId")}</dt>
                 <dd className="text-gray-300 text-xs font-mono break-all">{instance.id}</dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Status</dt>
+                <dt className="text-xs text-gray-500">{t("detail.status")}</dt>
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
               {instance.web_console_url && (
                 <div>
-                  <dt className="text-xs text-gray-500">Web Console</dt>
+                  <dt className="text-xs text-gray-500">{t("detail.webConsole")}</dt>
                   <dd className="text-xs break-all">
                     <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      Open Console ↗
+                      {t("detail.openConsole")}
                     </a>
                   </dd>
                 </div>
               )}
               {instance.web_console_port && (
                 <div>
-                  <dt className="text-xs text-gray-500">Gateway Port</dt>
+                  <dt className="text-xs text-gray-500">{t("detail.gatewayPort")}</dt>
                   <dd className="text-gray-400 font-mono text-xs">{instance.web_console_port}</dd>
                 </div>
               )}
               {instance.http_port && (
                 <div>
-                  <dt className="text-xs text-gray-500">Bridge Port</dt>
+                  <dt className="text-xs text-gray-500">{t("detail.bridgePort")}</dt>
                   <dd className="text-gray-400 font-mono text-xs">{instance.http_port}</dd>
                 </div>
               )}
               <div>
-                <dt className="text-xs text-gray-500">Deployed</dt>
+                <dt className="text-xs text-gray-500">{t("detail.deployedAt")}</dt>
                 <dd className="text-gray-300 text-xs">{formatDate(instance.created_at)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Last updated</dt>
+                <dt className="text-xs text-gray-500">{t("detail.lastUpdated")}</dt>
                 <dd className="text-gray-300 text-xs">{formatDate(instance.updated_at)}</dd>
               </div>
             </dl>
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">Repository</h2>
+            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.repository")}</h2>
             <a
               href={PRODUCT_REPOS[instance.product] ?? instance.repo_url}
               target="_blank"
@@ -282,24 +284,24 @@ export function InstanceDetailPage() {
 
           {/* Join Organization (HXA Connect) */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">Join Organization</h2>
+            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("org.title")}</h2>
             <div className="space-y-3">
               {(hxaResult?.ok || config?.agent_name) && (
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                    {hxaResult?.message || "Already connected"}
+                    {hxaResult?.message || t("org.alreadyConnected")}
                   </div>
                   <dl className="space-y-1 text-xs">
-                    <div><dt className="text-gray-500">Agent Name</dt><dd className="text-gray-300 font-mono">{hxaResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
-                    <div><dt className="text-gray-500">Org ID</dt><dd className="text-gray-300 font-mono break-all">{config?.org_id || "-"}</dd></div>
-                    <div><dt className="text-gray-500">Hub URL</dt><dd className="text-gray-300 break-all">{config?.hub_url || "-"}</dd></div>
+                    <div><dt className="text-gray-500">{t("org.agentName")}</dt><dd className="text-gray-300 font-mono">{hxaResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
+                    <div><dt className="text-gray-500">{t("org.orgId")}</dt><dd className="text-gray-300 font-mono break-all">{config?.org_id || "-"}</dd></div>
+                    <div><dt className="text-gray-500">{t("org.hubUrl")}</dt><dd className="text-gray-300 break-all">{config?.hub_url || "-"}</dd></div>
                   </dl>
                   <button
                     onClick={handleJoinOrg}
                     disabled={!instance.compose_project || hxaConfiguring}
                     className="text-xs text-gray-500 hover:text-gray-300 underline"
                   >
-                    {hxaConfiguring ? "重新连接中…" : "重新连接组织"}
+                    {hxaConfiguring ? t("org.reconnecting") : t("org.reconnect")}
                   </button>
                 </>
               )}
@@ -309,17 +311,17 @@ export function InstanceDetailPage() {
                     <p className="text-xs text-red-400">{hxaError}</p>
                   )}
                   <p className="text-xs text-gray-500">
-                    Connect this instance to the HXA organization for agent-to-agent messaging.
+                    {t("org.connect")}
                   </p>
                   <button
                     onClick={handleJoinOrg}
                     disabled={!instance.compose_project || hxaConfiguring}
                     className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
                   >
-                    {hxaConfiguring ? "Connecting…" : "Connect to HXA Organization"}
+                    {hxaConfiguring ? t("org.connecting") : t("org.connectButton")}
                   </button>
                   {!instance.compose_project && (
-                    <p className="text-xs text-gray-600">Install the instance first.</p>
+                    <p className="text-xs text-gray-600">{t("detail.installFirst")}</p>
                   )}
                 </>
               )}
@@ -328,12 +330,40 @@ export function InstanceDetailPage() {
 
           {/* Telegram Integration */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">Telegram Integration</h2>
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="text-sm font-medium text-gray-300">{t("telegram.title")}</h2>
+                <button
+                  onClick={() => setShowTelegramHelp((v) => !v)}
+                  className="w-5 h-5 rounded-full bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-200 text-xs flex items-center justify-center transition-colors"
+                  title={t("telegram.help.title")}
+                >
+                  ?
+                </button>
+              </div>
+              {showTelegramHelp && (
+                <div className="absolute z-10 top-8 left-0 w-72 bg-gray-800 border border-gray-700 rounded-lg p-4 shadow-lg">
+                  <p className="text-xs text-gray-300 font-medium mb-2">{t("telegram.help.title")}</p>
+                  <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
+                    <li>{t("telegram.help.step1")}</li>
+                    <li>{t("telegram.help.step2")}</li>
+                    <li>{t("telegram.help.step3")}</li>
+                    <li>{t("telegram.help.step4")}</li>
+                  </ol>
+                  <button
+                    onClick={() => setShowTelegramHelp(false)}
+                    className="mt-3 text-xs text-gray-500 hover:text-gray-300"
+                  >
+                    {t("common.close")}
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="space-y-3">
               {(configResult || instance.is_telegram_configured) && !showTelegramReconfig && (
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                    {configResult?.message || "Already configured"}
+                    {configResult?.message || t("telegram.alreadyConfigured")}
                   </div>
                   <button
                     onClick={() => {
@@ -343,17 +373,17 @@ export function InstanceDetailPage() {
                     }}
                     className="text-xs text-gray-500 hover:text-gray-300 underline"
                   >
-                    重新配置 Telegram
+                    {t("telegram.reconfigure")}
                   </button>
                 </>
               )}
 
               {(!instance.is_telegram_configured || showTelegramReconfig) && !configResult && (
                 <>
-                  <p className="text-xs text-gray-500">Connect a Telegram bot to this instance.</p>
+                  <p className="text-xs text-gray-500">{t("telegram.connect")}</p>
                   <input
                     type="text"
-                    placeholder="Bot token (e.g. 123456:ABC…)"
+                    placeholder={t("telegram.tokenPlaceholder")}
                     value={botToken}
                     onChange={(e) => setBotToken(e.target.value)}
                     disabled={!instance.compose_project || configuring}
@@ -367,10 +397,10 @@ export function InstanceDetailPage() {
                     disabled={!botToken.trim() || !instance.compose_project || configuring}
                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
                   >
-                    {configuring ? "Configuring…" : "Configure"}
+                    {configuring ? t("telegram.configuring") : t("telegram.configure")}
                   </button>
                   {!instance.compose_project && (
-                    <p className="text-xs text-gray-600">Install the instance first to enable configuration.</p>
+                    <p className="text-xs text-gray-600">{t("detail.installFirstConfig")}</p>
                   )}
                 </>
               )}
@@ -381,4 +411,3 @@ export function InstanceDetailPage() {
     </div>
   );
 }
-

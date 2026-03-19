@@ -54,6 +54,11 @@ COMPOSE_CANDIDATES = [
     "docker/compose.yml",
 ]
 
+# Resource limits applied to every instance container after start
+_CONTAINER_MEMORY = "4g"
+_CONTAINER_CPUS = "2.0"
+_CONTAINER_PIDS = "512"
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -161,13 +166,31 @@ def _env_file_for(runtime_dir: str | None) -> list[str]:
     return ["--env-file", str(env_path)] if env_path.exists() else []
 
 
+def _apply_container_limits(project: str) -> None:
+    """Apply memory/CPU/PID limits to all running containers in a compose project."""
+    rc, out = _run(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"])
+    if rc != 0 or not out.strip():
+        return
+    for cid in out.strip().splitlines():
+        cid = cid.strip()
+        if not cid:
+            continue
+        _run(["docker", "update",
+              "--memory", _CONTAINER_MEMORY,
+              "--cpus", _CONTAINER_CPUS,
+              "--pids-limit", _CONTAINER_PIDS,
+              cid])
+
+
 def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
     env_args = _env_file_for(runtime_dir or str(workdir))
     rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir, clean_env=True)
     if rc == 0:
+        _apply_container_limits(project)
         return rc, out
     rc2, out2 = _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir, clean_env=True)
     if rc2 == 0:
+        _apply_container_limits(project)
         return rc2, out2
     return rc2, f"docker compose failed:\n{out}\n\ndocker-compose failed:\n{out2}"
 

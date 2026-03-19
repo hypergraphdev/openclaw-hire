@@ -1,3 +1,4 @@
+import { useT } from "../contexts/LanguageContext";
 import type { InstallEvent } from "../types";
 
 const STATE_COLORS: Record<string, string> = {
@@ -13,10 +14,12 @@ function formatTime(iso: string): string {
 }
 
 export function InstallTimeline({ events }: { events: InstallEvent[] }) {
+  const t = useT();
+
   if (events.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500 text-sm">
-        No install events yet. Click Install to begin.
+        {t("timeline.empty")}
       </div>
     );
   }
@@ -28,12 +31,10 @@ export function InstallTimeline({ events }: { events: InstallEvent[] }) {
         const isLast = idx === events.length - 1;
         return (
           <div key={event.id} className="flex gap-4">
-            {/* Timeline line + dot */}
             <div className="flex flex-col items-center">
               <div className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${dotColor}`} />
               {!isLast && <div className="w-px flex-1 bg-gray-700 mt-1" />}
             </div>
-            {/* Content */}
             <div className={`pb-4 ${isLast ? "" : ""}`}>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-gray-300 capitalize">{event.state}</span>

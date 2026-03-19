@@ -1,3 +1,5 @@
+import { useT } from "../contexts/LanguageContext";
+
 type Props = {
   state: string;
   size?: "sm" | "md";
@@ -15,21 +17,12 @@ const STATE_STYLES: Record<string, string> = {
   inactive: "bg-yellow-900 text-yellow-300 border border-yellow-700",
 };
 
-const STATE_LABELS: Record<string, string> = {
-  running: "Running",
-  active: "Active",
-  idle: "Idle",
-  pulling: "Pulling",
-  configuring: "Configuring",
-  starting: "Starting",
-  failed: "Failed",
-  installing: "Installing",
-  inactive: "Stopped",
-};
-
 export function StatusPill({ state, size = "sm" }: Props) {
+  const t = useT();
   const style = STATE_STYLES[state] ?? "bg-gray-800 text-gray-400 border border-gray-700";
-  const label = STATE_LABELS[state] ?? state;
+  const key = `status.${state}`;
+  const translated = t(key);
+  const label = translated !== key ? translated : state;
   const sizeClass = size === "md" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs";
 
   return (

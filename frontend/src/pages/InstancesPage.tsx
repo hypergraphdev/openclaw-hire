@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { StatusPill } from "../components/StatusPill";
+import { useT } from "../contexts/LanguageContext";
 import type { Instance } from "../types";
 
 function formatDate(iso: string) {
@@ -14,16 +15,17 @@ function formatDate(iso: string) {
   });
 }
 
-function configStatus(inst: Instance) {
-  if (!inst.is_telegram_configured) return "Telegram 未配置";
-  if (!inst.agent_name) return "组织名未绑定";
-  return "已配置";
-}
-
 export function InstancesPage() {
+  const t = useT();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string>("");
+
+  function configStatus(inst: Instance) {
+    if (!inst.is_telegram_configured) return t("instances.configTelegramNo");
+    if (!inst.agent_name) return t("instances.configOrgNo");
+    return t("instances.configDone");
+  }
 
   useEffect(() => {
     api
@@ -38,7 +40,7 @@ export function InstancesPage() {
   }, []);
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete instance '${name}'? This will remove runtime data and cannot be undone.`)) return;
+    if (!confirm(t("instances.deleteConfirm", { name }))) return;
     setDeletingId(id);
     try {
       await api.deleteInstance(id);
@@ -49,32 +51,32 @@ export function InstancesPage() {
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-sm">Loading instances...</div>;
+    return <div className="text-gray-500 text-sm">{t("instances.loading")}</div>;
   }
 
   return (
     <div>
       <div className="flex items-start sm:items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-white">My Instances</h1>
+          <h1 className="text-xl font-semibold text-white">{t("instances.title")}</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {instances.length} instance{instances.length !== 1 ? "s" : ""} deployed
+            {t("instances.count", { count: instances.length })}
           </p>
         </div>
         <Link
           to="/catalog"
           className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md transition-colors whitespace-nowrap"
         >
-          + Deploy New
+          {t("instances.deployNew")}
         </Link>
       </div>
 
       {instances.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center">
           <div className="text-gray-600 text-4xl mb-3">⊞</div>
-          <div className="text-gray-400 text-sm">No instances deployed yet</div>
+          <div className="text-gray-400 text-sm">{t("instances.noInstances")}</div>
           <Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block">
-            Browse catalog →
+            {t("instances.browseCatalog")}
           </Link>
         </div>
       ) : (
@@ -92,12 +94,12 @@ export function InstancesPage() {
                 </div>
 
                 <div className="mt-3 text-xs text-gray-400 space-y-1">
-                  <div>Product: <span className="capitalize text-gray-300">{inst.product}</span></div>
-                  <div>配置: <span className={inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}>{configStatus(inst)}</span></div>
-                  <div>组织内名字: <span className="text-gray-300 font-mono">{inst.agent_name || "-"}</span></div>
-                  {inst.web_console_port && <div>Gateway Port: <span className="text-gray-300 font-mono">{inst.web_console_port}</span></div>}
-                  {inst.http_port && <div>Bridge Port: <span className="text-gray-300 font-mono">{inst.http_port}</span></div>}
-                  <div>Deployed: <span className="text-gray-300">{formatDate(inst.created_at)}</span></div>
+                  <div>{t("instances.product")}: <span className="capitalize text-gray-300">{inst.product}</span></div>
+                  <div>{t("instances.config")}: <span className={inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}>{configStatus(inst)}</span></div>
+                  <div>{t("instances.orgInternalName")}: <span className="text-gray-300 font-mono">{inst.agent_name || "-"}</span></div>
+                  {inst.web_console_port && <div>{t("instances.gatewayPort")}: <span className="text-gray-300 font-mono">{inst.web_console_port}</span></div>}
+                  {inst.http_port && <div>{t("instances.bridgePort")}: <span className="text-gray-300 font-mono">{inst.http_port}</span></div>}
+                  <div>{t("instances.deployed")}: <span className="text-gray-300">{formatDate(inst.created_at)}</span></div>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
@@ -106,10 +108,10 @@ export function InstancesPage() {
                     disabled={deletingId === inst.id}
                     className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50"
                   >
-                    {deletingId === inst.id ? "Deleting..." : "Delete"}
+                    {deletingId === inst.id ? t("instances.deleting") : t("common.delete")}
                   </button>
                   <Link to={`/instances/${inst.id}`} className="text-xs text-blue-400 hover:text-blue-300">
-                    Manage →
+                    {t("instances.manage")}
                   </Link>
                 </div>
               </div>
@@ -121,13 +123,13 @@ export function InstancesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Name</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Product</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Install State</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Configured</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Org Name</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Ports</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">Deployed</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.name")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.product")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.installState")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.configured")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.orgName")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.ports")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.deployed")}</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -161,10 +163,10 @@ export function InstancesPage() {
                           disabled={deletingId === inst.id}
                           className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50 transition-colors"
                         >
-                          {deletingId === inst.id ? "Deleting..." : "Delete"}
+                          {deletingId === inst.id ? t("instances.deleting") : t("common.delete")}
                         </button>
                         <Link to={`/instances/${inst.id}`} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                          Manage →
+                          {t("instances.manage")}
                         </Link>
                       </div>
                     </td>

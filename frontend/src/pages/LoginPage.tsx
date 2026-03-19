@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useT } from "../contexts/LanguageContext";
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const t = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -18,7 +20,7 @@ export function LoginPage() {
       await login(email, password);
       navigate("/dashboard");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      setError(err instanceof Error ? err.message : t("login.failed"));
     } finally {
       setLoading(false);
     }
@@ -27,14 +29,13 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Brand */}
         <div className="text-center mb-8">
-          <div className="text-blue-400 text-2xl font-bold tracking-tight mb-1">◈ OpenClaw Hire</div>
-          <p className="text-gray-500 text-sm">Cloud Hosting Console</p>
+          <div className="text-blue-400 text-2xl font-bold tracking-tight mb-1">{t("login.brand")}</div>
+          <p className="text-gray-500 text-sm">{t("login.subtitle")}</p>
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-8">
-          <h1 className="text-lg font-semibold text-white mb-6">Sign in to your account</h1>
+          <h1 className="text-lg font-semibold text-white mb-6">{t("login.title")}</h1>
 
           {error && (
             <div className="mb-4 p-3 bg-red-900/40 border border-red-700 rounded-md text-red-300 text-sm">
@@ -44,7 +45,7 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Email address</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("login.email")}</label>
               <input
                 type="email"
                 value={email}
@@ -56,7 +57,7 @@ export function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Password</label>
+              <label className="block text-sm text-gray-400 mb-1.5">{t("login.password")}</label>
               <input
                 type="password"
                 value={password}
@@ -72,14 +73,14 @@ export function LoginPage() {
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 rounded-md transition-colors"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? t("login.submitting") : t("login.submit")}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-500">
-            Don&apos;t have an account?{" "}
+            {t("login.noAccount")}{" "}
             <Link to="/register" className="text-blue-400 hover:text-blue-300">
-              Create account
+              {t("login.createAccount")}
             </Link>
           </p>
         </div>

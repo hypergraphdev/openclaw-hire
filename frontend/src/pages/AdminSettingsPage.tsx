@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 
 interface Settings {
   anthropic_base_url: string;
@@ -11,6 +12,7 @@ interface Settings {
 
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
+  const t = useT();
   const [settings, setSettings] = useState<Settings>({
     anthropic_base_url: "",
     anthropic_auth_token: "",
@@ -36,15 +38,15 @@ export default function AdminSettingsPage() {
     try {
       const r = await api.put("/api/admin/settings", settings);
       if (!r.ok) throw new Error((await r.json()).detail || "Save failed");
-      setMessage({ type: "success", text: "已保存" });
-    } catch (e: any) {
-      setMessage({ type: "error", text: e.message });
+      setMessage({ type: "success", text: t("adminSettings.saved") });
+    } catch (e: unknown) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "Save failed" });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="text-gray-400 text-sm p-6">Loading...</div>;
+  if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
 
   const Field = ({
     label, field, type = "text", show, onToggle
@@ -76,12 +78,12 @@ export default function AdminSettingsPage() {
   return (
     <div className="max-w-xl mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-200 text-sm">← Back</button>
-        <h1 className="text-lg font-semibold text-white">Admin Settings</h1>
+        <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-200 text-sm">{t("common.back")}</button>
+        <h1 className="text-lg font-semibold text-white">{t("adminSettings.title")}</h1>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-        <h2 className="text-sm font-medium text-gray-300">Anthropic / LLM</h2>
+        <h2 className="text-sm font-medium text-gray-300">{t("adminSettings.llm")}</h2>
         <Field label="Base URL (ANTHROPIC_BASE_URL)" field="anthropic_base_url" />
         <Field
           label="Auth Token (ANTHROPIC_AUTH_TOKEN)"
@@ -92,7 +94,7 @@ export default function AdminSettingsPage() {
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-        <h2 className="text-sm font-medium text-gray-300">HXA Connect Organization</h2>
+        <h2 className="text-sm font-medium text-gray-300">{t("adminSettings.hxa")}</h2>
         <Field label="Org ID (HXA_CONNECT_ORG_ID)" field="hxa_org_id" />
         <Field
           label="Org Secret (HXA_CONNECT_ORG_SECRET)"
@@ -115,7 +117,7 @@ export default function AdminSettingsPage() {
         disabled={saving}
         className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-6 py-2 rounded-md"
       >
-        {saving ? "Saving..." : "Save Settings"}
+        {saving ? t("adminSettings.saving") : t("adminSettings.save")}
       </button>
     </div>
   );
