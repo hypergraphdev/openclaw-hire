@@ -1141,19 +1141,43 @@ def _configure_openclaw_hxa_only(
         return False, f"Missing config file: {openclaw_json}"
 
     def _do_register() -> tuple[str, str, str]:
-        """Returns (token, agentId, error_msg). error_msg is empty on success."""
+        """Create ticket then register as member. Returns (token, agentId, error_msg)."""
         js = f"""
 (async () => {{
-  let sdk;
+  const origin = {repr(origin)};
+  const hub = {repr(_HUB_URL)};
   try {{
-    sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
-  }} catch(e) {{
-    try {{ sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
-  }}
-  if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
-  const {{ HxaConnectClient }} = sdk;
-  try {{
-    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)}, {{ role: "member" }});
+    // Step 1: Admin login
+    const loginR = await fetch(hub + "/api/auth/login", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json", Origin: origin}},
+      body: JSON.stringify({{type: "org_admin", org_secret: {repr(_live_org_secret)}, org_id: {repr(_live_org_id)}}})
+    }});
+    if (!loginR.ok) throw new Error("Admin login failed: " + loginR.status);
+    const cookie = loginR.headers.get("set-cookie").split(";")[0];
+
+    // Step 2: Create one-time ticket
+    const ticketR = await fetch(hub + "/api/org/tickets", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json", Cookie: cookie, Origin: origin}},
+      body: JSON.stringify({{reusable: false}})
+    }});
+    if (!ticketR.ok) throw new Error("Ticket creation failed: " + ticketR.status);
+    const ticketData = await ticketR.json();
+    const ticket = ticketData.secret || ticketData.ticket || "";
+    if (!ticket) throw new Error("No ticket secret returned");
+
+    // Step 3: Register as member using ticket
+    const regR = await fetch(hub + "/api/auth/register", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json"}},
+      body: JSON.stringify({{org_id: {repr(_live_org_id)}, ticket: ticket, name: {repr(agent_name)}}})
+    }});
+    if (!regR.ok) {{
+      const body = await regR.text().catch(() => "");
+      throw new Error("Registration failed (" + regR.status + "): " + body);
+    }}
+    const reg = await regR.json();
     const token = reg.token || reg.agent_token || reg.bot_token || "";
     const agentId = reg.id || reg.bot_id || reg.agent_id || "";
     console.log("HXA_REG_OK::" + JSON.stringify({{ token, agentId }}));
@@ -1173,8 +1197,6 @@ def _configure_openclaw_hxa_only(
         err = ""
         if "HXA_REG_ERR::" in out:
             err = out.split("HXA_REG_ERR::")[-1].strip()[:200]
-        elif "SDK_NOT_FOUND" in out:
-            err = "SDK not found in extensions/openclaw-hxa-connect"
         else:
             err = out[:200]
         return "", "", err
