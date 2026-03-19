@@ -55,8 +55,8 @@ COMPOSE_CANDIDATES = [
 ]
 
 # Resource limits applied to every instance container after start
-_CONTAINER_MEMORY = "4g"
-_CONTAINER_CPUS = "2.0"
+_CONTAINER_MEMORY = "8g"
+_CONTAINER_CPUS = "4.0"
 _CONTAINER_PIDS = "512"
 
 
@@ -182,7 +182,59 @@ def _apply_container_limits(project: str) -> None:
               cid])
 
 
+def _inject_resource_limits(compose_file: Path) -> None:
+    """Inject deploy.resources.limits into compose YAML file.
+
+    Replaces the commented-out deploy block from the template, or appends
+    a deploy block inside the first service if none exists.
+    """
+    import re
+    text = compose_file.read_text()
+
+    limits_block = (
+        "    deploy:\n"
+        "      resources:\n"
+        "        limits:\n"
+        f"          memory: {_CONTAINER_MEMORY}\n"
+        f"          cpus: \"{_CONTAINER_CPUS}\"\n"
+        "        reservations:\n"
+        "          memory: 512m"
+    )
+
+    # Case 1: Replace commented deploy block from template
+    commented = re.search(
+        r'\n(\s+#\s*deploy:\s*\n(?:\s+#\s*.*\n)*)', text
+    )
+    if commented:
+        text = text[:commented.start()] + '\n' + limits_block + '\n' + text[commented.end():]
+        compose_file.write_text(text)
+        return
+
+    # Case 2: Already has uncommented deploy block — update limits
+    existing = re.search(r'\n(\s+deploy:\s*\n(?:\s+\S.*\n)*)', text)
+    if existing:
+        text = text[:existing.start()] + '\n' + limits_block + '\n' + text[existing.end():]
+        compose_file.write_text(text)
+        return
+
+    # Case 3: No deploy block at all — insert before 'volumes:' top-level key
+    vol_match = re.search(r'\n(# ──.*volumes|volumes:)', text, re.IGNORECASE)
+    if vol_match:
+        text = text[:vol_match.start()] + '\n' + limits_block + '\n' + text[vol_match.start():]
+        compose_file.write_text(text)
+        return
+
+    # Case 4: Fallback — append to end of first service (before top-level 'volumes:')
+    compose_file.write_text(text)
+
+
 def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
+    # Inject resource limits into compose YAML before starting
+    try:
+        _inject_resource_limits(compose_file)
+    except Exception:
+        pass  # Best-effort; fall back to docker update
+
     env_args = _env_file_for(runtime_dir or str(workdir))
     rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["up", "-d", "--build"], cwd=workdir, clean_env=True)
     if rc == 0:

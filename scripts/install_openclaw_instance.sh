@@ -260,7 +260,7 @@ rm -f "$compose_log"
 
 # Apply resource limits to all containers in this project
 for _cid in $(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
-  docker update --memory 4g --cpus 2.0 --pids-limit 512 "$_cid" >/dev/null 2>&1 || true
+  docker update --memory 8g --cpus 4.0 --pids-limit 512 "$_cid" >/dev/null 2>&1 || true
 done
 
 # ── Wait for gateway to start ─────────────────────────────────────────────────
