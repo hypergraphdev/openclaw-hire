@@ -39,7 +39,7 @@ export function InstanceDetailPage() {
   const [configError, setConfigError] = useState("");
   const [showConfigureForm, setShowConfigureForm] = useState(true);
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
-  const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
 
   const fetchDetail = useCallback(() => {
