@@ -55,9 +55,9 @@ export function InstanceDetailPage() {
   }, [fetchDetail]);
 
   useEffect(() => {
-    const configured = Boolean(detail?.config?.agent_name) || Boolean(configResult);
+    const configured = Boolean(detail?.instance?.is_telegram_configured) || Boolean(detail?.config?.agent_name) || Boolean(configResult);
     setShowConfigureForm(!configured);
-  }, [detail?.config?.agent_name, configResult]);
+  }, [detail?.instance?.is_telegram_configured, detail?.config?.agent_name, configResult]);
 
   async function handleInstall() {
     if (!instanceId) return;

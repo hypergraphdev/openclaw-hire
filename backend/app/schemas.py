@@ -135,6 +135,8 @@ class InstanceResponse(BaseModel):
     install_state: str
     compose_project: Optional[str] = None
     web_console_url: Optional[str] = None
+    web_console_port: Optional[int] = None
+    http_port: Optional[int] = None
     agent_name: Optional[str] = None
     is_telegram_configured: bool = False
     created_at: str
