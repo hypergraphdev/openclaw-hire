@@ -1009,12 +1009,10 @@ def _configure_zylos_telegram_only(
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
 
-    # Write directly into running container's ~/zylos/.env (the mounted volume)
-    # AND inject into container process env so dotenv sees the value.
-    # We must NOT compose down+up because that would break hxa-connect.
+    # Update the mounted volume .env file for persistence
     inject_cmd = (
-        f"grep -q '^TELEGRAM_BOT_TOKEN=' /home/zylos/zylos/.env && "
-        f"sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN={telegram_bot_token}|' /home/zylos/zylos/.env || "
+        f"sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN={telegram_bot_token}|' /home/zylos/zylos/.env; "
+        f"grep -q '^TELEGRAM_BOT_TOKEN=' /home/zylos/zylos/.env || "
         f"echo 'TELEGRAM_BOT_TOKEN={telegram_bot_token}' >> /home/zylos/zylos/.env; "
         f"grep -q '^TELEGRAM_ENABLE_GROUPS=' /home/zylos/zylos/.env || "
         f"echo 'TELEGRAM_ENABLE_GROUPS=true' >> /home/zylos/zylos/.env; "
@@ -1023,12 +1021,21 @@ def _configure_zylos_telegram_only(
     )
     _run(["docker", "exec", container, "sh", "-c", inject_cmd])
 
-    # Reset telegram pm2 process (delete + start to clear crash counter)
+    # Key fix: pm2 start with explicit env vars to bypass the dotenv vs
+    # docker-env conflict. Docker sets TELEGRAM_BOT_TOKEN="" at container
+    # creation (from compose ${TELEGRAM_BOT_TOKEN:-}), and dotenv refuses
+    # to overwrite existing env vars. So we must inject via pm2 env.
     _run(["docker", "exec", container, "sh", "-lc",
-          "pm2 delete zylos-telegram 2>/dev/null || true; "
-          "cd /home/zylos/zylos/.claude/skills/telegram && "
-          "pm2 start ecosystem.config.cjs 2>/dev/null || true; "
-          "pm2 save 2>/dev/null || true"])
+          "pm2 delete zylos-telegram 2>/dev/null || true"])
+    pm2_start_cmd = (
+        f"cd /home/zylos/zylos/.claude/skills/telegram && "
+        f"TELEGRAM_BOT_TOKEN={telegram_bot_token!r} "
+        f"TELEGRAM_ENABLE_GROUPS=true "
+        f"TELEGRAM_ENABLE_DMS=true "
+        f"pm2 start ecosystem.config.cjs --update-env 2>/dev/null || true; "
+        f"pm2 save 2>/dev/null || true"
+    )
+    _run(["docker", "exec", container, "sh", "-lc", pm2_start_cmd])
 
     # Verify telegram started (max ~15s)
     for _ in range(5):
