@@ -4,3 +4,4 @@ __pycache__/
 backend/data/
 frontend/dist/
 frontend/node_modules/
+runtime

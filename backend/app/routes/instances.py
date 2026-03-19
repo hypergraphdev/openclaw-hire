@@ -25,6 +25,8 @@ from ..services.install_service import (
     _ORG_ID,
     compose_logs,
     configure_instance_telegram,
+    configure_telegram_only,
+    configure_hxa_only,
     restart_instance,
     stop_instance,
     sync_instance_status,
@@ -303,6 +305,37 @@ def configure_instance(
         agent_name=agent_name,
         message=f"Telegram bot configured. Plugin: {plugin}. DMs and group messages enabled.",
     )
+
+
+@router.post("/{instance_id}/configure-telegram")
+def configure_telegram_endpoint(
+    instance_id: str,
+    payload: ConfigureTelegramRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    compose_file, project, runtime_dir = _require_compose(inst)
+    ok, message = configure_telegram_only(
+        instance_id, payload.telegram_bot_token, runtime_dir, compose_file, project
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+    return {"ok": True, "message": message}
+
+
+@router.post("/{instance_id}/configure-hxa")
+def configure_hxa_endpoint(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    _, project, runtime_dir = _require_compose(inst)
+    ok, message = configure_hxa_only(instance_id, runtime_dir, project)
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+    return {"ok": True, "message": message}
 
 
 @router.delete("/{instance_id}")

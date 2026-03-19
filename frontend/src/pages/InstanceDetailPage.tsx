@@ -38,6 +38,9 @@ export function InstanceDetailPage() {
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
   const [configError, setConfigError] = useState("");
   const [showConfigureForm, setShowConfigureForm] = useState(true);
+  const [hxaConfiguring, setHxaConfiguring] = useState(false);
+  const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [hxaError, setHxaError] = useState("");
 
   const fetchDetail = useCallback(() => {
     if (!instanceId) return Promise.resolve();
@@ -95,14 +98,29 @@ export function InstanceDetailPage() {
     setConfigError("");
     setConfiguring(true);
     try {
-      const result = await api.configureInstance(instanceId, botToken.trim());
-      setConfigResult(result);
+      const result = await api.configureTelegram(instanceId, botToken.trim());
+      setConfigResult(result as unknown as TelegramConfigResponse);
       setBotToken("");
       await fetchDetail();
     } catch (err: unknown) {
       setConfigError(err instanceof Error ? err.message : "Configuration failed.");
     } finally {
       setConfiguring(false);
+    }
+  }
+
+  async function handleJoinOrg() {
+    if (!instanceId) return;
+    setHxaError("");
+    setHxaConfiguring(true);
+    try {
+      const result = await api.configureHxa(instanceId);
+      setHxaResult(result);
+      await fetchDetail();
+    } catch (err: unknown) {
+      setHxaError(err instanceof Error ? err.message : "HXA configuration failed.");
+    } finally {
+      setHxaConfiguring(false);
     }
   }
 
@@ -214,18 +232,16 @@ export function InstanceDetailPage() {
                 <dt className="text-xs text-gray-500">Status</dt>
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
-              <div>
-                <dt className="text-xs text-gray-500">Web Console URL</dt>
-                <dd className="text-xs break-all">
-                  {instance.web_console_url ? (
+              {instance.web_console_url && (
+                <div>
+                  <dt className="text-xs text-gray-500">Web Console</dt>
+                  <dd className="text-xs break-all">
                     <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {instance.web_console_url}
+                      Open Console ↗
                     </a>
-                  ) : (
-                    <span className="text-gray-400">-</span>
-                  )}
-                </dd>
-              </div>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-gray-500">Deployed</dt>
                 <dd className="text-gray-300 text-xs">{formatDate(instance.created_at)}</dd>
@@ -248,6 +264,36 @@ export function InstanceDetailPage() {
               {instance.repo_url}
             </a>
           </div>
+
+          {/* Join Organization (HXA Connect) - OpenClaw only */}
+          {instance.product === "openclaw" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
+              <h2 className="text-sm font-medium text-gray-300 mb-3">Join Organization</h2>
+              <div className="space-y-3">
+                {hxaResult?.ok && (
+                  <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
+                    {hxaResult.message}
+                  </div>
+                )}
+                {hxaError && (
+                  <p className="text-xs text-red-400">{hxaError}</p>
+                )}
+                <p className="text-xs text-gray-500">
+                  Connect this instance to the HXA organization for agent-to-agent messaging.
+                </p>
+                <button
+                  onClick={handleJoinOrg}
+                  disabled={!instance.compose_project || hxaConfiguring}
+                  className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+                >
+                  {hxaConfiguring ? "Connecting…" : "Connect to HXA Organization"}
+                </button>
+                {!instance.compose_project && (
+                  <p className="text-xs text-gray-600">Install the instance first.</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Telegram Integration */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">

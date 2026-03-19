@@ -84,6 +84,17 @@ export const api = {
       body: JSON.stringify({ telegram_bot_token: botToken }),
     }),
 
+  configureTelegram: (id: string, botToken: string) =>
+    request<{ ok: boolean; message: string }>(`/api/instances/${id}/configure-telegram`, {
+      method: "POST",
+      body: JSON.stringify({ telegram_bot_token: botToken }),
+    }),
+
+  configureHxa: (id: string) =>
+    request<{ ok: boolean; message: string }>(`/api/instances/${id}/configure-hxa`, {
+      method: "POST",
+    }),
+
   // Dashboard (derived from instances)
   dashboard: () => request<User>("/api/auth/me").then(async (user) => {
     const instances = await request<Instance[]>("/api/instances");

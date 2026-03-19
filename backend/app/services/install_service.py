@@ -806,3 +806,201 @@ def configure_instance_telegram(
     _sync_runtime_status(instance_id, project)
     return True, msg, org_token_display, plugin, agent_name
 
+
+# ── Standalone Telegram-only configuration ────────────────────────────────────
+
+def configure_telegram_only(
+    instance_id: str,
+    telegram_bot_token: str,
+    runtime_dir: str,
+    compose_file: str,
+    project: str,
+) -> tuple[bool, str]:
+    """Configure only the Telegram channel. Write to host openclaw.json, restart, verify."""
+    gateway_container = f"{project}-openclaw-gateway-1"
+    config_dir = Path(runtime_dir) / "openclaw-config"
+    openclaw_json = config_dir / "openclaw.json"
+
+    # Duplicate-token check
+    duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
+    if duplicated_by:
+        return False, f"Telegram bot token is already used by instance {duplicated_by}."
+
+    if not openclaw_json.exists():
+        return False, f"Missing config file: {openclaw_json}"
+
+    try:
+        cfg = json.loads(openclaw_json.read_text())
+    except Exception as e:
+        return False, f"Config parse error: {e}"
+
+    if not cfg.get("channels"):
+        cfg["channels"] = {}
+    cfg["channels"]["telegram"] = {
+        "enabled": True,
+        "dmPolicy": "open",
+        "botToken": telegram_bot_token,
+        "groups": {"*": {"requireMention": False}},
+        "allowFrom": ["*"],
+        "groupPolicy": "allowlist",
+        "streaming": "partial",
+    }
+    openclaw_json.write_text(json.dumps(cfg, indent=2) + "\n")
+
+    # Fix permissions
+    ext_root = config_dir / "extensions"
+    if ext_root.exists():
+        for p in [ext_root, *ext_root.rglob("*")]:
+            try:
+                os.chmod(p, 0o755 if p.is_dir() else 0o644)
+            except Exception:
+                pass
+
+    _run(["docker", "restart", gateway_container])
+
+    # Verify: wait up to 30s for Telegram provider to start
+    for _ in range(10):
+        time.sleep(3)
+        _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
+        if "[telegram]" in logs and "starting provider" in logs:
+            return True, "Telegram configured and verified."
+
+    # Retry once
+    _run(["docker", "restart", gateway_container])
+    for _ in range(10):
+        time.sleep(3)
+        _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
+        if "[telegram]" in logs and "starting provider" in logs:
+            return True, "Telegram configured and verified (after retry)."
+
+    return False, "Telegram configured but provider did not start within 60s. Check bot token and container logs."
+
+
+# ── Standalone HXA-only configuration ────────────────────────────────────────
+
+def configure_hxa_only(
+    instance_id: str,
+    runtime_dir: str,
+    project: str,
+) -> tuple[bool, str]:
+    """Register with HXA org, write token to HOST openclaw.json, restart, verify WebSocket."""
+    gateway_container = f"{project}-openclaw-gateway-1"
+    config_dir = Path(runtime_dir) / "openclaw-config"
+    openclaw_json = config_dir / "openclaw.json"
+    agent_name = _safe_agent_name(instance_id)
+    _live_org_secret = _get_org_secret()
+    _live_org_id = _get_org_id()
+    origin = "https://www.ucai.net"
+
+    if not _live_org_secret:
+        return False, "Server missing ORG_SECRET."
+
+    # Fix plugin directory permissions
+    ext_root = config_dir / "extensions"
+    if ext_root.exists():
+        for p in [ext_root, *ext_root.rglob("*")]:
+            try:
+                os.chmod(p, 0o755 if p.is_dir() else 0o644)
+            except Exception:
+                pass
+
+    if not openclaw_json.exists():
+        return False, f"Missing config file: {openclaw_json}"
+
+    def _do_register() -> tuple[str, str, str]:
+        """Returns (token, agentId, error_msg). error_msg is empty on success."""
+        js = f"""
+(async () => {{
+  let sdk;
+  try {{
+    sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.js');
+  }} catch(e) {{
+    try {{ sdk = await import('/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz/hxa-connect-sdk/dist/index.cjs'); }} catch {{}}
+  }}
+  if (!sdk) {{ console.log('SDK_NOT_FOUND'); return; }}
+  const {{ HxaConnectClient }} = sdk;
+  try {{
+    const reg = await HxaConnectClient.register({repr(_HUB_URL)}, {repr(_live_org_id)}, {{ org_secret: {repr(_live_org_secret)} }}, {repr(agent_name)});
+    const token = reg.token || reg.agent_token || reg.bot_token || "";
+    const agentId = reg.id || reg.bot_id || reg.agent_id || "";
+    console.log("HXA_REG_OK::" + JSON.stringify({{ token, agentId }}));
+  }} catch(e) {{
+    console.log("HXA_REG_ERR::" + e.message);
+  }}
+}})();
+"""
+        _, out = _run(["docker", "exec", gateway_container, "node", "-e", js])
+        if "HXA_REG_OK::" in out:
+            raw = out.split("HXA_REG_OK::")[1].strip().splitlines()[0]
+            try:
+                parsed = json.loads(raw)
+                return str(parsed.get("token", "")), str(parsed.get("agentId", "")), ""
+            except Exception as pe:
+                return "", "", f"Parse error: {pe}"
+        err = ""
+        if "HXA_REG_ERR::" in out:
+            err = out.split("HXA_REG_ERR::")[-1].strip()[:200]
+        elif "SDK_NOT_FOUND" in out:
+            err = "SDK not found in extensions/openclaw-hxa-connect"
+        else:
+            err = out[:200]
+        return "", "", err
+
+    def _cleanup_and_retry() -> tuple[str, str, str]:
+        """Delete existing bot + tombstone, then re-register."""
+        cleanup_js = f"""
+(async () => {{
+  try {{
+    const origin = {repr(origin)};
+    const loginR = await fetch({repr(_HUB_URL + "/api/auth/login")}, {{
+      method: "POST", headers: {{"Content-Type": "application/json", Origin: origin}},
+      body: JSON.stringify({{type: "org_admin", org_secret: {repr(_live_org_secret)}, org_id: {repr(_live_org_id)}}})
+    }});
+    const cookie = loginR.headers.get("set-cookie").split(";")[0];
+    const bots = await (await fetch({repr(_HUB_URL + "/api/bots")}, {{headers: {{Cookie: cookie, Origin: origin}}}})).json();
+    const bot = Array.isArray(bots) ? bots.find(b => b.name === {repr(agent_name)}) : null;
+    if (bot) await fetch({repr(_HUB_URL)} + "/api/bots/" + bot.id, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
+    await fetch({repr(_HUB_URL + "/api/orgs/")} + {repr(_live_org_id)} + "/tombstones/" + {repr(agent_name)}, {{method: "DELETE", headers: {{Cookie: cookie, Origin: origin}}}});
+    console.log("CLEANUP_OK");
+  }} catch(e) {{ console.log("CLEANUP_ERR::" + e.message); }}
+}})();
+"""
+        _run(["docker", "exec", gateway_container, "node", "-e", cleanup_js])
+        return _do_register()
+
+    # First attempt
+    token, agent_id, err = _do_register()
+    if not token and ("already exists" in err or "NAME_CONFLICT" in err or "reserved" in err or "Reserved" in err):
+        token, agent_id, err = _cleanup_and_retry()
+
+    if not token:
+        return False, f"HXA registration failed: {err}"
+
+    # Write agentToken to HOST openclaw.json
+    try:
+        cfg = json.loads(openclaw_json.read_text())
+    except Exception:
+        cfg = {}
+    if not cfg.get("channels"):
+        cfg["channels"] = {}
+    cfg["channels"]["hxa-connect"] = {
+        "enabled": True,
+        "hubUrl": _HUB_URL,
+        "agentToken": token,
+        "agentName": agent_name,
+        "orgId": _live_org_id,
+        "access": {"dmPolicy": "open", "groupPolicy": "open", "threads": {}},
+    }
+    openclaw_json.write_text(json.dumps(cfg, indent=2) + "\n")
+
+    _run(["docker", "restart", gateway_container])
+
+    # Verify WebSocket connection up to 30s
+    for _ in range(10):
+        time.sleep(3)
+        _, logs = _run(["docker", "logs", "--tail", "30", gateway_container])
+        if "hxa-connect" in logs and "WebSocket connected" in logs:
+            return True, f"HXA connected. Agent: {agent_name}"
+
+    return False, "HXA token written but WebSocket connection not confirmed within 30s. Check container logs."
+
