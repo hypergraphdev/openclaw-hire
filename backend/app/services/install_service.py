@@ -1342,6 +1342,7 @@ def _configure_openclaw_hxa_only(
         "hubUrl": _get_hub_url(),
         "agentToken": token,
         "agentName": agent_name,
+        "agentId": agent_id,
         "orgId": _live_org_id,
         "access": {"dmPolicy": "open", "groupPolicy": "open", "threads": {}},
     }
