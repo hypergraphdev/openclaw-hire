@@ -590,7 +590,7 @@ def _ensure_admin_bot(hub_url: str) -> str:
         with urllib.request.urlopen(login_req, timeout=10) as resp:
             cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 
-        # Step 2: Cleanup existing bot with same name (best effort)
+        # Step 2: Cleanup existing bot with same name + release tombstone (best effort)
         try:
             bots_req = urllib.request.Request(
                 f"{hub_url}/api/bots?limit=200",
@@ -610,22 +610,17 @@ def _ensure_admin_bot(hub_url: str) -> str:
                     break
         except Exception:
             pass
+        # Release tombstone so deleted name can be re-registered
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{hub_url}/api/orgs/{org_id}/tombstones/{admin_name}",
+                headers={"Cookie": cookie, "Origin": origin}, method="DELETE",
+            ), timeout=10)
+        except Exception:
+            pass
 
-        # Step 3: Create ticket
-        ticket_data = json.dumps({"reusable": False}).encode()
-        ticket_req = urllib.request.Request(
-            f"{hub_url}/api/org/tickets", data=ticket_data,
-            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin},
-            method="POST",
-        )
-        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
-            ticket_result = json.loads(resp.read().decode())
-        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
-        if not ticket_secret:
-            return ""
-
-        # Step 4: Register admin bot
-        reg_data = json.dumps({"org_id": org_id, "ticket": ticket_secret, "name": admin_name}).encode()
+        # Step 3: Register admin bot (use org_secret for reliable registration)
+        reg_data = json.dumps({"org_id": org_id, "org_secret": org_secret, "name": admin_name}).encode()
         reg_req = urllib.request.Request(
             f"{hub_url}/api/auth/register", data=reg_data,
             headers={"Content-Type": "application/json"}, method="POST",
