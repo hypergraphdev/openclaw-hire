@@ -544,44 +544,56 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     if not target_agent_name:
         raise HTTPException(status_code=400, detail="Instance has no agent name.")
 
-    # Get or register admin bot
-    admin_token = _ensure_admin_bot(hub_url)
+    # Get or register per-user admin bot
+    admin_token = _ensure_user_bot(hub_url, owner_id)
     if not admin_token:
-        raise HTTPException(status_code=500, detail="Failed to initialize admin bot for chat.")
+        raise HTTPException(status_code=500, detail="Failed to initialize chat bot.")
     return hub_url, admin_token, target_agent_name
 
 
-def _ensure_admin_bot(hub_url: str) -> str:
-    """Return admin bot token, registering one if needed. Cached in DB settings."""
+# In-memory cache: {user_id: token} — avoids hitting Hub /api/me on every request
+_user_bot_cache: dict[str, str] = {}
+
+
+def _ensure_user_bot(hub_url: str, user_id: str) -> str:
+    """Return per-user bot token, registering one if needed. Cached in DB per user."""
     from ..database import get_setting, set_setting
     from ..services.install_service import _get_org_id, _get_org_secret
 
-    token = get_setting("hxa_admin_bot_token", "")
+    setting_key = f"hxa_user_bot_token_{user_id}"
+    short_id = user_id.replace("user_", "")[:12]
+    bot_name = f"u_{short_id}"
+
+    # Check memory cache first
+    if user_id in _user_bot_cache:
+        return _user_bot_cache[user_id]
+
+    # Check DB
+    token = get_setting(setting_key, "")
     if token:
-        # Verify token is still valid by calling /api/me (lightweight check)
+        # Verify token is still valid
         try:
             req = urllib.request.Request(
-                f"{hub_url}/api/bots?limit=1",
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                f"{hub_url}/api/me",
+                headers={"Authorization": f"Bearer {token}"},
             )
-            with urllib.request.urlopen(req, timeout=5):
-                pass
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                me = json.loads(resp.read().decode())
+            _user_bot_cache[user_id] = token
             return token
         except Exception:
-            # Token invalid, re-register
-            pass
+            pass  # Token invalid, re-register
 
-    # Register a new admin bot
+    # Register a new bot for this user
     org_secret = _get_org_secret()
     org_id = _get_org_id()
     if not org_secret:
         return ""
 
     origin = "https://www.ucai.net"
-    admin_name = "hire_admin_panel"
 
     try:
-        # Step 1: Admin login
+        # Admin login (for cleanup if needed)
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
         login_req = urllib.request.Request(
             f"{hub_url}/api/auth/login", data=login_data,
@@ -590,7 +602,7 @@ def _ensure_admin_bot(hub_url: str) -> str:
         with urllib.request.urlopen(login_req, timeout=10) as resp:
             cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 
-        # Step 2: Cleanup existing bot with same name + release tombstone (best effort)
+        # Cleanup existing bot with same name + release tombstone (best effort)
         try:
             bots_req = urllib.request.Request(
                 f"{hub_url}/api/bots?limit=200",
@@ -600,27 +612,24 @@ def _ensure_admin_bot(hub_url: str) -> str:
                 bots = json.loads(resp.read().decode())
             items = bots if isinstance(bots, list) else bots.get("items", [])
             for b in items:
-                if b.get("name") == admin_name:
-                    del_req = urllib.request.Request(
+                if b.get("name") == bot_name:
+                    urllib.request.urlopen(urllib.request.Request(
                         f"{hub_url}/api/bots/{b['id']}",
-                        headers={"Cookie": cookie, "Origin": origin},
-                        method="DELETE",
-                    )
-                    urllib.request.urlopen(del_req, timeout=10)
+                        headers={"Cookie": cookie, "Origin": origin}, method="DELETE",
+                    ), timeout=10)
                     break
         except Exception:
             pass
-        # Release tombstone so deleted name can be re-registered
         try:
             urllib.request.urlopen(urllib.request.Request(
-                f"{hub_url}/api/orgs/{org_id}/tombstones/{admin_name}",
+                f"{hub_url}/api/orgs/{org_id}/tombstones/{bot_name}",
                 headers={"Cookie": cookie, "Origin": origin}, method="DELETE",
             ), timeout=10)
         except Exception:
             pass
 
-        # Step 3: Register admin bot (use org_secret for reliable registration)
-        reg_data = json.dumps({"org_id": org_id, "org_secret": org_secret, "name": admin_name}).encode()
+        # Register with org_secret
+        reg_data = json.dumps({"org_id": org_id, "org_secret": org_secret, "name": bot_name}).encode()
         reg_req = urllib.request.Request(
             f"{hub_url}/api/auth/register", data=reg_data,
             headers={"Content-Type": "application/json"}, method="POST",
@@ -630,8 +639,8 @@ def _ensure_admin_bot(hub_url: str) -> str:
 
         new_token = result.get("token", "")
         if new_token:
-            set_setting("hxa_admin_bot_token", new_token)
-            set_setting("hxa_admin_bot_name", admin_name)
+            set_setting(setting_key, new_token)
+            _user_bot_cache[user_id] = new_token
             return new_token
     except Exception:
         pass
