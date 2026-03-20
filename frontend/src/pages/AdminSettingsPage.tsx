@@ -8,6 +8,7 @@ interface Settings {
   anthropic_auth_token: string;
   hxa_org_id: string;
   hxa_org_secret: string;
+  hxa_admin_secret: string;
 }
 
 export default function AdminSettingsPage() {
@@ -18,12 +19,14 @@ export default function AdminSettingsPage() {
     anthropic_auth_token: "",
     hxa_org_id: "",
     hxa_org_secret: "",
+    hxa_admin_secret: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [showAdminSecret, setShowAdminSecret] = useState(false);
 
   useEffect(() => {
     api.get("/api/admin/settings")
@@ -101,6 +104,12 @@ export default function AdminSettingsPage() {
           field="hxa_org_secret"
           show={showSecret}
           onToggle={() => setShowSecret((v) => !v)}
+        />
+        <Field
+          label={t("adminHxa.adminSecret")}
+          field="hxa_admin_secret"
+          show={showAdminSecret}
+          onToggle={() => setShowAdminSecret((v) => !v)}
         />
       </div>
 

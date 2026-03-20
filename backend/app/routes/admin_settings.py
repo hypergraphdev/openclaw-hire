@@ -9,7 +9,7 @@ from .admin import _require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin-settings"])
 
-SETTING_KEYS = ["anthropic_base_url", "anthropic_auth_token", "hxa_org_id", "hxa_org_secret"]
+SETTING_KEYS = ["anthropic_base_url", "anthropic_auth_token", "hxa_org_id", "hxa_org_secret", "hxa_admin_secret"]
 
 
 class SettingsResponse(BaseModel):
@@ -17,6 +17,7 @@ class SettingsResponse(BaseModel):
     anthropic_auth_token: str = ""
     hxa_org_id: str = ""
     hxa_org_secret: str = ""
+    hxa_admin_secret: str = ""
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -24,6 +25,7 @@ class SettingsUpdateRequest(BaseModel):
     anthropic_auth_token: str | None = None
     hxa_org_id: str | None = None
     hxa_org_secret: str | None = None
+    hxa_admin_secret: str | None = None
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -34,6 +36,7 @@ def get_settings(current_user: dict = Depends(get_current_user)):
         anthropic_auth_token=get_setting("anthropic_auth_token"),
         hxa_org_id=get_setting("hxa_org_id", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"),
         hxa_org_secret=get_setting("hxa_org_secret"),
+        hxa_admin_secret=get_setting("hxa_admin_secret"),
     )
 
 

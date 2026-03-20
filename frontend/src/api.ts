@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -160,6 +160,34 @@ export const api = {
 
   chatWsTicket: (id: string) =>
     request<ChatWsTicketResponse>(`/api/instances/${id}/chat/ws-ticket`, { method: "POST" }),
+
+  // HXA Organization management
+  hxaOrgs: () => request<{ orgs: HxaOrg[] }>("/api/admin/hxa/orgs"),
+
+  hxaCreateOrg: (name: string) =>
+    request<HxaOrgDetail>("/api/admin/hxa/orgs", { method: "POST", body: JSON.stringify({ name }) }),
+
+  hxaUpdateOrg: (orgId: string, name: string) =>
+    request<{ id: string; name: string; status: string }>(`/api/admin/hxa/orgs/${orgId}`, {
+      method: "PATCH", body: JSON.stringify({ name }),
+    }),
+
+  hxaDeleteOrg: (orgId: string) =>
+    request<{ ok: boolean }>(`/api/admin/hxa/orgs/${orgId}`, { method: "DELETE" }),
+
+  hxaRotateSecret: (orgId: string) =>
+    request<{ org_secret: string }>(`/api/admin/hxa/orgs/${orgId}/rotate-secret`, { method: "POST" }),
+
+  hxaSetDefaultOrg: (orgId: string) =>
+    request<{ ok: boolean }>(`/api/admin/hxa/orgs/${orgId}/set-default`, { method: "POST" }),
+
+  hxaOrgAgents: (orgId: string) =>
+    request<{ agents: HxaOrgAgent[]; org_name: string }>(`/api/admin/hxa/orgs/${orgId}/agents`),
+
+  hxaTransferBot: (instanceId: string, targetOrgId: string) =>
+    request<{ ok: boolean; new_org_id: string; agent_name: string }>(`/api/admin/hxa/bots/${instanceId}/transfer`, {
+      method: "POST", body: JSON.stringify({ target_org_id: targetOrgId }),
+    }),
 
   // Raw fetch helpers (return Response)
   get: (path: string) => {

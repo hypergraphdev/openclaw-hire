@@ -146,3 +146,33 @@ export type ChatWsTicketResponse = {
   ticket: string;
   ws_url: string;
 };
+
+// ─── HXA Organization types ───
+
+export type HxaOrg = {
+  id: string;
+  name: string;
+  status: string;
+  bot_count: number;
+  created_at: number;
+  is_default: boolean;
+};
+
+export type HxaOrgDetail = {
+  id: string;
+  name: string;
+  status: string;
+  org_secret?: string;
+  created_at?: number;
+};
+
+export type HxaOrgAgent = {
+  bot_id: string;
+  name: string;
+  online: boolean;
+  auth_role: string;
+  token_prefix: string;
+  instance_id?: string | null;
+  instance_name?: string | null;
+  product?: string | null;
+};

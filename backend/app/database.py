@@ -210,6 +210,17 @@ def _migrate_existing_db() -> None:
                     (_k, _v, _now)
                 )
 
+        # org_secrets table for multi-org support
+        if "org_secrets" not in tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS org_secrets (
+                    org_id TEXT PRIMARY KEY,
+                    org_secret TEXT NOT NULL DEFAULT '',
+                    org_name TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT ''
+                )
+            """)
+
         conn.commit()
 
 
