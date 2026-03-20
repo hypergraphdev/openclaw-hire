@@ -139,6 +139,7 @@ class InstanceResponse(BaseModel):
     http_port: Optional[int] = None
     agent_name: Optional[str] = None
     is_telegram_configured: bool = False
+    org_id: Optional[str] = None
     created_at: str
     updated_at: str
 

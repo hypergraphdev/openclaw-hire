@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
-import type { AdminUserInstances, User } from "../types";
+import type { AdminUserInstances, HxaOrg, Instance, User } from "../types";
 
 export function AdminPage() {
   const t = useT();
@@ -13,26 +13,82 @@ export function AdminPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState("");
 
+  // Orgs for name lookup & transfer
+  const [orgs, setOrgs] = useState<HxaOrg[]>([]);
+  const orgMap = Object.fromEntries(orgs.map((o) => [o.id, o.name]));
+
+  // Rename state
+  const [renamingId, setRenamingId] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+
+  // Transfer state
+  const [transferId, setTransferId] = useState("");
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferring, setTransferring] = useState(false);
+
   useEffect(() => {
-    api
-      .adminUsers()
+    api.adminUsers()
       .then((rows) => {
         setUsers(rows);
         if (rows.length > 0) setSelectedUserId(rows[0].id);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : t("admin.loadFailed")))
       .finally(() => setLoadingUsers(false));
+
+    api.hxaOrgs().then((r) => setOrgs(r.orgs || [])).catch(() => {});
   }, [t]);
 
   useEffect(() => {
     if (!selectedUserId) return;
     setLoadingDetail(true);
-    api
-      .adminUserInstances(selectedUserId)
+    api.adminUserInstances(selectedUserId)
       .then(setDetail)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : t("admin.loadInstancesFailed")))
       .finally(() => setLoadingDetail(false));
   }, [selectedUserId, t]);
+
+  async function handleRename(inst: Instance) {
+    const name = renameDraft.trim();
+    if (!name) return;
+    setRenameSaving(true);
+    try {
+      const res = await api.renameAgent(inst.id, name);
+      // Update local state
+      if (detail) {
+        setDetail({
+          ...detail,
+          instances: detail.instances.map((i) =>
+            i.id === inst.id ? { ...i, agent_name: res.agent_name } : i
+          ),
+        });
+      }
+      setRenamingId("");
+    } catch (e: unknown) {
+      alert((e as Error).message || "Failed");
+    }
+    setRenameSaving(false);
+  }
+
+  async function handleTransfer(inst: Instance) {
+    if (!transferTarget) return;
+    const targetName = orgMap[transferTarget] || transferTarget;
+    if (!confirm(`确定将 "${inst.agent_name}" 转移到组织 "${targetName}"？Bot 将重新注册。`)) return;
+    setTransferring(true);
+    try {
+      await api.hxaTransferBot(inst.id, transferTarget);
+      // Refresh
+      if (selectedUserId) {
+        const d = await api.adminUserInstances(selectedUserId);
+        setDetail(d);
+      }
+      setTransferId("");
+      setTransferTarget("");
+    } catch (e: unknown) {
+      alert((e as Error).message || "Failed");
+    }
+    setTransferring(false);
+  }
 
   return (
     <div>
@@ -98,9 +154,11 @@ export function AdminPage() {
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.name")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.product")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.state")}</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.orgBound")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">组织</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">组内名称</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.telegramBound")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.created")}</th>
+                        <th className="text-right py-2 text-xs text-gray-500">操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -113,16 +171,65 @@ export function AdminPage() {
                           <td className="py-2 pr-3 text-gray-300 capitalize">{i.product}</td>
                           <td className="py-2 pr-3 text-gray-300">{i.install_state}</td>
                           <td className="py-2 pr-3">
-                            {i.agent_name
-                              ? <span className="text-green-400 text-xs">{i.agent_name}</span>
-                              : <span className="text-gray-600 text-xs">-</span>}
+                            {i.org_id ? (
+                              <span className="text-blue-400 text-xs">{orgMap[i.org_id] || i.org_id.substring(0, 8) + "..."}</span>
+                            ) : (
+                              <span className="text-gray-600 text-xs">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {renamingId === i.id ? (
+                              <div className="flex items-center gap-1">
+                                <input type="text" value={renameDraft}
+                                  onChange={(e) => setRenameDraft(e.target.value)}
+                                  className="text-xs font-mono text-gray-200 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded w-32 focus:outline-none focus:border-gray-500"
+                                  onKeyDown={(e) => e.key === "Enter" && handleRename(i)} />
+                                <button onClick={() => handleRename(i)} disabled={renameSaving}
+                                  className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">{renameSaving ? "..." : t("common.ok")}</button>
+                                <button onClick={() => setRenamingId("")} className="text-xs text-gray-500">X</button>
+                              </div>
+                            ) : i.agent_name ? (
+                              <span className="text-green-400 text-xs group cursor-default">
+                                {i.agent_name}
+                                <button onClick={() => { setRenameDraft(i.agent_name || ""); setRenamingId(i.id); }}
+                                  className="ml-1 text-gray-600 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">
+                                  ✏️
+                                </button>
+                              </span>
+                            ) : (
+                              <span className="text-gray-600 text-xs">-</span>
+                            )}
                           </td>
                           <td className="py-2 pr-3">
                             {i.is_telegram_configured
                               ? <span className="text-green-400 text-xs">✓</span>
                               : <span className="text-gray-600 text-xs">-</span>}
                           </td>
-                          <td className="py-2 pr-3 text-gray-500">{new Date(i.created_at).toLocaleString()}</td>
+                          <td className="py-2 pr-3 text-gray-500 text-xs">{new Date(i.created_at).toLocaleString()}</td>
+                          <td className="py-2 text-right">
+                            {i.agent_name && orgs.length > 1 && (
+                              transferId === i.id ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <select value={transferTarget} onChange={(e) => setTransferTarget(e.target.value)}
+                                    className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
+                                    <option value="">选择组织</option>
+                                    {orgs.filter((o) => o.id !== i.org_id).map((o) => (
+                                      <option key={o.id} value={o.id}>{o.name}</option>
+                                    ))}
+                                  </select>
+                                  <button onClick={() => handleTransfer(i)} disabled={transferring || !transferTarget}
+                                    className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">
+                                    {transferring ? "..." : t("common.ok")}
+                                  </button>
+                                  <button onClick={() => { setTransferId(""); setTransferTarget(""); }}
+                                    className="text-xs text-gray-500">X</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setTransferId(i.id)}
+                                  className="text-xs text-yellow-500 hover:text-yellow-400">转移</button>
+                              )
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

@@ -36,6 +36,7 @@ export type Instance = {
   is_telegram_configured?: boolean;
   // org_token removed - sensitive
   agent_name?: string | null;
+  org_id?: string | null;
   created_at: string;
   updated_at: string;
 };

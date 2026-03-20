@@ -44,7 +44,9 @@ def list_user_instances(
         raise HTTPException(status_code=404, detail="User not found.")
 
     irows = db.execute(
-        "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
+        """SELECT i.*, c.org_id FROM instances i
+           LEFT JOIN instance_configs c ON i.id = c.instance_id
+           WHERE i.owner_id = ? ORDER BY i.created_at DESC""",
         (user_id,),
     ).fetchall()
 
