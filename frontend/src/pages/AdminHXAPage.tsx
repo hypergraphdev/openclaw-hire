@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
@@ -179,7 +179,20 @@ export default function AdminHXAPage() {
     setTransferring(false);
   }
 
-  const copy = (text: string) => navigator.clipboard?.writeText(text);
+  const [copiedKey, setCopiedKey] = useState("");
+  const copy = useCallback((text: string, key?: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      const k = key || text;
+      setCopiedKey(k);
+      setTimeout(() => setCopiedKey((v) => v === k ? "" : v), 1500);
+    });
+  }, []);
+  const CopyBtn = ({ text, id }: { text: string; id?: string }) => {
+    const k = id || text;
+    return copiedKey === k
+      ? <span className="text-xs text-green-400">✓</span>
+      : <button onClick={() => copy(text, k)} className="text-xs text-gray-500 hover:text-gray-300">{t("common.copy")}</button>;
+  };
   const selectedOrg = orgs.find((o) => o.id === selectedOrgId);
 
   if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
@@ -220,7 +233,7 @@ export default function AdminHXAPage() {
           <p className="text-yellow-300 text-sm font-medium">⚠ {t("adminHxa.secretWarning")}</p>
           <div className="flex items-center gap-2">
             <code className="text-xs font-mono text-yellow-200 bg-gray-800 px-2 py-1 rounded flex-1 break-all">{createdSecret}</code>
-            <button onClick={() => copy(createdSecret)} className="text-xs text-yellow-300 hover:text-yellow-200">{t("common.copy")}</button>
+            <CopyBtn text={createdSecret} id="created-secret" />
           </div>
           <button onClick={() => setCreatedSecret("")} className="text-xs text-gray-500 hover:text-gray-300">{t("common.close")}</button>
         </div>
@@ -232,7 +245,7 @@ export default function AdminHXAPage() {
           <p className="text-yellow-300 text-sm font-medium">⚠ {t("adminHxa.newSecret")}</p>
           <div className="flex items-center gap-2">
             <code className="text-xs font-mono text-yellow-200 bg-gray-800 px-2 py-1 rounded flex-1 break-all">{newSecret}</code>
-            <button onClick={() => copy(newSecret)} className="text-xs text-yellow-300 hover:text-yellow-200">{t("common.copy")}</button>
+            <CopyBtn text={newSecret} id="new-secret" />
           </div>
           <button onClick={() => { setNewSecret(""); setShowOrgSecret(null); }} className="text-xs text-gray-500 hover:text-gray-300">{t("common.close")}</button>
         </div>
@@ -338,7 +351,7 @@ export default function AdminHXAPage() {
             <div>
               <span className="text-gray-500">{t("adminHxa.orgId")}:</span>
               <code className="ml-2 text-gray-300 font-mono">{selectedOrg.id}</code>
-              <button onClick={() => copy(selectedOrg.id)} className="ml-1 text-gray-600 hover:text-gray-400">{t("common.copy")}</button>
+              <span className="ml-1"><CopyBtn text={selectedOrg.id} id="org-id" /></span>
             </div>
             <div>
               <span className="text-gray-500">{t("adminHxa.status")}:</span>
