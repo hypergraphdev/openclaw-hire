@@ -75,6 +75,12 @@ export const api = {
   deleteInstance: (id: string) =>
     request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
 
+  renameAgent: (id: string, agentName: string) =>
+    request<{ ok: boolean; agent_name: string }>(`/api/instances/${id}/agent-name`, {
+      method: "PUT",
+      body: JSON.stringify({ agent_name: agentName }),
+    }),
+
   instanceLogs: (id: string, lines = 200) =>
     request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
 

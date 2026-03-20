@@ -403,6 +403,59 @@ async def configure_hxa_endpoint(
     return {"ok": True, "message": message, "agent_name": agent_name}
 
 
+class _RenameAgentRequest(_BaseModel):
+    agent_name: str
+
+
+@router.put("/{instance_id}/agent-name")
+def rename_agent(
+    instance_id: str,
+    req: _RenameAgentRequest,
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Rename instance's agent in HXA org (only if current name starts with hire_inst_)."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    current_name = inst["agent_name"] or ""
+    if not current_name.startswith("hire_inst_"):
+        raise HTTPException(status_code=400, detail="已改名的实例不允许再次修改。")
+
+    new_name = req.agent_name.strip()
+    if not new_name or len(new_name) < 2:
+        raise HTTPException(status_code=400, detail="名称不能为空且至少2个字符。")
+
+    from .admin_hxa import _get_agent_token, _update_agent_name_in_config
+    from ..services.install_service import _get_hub_url
+
+    agent_token = _get_agent_token(instance_id)
+    if not agent_token:
+        raise HTTPException(status_code=400, detail="找不到该实例的 agent token。")
+
+    # Call HXA Hub rename API
+    hub = _get_hub_url().rstrip("/")
+    rename_data = json.dumps({"name": new_name}).encode()
+    try:
+        rename_req = urllib.request.Request(
+            f"{hub}/api/me/name",
+            data=rename_data,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {agent_token}"},
+            method="PATCH",
+        )
+        with urllib.request.urlopen(rename_req, timeout=10) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        raise HTTPException(status_code=e.code, detail=f"改名失败: {body}")
+
+    # Update local DB
+    db.execute("UPDATE instances SET agent_name = ? WHERE id = ?", (new_name, instance_id))
+    db.execute("UPDATE instance_configs SET agent_name = ? WHERE instance_id = ?", (new_name, instance_id))
+    db.commit()
+    _update_agent_name_in_config(instance_id, new_name)
+
+    return {"ok": True, "agent_name": new_name}
+
+
 @router.delete("/{instance_id}")
 def delete_instance(
     instance_id: str,

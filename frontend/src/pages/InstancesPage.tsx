@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import type { Instance } from "../types";
@@ -26,15 +26,150 @@ function InstallDot({ state }: { state: string }) {
 /** Colored dot for config + org online state */
 function ConfigDot({ inst }: { inst: Instance }) {
   if (!inst.agent_name) return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" title="未配置组织" />;
-  // has agent_name = configured, show green
   return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" title="已配置" />;
 }
 
+// ─── Three-dot dropdown menu ────────────────────────────────────────
+
+function ActionMenu({
+  inst,
+  onDelete,
+  onRename,
+  deleting,
+}: {
+  inst: Instance;
+  onDelete: () => void;
+  onRename: () => void;
+  deleting: boolean;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const canRename = (inst.agent_name || "").startsWith("hire_inst_");
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="p-1.5 text-gray-500 hover:text-gray-300 rounded transition-colors hover:bg-gray-800"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+          <circle cx="10" cy="4" r="1.5" />
+          <circle cx="10" cy="10" r="1.5" />
+          <circle cx="10" cy="16" r="1.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-8 z-20 w-32 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1 text-xs">
+          <Link
+            to={`/instances/${inst.id}`}
+            className="block px-3 py-2 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+            onClick={() => setOpen(false)}
+          >
+            {t("instances.manage")}
+          </Link>
+          {canRename && (
+            <button
+              className="block w-full text-left px-3 py-2 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+              onClick={() => { setOpen(false); onRename(); }}
+            >
+              改名
+            </button>
+          )}
+          <button
+            className="block w-full text-left px-3 py-2 text-rose-400 hover:bg-gray-700 hover:text-rose-300 transition-colors"
+            disabled={deleting}
+            onClick={() => { setOpen(false); onDelete(); }}
+          >
+            {deleting ? t("instances.deleting") : t("common.delete")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Rename dialog ──────────────────────────────────────────────────
+
+function RenameDialog({
+  inst,
+  onClose,
+  onRenamed,
+}: {
+  inst: Instance;
+  onClose: () => void;
+  onRenamed: (id: string, newName: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length < 2) { setError("名称至少2个字符"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await api.renameAgent(inst.id, trimmed);
+      onRenamed(inst.id, res.agent_name);
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "改名失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-medium text-white mb-3">修改组织内名称</h3>
+        <p className="text-xs text-gray-500 mb-2">当前: <span className="font-mono text-gray-400">{inst.agent_name}</span></p>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="输入新名称..."
+          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 placeholder-gray-500"
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          autoFocus
+        />
+        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5">取消</button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+            className="text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded transition-colors"
+          >
+            {saving ? "保存中..." : "确定"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ──────────────────────────────────────────────────────
+
 export function InstancesPage() {
   const t = useT();
+  const navigate = useNavigate();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string>("");
+  const [renamingInst, setRenamingInst] = useState<Instance | null>(null);
 
   function configStatus(inst: Instance) {
     if (!inst.is_telegram_configured) return t("instances.configTelegramNo");
@@ -43,11 +178,7 @@ export function InstancesPage() {
   }
 
   useEffect(() => {
-    api
-      .listInstances()
-      .then(setInstances)
-      .finally(() => setLoading(false));
-
+    api.listInstances().then(setInstances).finally(() => setLoading(false));
     const interval = setInterval(() => {
       api.listInstances().then(setInstances).catch(() => {});
     }, 8_000);
@@ -63,6 +194,10 @@ export function InstancesPage() {
     } finally {
       setDeletingId("");
     }
+  }
+
+  function handleRenamed(id: string, newName: string) {
+    setInstances((prev) => prev.map((x) => x.id === id ? { ...x, agent_name: newName } : x));
   }
 
   if (loading) {
@@ -101,8 +236,8 @@ export function InstancesPage() {
             {instances.map((inst) => (
               <div key={inst.id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-white font-medium">{inst.name}</div>
+                  <div className="cursor-pointer" onClick={() => navigate(`/instances/${inst.id}`)}>
+                    <div className="text-white font-medium hover:text-blue-400 transition-colors">{inst.name}</div>
                     <div className="text-[11px] text-gray-500 font-mono mt-1 break-all">{inst.id}</div>
                   </div>
                   <InstallDot state={inst.install_state} />
@@ -117,17 +252,13 @@ export function InstancesPage() {
                   <div>{t("instances.deployed")}: <span className="text-gray-300">{formatDate(inst.created_at)}</span></div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between">
-                  <button
-                    onClick={() => handleDelete(inst.id, inst.name)}
-                    disabled={deletingId === inst.id}
-                    className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50"
-                  >
-                    {deletingId === inst.id ? t("instances.deleting") : t("common.delete")}
-                  </button>
-                  <Link to={`/instances/${inst.id}`} className="text-xs text-blue-400 hover:text-blue-300">
-                    {t("instances.manage")}
-                  </Link>
+                <div className="mt-4 flex items-center justify-end">
+                  <ActionMenu
+                    inst={inst}
+                    onDelete={() => handleDelete(inst.id, inst.name)}
+                    onRename={() => setRenamingInst(inst)}
+                    deleting={deletingId === inst.id}
+                  />
                 </div>
               </div>
             ))}
@@ -145,15 +276,17 @@ export function InstancesPage() {
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.orgName")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.ports")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.deployed")}</th>
-                  <th className="px-5 py-3" />
+                  <th className="px-3 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {instances.map((inst) => (
                   <tr key={inst.id} className="hover:bg-gray-800/50 transition-colors">
                     <td className="px-5 py-3">
-                      <div className="text-white font-medium">{inst.name}</div>
-                      <div className="text-xs text-gray-500 font-mono mt-0.5">{inst.id}</div>
+                      <Link to={`/instances/${inst.id}`} className="block">
+                        <div className="text-white font-medium hover:text-blue-400 transition-colors">{inst.name}</div>
+                        <div className="text-xs text-gray-500 font-mono mt-0.5">{inst.id}</div>
+                      </Link>
                     </td>
                     <td className="px-5 py-3">
                       <span className="text-gray-300 capitalize">{inst.product}</span>
@@ -174,19 +307,13 @@ export function InstancesPage() {
                       {inst.web_console_port ? `${inst.web_console_port}${inst.http_port ? " / " + inst.http_port : ""}` : "-"}
                     </td>
                     <td className="px-5 py-3 text-gray-500">{formatDate(inst.created_at)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="inline-flex items-center gap-3">
-                        <button
-                          onClick={() => handleDelete(inst.id, inst.name)}
-                          disabled={deletingId === inst.id}
-                          className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50 transition-colors"
-                        >
-                          {deletingId === inst.id ? t("instances.deleting") : t("common.delete")}
-                        </button>
-                        <Link to={`/instances/${inst.id}`} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                          {t("instances.manage")}
-                        </Link>
-                      </div>
+                    <td className="px-3 py-3">
+                      <ActionMenu
+                        inst={inst}
+                        onDelete={() => handleDelete(inst.id, inst.name)}
+                        onRename={() => setRenamingInst(inst)}
+                        deleting={deletingId === inst.id}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -194,6 +321,15 @@ export function InstancesPage() {
             </table>
           </div>
         </>
+      )}
+
+      {/* Rename dialog */}
+      {renamingInst && (
+        <RenameDialog
+          inst={renamingInst}
+          onClose={() => setRenamingInst(null)}
+          onRenamed={handleRenamed}
+        />
       )}
     </div>
   );
