@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from ..deps import get_current_user, get_db
 from ..schemas import (
@@ -665,6 +665,41 @@ from pydantic import BaseModel as _BaseModel
 
 class _ChatSendRequest(_BaseModel):
     content: str
+    image_url: str | None = None
+
+
+# Upload directory served by nginx at /openclaw/uploads/
+_UPLOAD_DIR = Path("/home/wwwroot/openclaw-hire/frontend/dist/uploads")
+_MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+@router.post("/{instance_id}/chat/upload")
+async def chat_upload(
+    instance_id: str,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Upload an image and return a public URL."""
+    # Verify instance access
+    _get_chat_config(instance_id, current_user["id"], db)
+
+    ext = Path(file.filename or "img.png").suffix.lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail=f"不支持的图片格式: {ext}")
+
+    data = await file.read()
+    if len(data) > _MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="图片大小不能超过 10MB")
+
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex[:16]}{ext}"
+    dest = _UPLOAD_DIR / filename
+    dest.write_bytes(data)
+
+    url = f"https://www.ucai.net/openclaw/uploads/{filename}"
+    return {"url": url, "filename": filename}
 
 
 @router.post("/{instance_id}/chat/send")
@@ -676,7 +711,11 @@ def chat_send(
 ):
     """Send a DM to the instance bot via admin bot."""
     hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
-    result = _hub_request(hub_url, admin_token, "POST", "/api/send", {"to": target_name, "content": req.content})
+    # Build message content: if image_url present, include it for AI to see
+    content = req.content or ""
+    if req.image_url:
+        content = f"[图片]({req.image_url})\n{content}" if content else f"[图片]({req.image_url})"
+    result = _hub_request(hub_url, admin_token, "POST", "/api/send", {"to": target_name, "content": content})
     return result
 
 

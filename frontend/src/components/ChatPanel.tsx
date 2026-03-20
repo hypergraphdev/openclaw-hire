@@ -29,9 +29,12 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
   const [sendError, setSendError] = useState("");
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [botTyping, setBotTyping] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ file: File; preview: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -167,8 +170,38 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
 
   // ─── Send message ───────────────────────────────────────────────
 
+  function handlePickImage() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setSendError("只支持图片文件");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setSendError("图片大小不能超过 10MB");
+      return;
+    }
+    setSendError("");
+    const preview = URL.createObjectURL(file);
+    setPendingImage({ file, preview });
+    // Reset input so re-selecting same file triggers change
+    e.target.value = "";
+  }
+
+  function cancelImage() {
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.preview);
+      setPendingImage(null);
+    }
+  }
+
   async function handleSend() {
-    if (!chatInfo || !input.trim() || sending) return;
+    if (!chatInfo || sending) return;
+    if (!input.trim() && !pendingImage) return;
     setSending(true);
     setSendError("");
     // Start typing indicator immediately after sending
@@ -176,7 +209,17 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => setBotTyping(false), 30000);
     try {
-      const res = await api.chatSend(instanceId, input.trim());
+      let imageUrl: string | undefined;
+      // Upload image first if present
+      if (pendingImage) {
+        setUploading(true);
+        const uploaded = await api.chatUpload(instanceId, pendingImage.file);
+        imageUrl = uploaded.url;
+        URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage(null);
+        setUploading(false);
+      }
+      const res = await api.chatSend(instanceId, input.trim(), imageUrl);
       if (!channelId) {
         setChannelId(res.channel_id);
       }
@@ -189,6 +232,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     } catch {
       setSendError(t("chat.errorSend"));
       setBotTyping(false);
+      setUploading(false);
       clearTimeout(typingTimer.current);
     } finally {
       setSending(false);
@@ -319,11 +363,46 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
       {chatInfo && (
         <div className="shrink-0 px-4 py-3 border-t border-gray-800">
           {sendError && <div className="text-xs text-red-400 mb-2">{sendError}</div>}
-          <div className="flex gap-2">
+          {/* Image preview */}
+          {pendingImage && (
+            <div className="mb-2 relative inline-block">
+              <img
+                src={pendingImage.preview}
+                alt="preview"
+                className="max-h-32 rounded-lg border border-gray-700"
+              />
+              <button
+                onClick={cancelImage}
+                className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-500"
+              >
+                &times;
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            {/* Image picker button */}
+            <button
+              onClick={handlePickImage}
+              disabled={sending || !!pendingImage}
+              className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40 transition-colors"
+              title="发送图片"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" />
+              </svg>
+            </button>
             <input
               type="text"
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 placeholder-gray-500"
-              placeholder={t("chat.inputPlaceholder")}
+              placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -331,10 +410,10 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
             />
             <button
               onClick={handleSend}
-              disabled={!input.trim() || sending}
+              disabled={(!input.trim() && !pendingImage) || sending}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded-lg transition-colors"
             >
-              {sending ? t("chat.sending") : t("chat.send")}
+              {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
             </button>
           </div>
         </div>
@@ -348,6 +427,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
 function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: boolean }) {
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const content = extractContent(message);
+  const { imageUrl, text } = parseImageContent(content);
 
   return (
     <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
@@ -364,10 +444,27 @@ function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: bool
             : "bg-gray-800 border border-gray-700 text-gray-300"
         }`}
       >
-        {content}
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt="图片"
+            className="max-w-full max-h-64 rounded mb-1 cursor-pointer"
+            onClick={() => window.open(imageUrl, "_blank")}
+          />
+        )}
+        {text && <span>{text}</span>}
       </div>
     </div>
   );
+}
+
+/** Parse image markdown from message content: [图片](url) */
+function parseImageContent(content: string): { imageUrl: string | null; text: string } {
+  const match = content.match(/^\[图片\]\((https?:\/\/[^\s)]+)\)\s*/);
+  if (match) {
+    return { imageUrl: match[1], text: content.slice(match[0].length).trim() };
+  }
+  return { imageUrl: null, text: content };
 }
 
 /** Extract displayable content from a message. */

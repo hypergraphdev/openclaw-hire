@@ -122,11 +122,27 @@ export const api = {
   chatPeers: (id: string) =>
     request<ChatPeer[]>(`/api/instances/${id}/chat/peers`),
 
-  chatSend: (id: string, content: string) =>
+  chatSend: (id: string, content: string, imageUrl?: string) =>
     request<ChatSendResponse>(`/api/instances/${id}/chat/send`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, image_url: imageUrl || null }),
     }),
+
+  chatUpload: async (id: string, file: File): Promise<{ url: string; filename: string }> => {
+    const token = getStoredToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_BASE}/api/instances/${id}/chat/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "上传失败" }));
+      throw new Error(err.detail || "上传失败");
+    }
+    return res.json();
+  },
 
   chatMessages: (id: string, channelId: string, before?: string) => {
     const params = new URLSearchParams({ channel_id: channelId, limit: "50" });
