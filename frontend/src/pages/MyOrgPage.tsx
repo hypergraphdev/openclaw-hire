@@ -6,20 +6,59 @@ import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, SearchResu
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
 
-// @ Mention popup
-function MentionPopup({ members, filter, onSelect, onClose }: { members: { name: string; online: boolean }[]; filter: string; onSelect: (name: string) => void; onClose: () => void }) {
+// @ Mention popup — shows all org members, marks in-thread vs not-in-thread
+function MentionPopup({ members, filter, onSelect, onClose, threadMembers }: {
+  members: { name: string; online: boolean }[];
+  filter: string;
+  onSelect: (name: string) => void;
+  onClose: () => void;
+  threadMembers?: Set<string>;
+}) {
   const filtered = members.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase()));
   if (filtered.length === 0) return null;
   return (
-    <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-40 overflow-auto w-56">
-      {filtered.map((m) => (
-        <button key={m.name} onClick={() => { onSelect(m.name); onClose(); }}
-          className="w-full text-left px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2">
-          <span className={`inline-block h-2 w-2 rounded-full ${m.online ? "bg-green-400" : "bg-gray-500"}`} />
-          {m.name}
-        </button>
-      ))}
+    <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-48 overflow-auto w-64">
+      {filtered.map((m) => {
+        const inThread = !threadMembers || threadMembers.has(m.name);
+        return (
+          <button key={m.name} onClick={() => { onSelect(m.name); onClose(); }}
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 flex items-center gap-2">
+            <span className={`inline-block h-2 w-2 rounded-full ${m.online ? "bg-green-400" : "bg-gray-500"}`} />
+            <span className={inThread ? "text-gray-200" : "text-gray-500"}>{m.name}</span>
+            {!inThread && <span className="text-[10px] text-gray-600 ml-auto">群外</span>}
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+// Render message content with clickable @mentions
+function RenderContent({ content, threadMemberNames, onMentionClick }: {
+  content: string;
+  threadMemberNames?: Set<string>;
+  onMentionClick?: (name: string) => void;
+}) {
+  // Split content by @mentions
+  const parts = content.split(/(@[\w\-\u4e00-\u9fff]+)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const mentionMatch = part.match(/^@([\w\-\u4e00-\u9fff]+)$/);
+        if (mentionMatch) {
+          const name = mentionMatch[1];
+          const inThread = !threadMemberNames || threadMemberNames.has(name);
+          return (
+            <span key={i}
+              onClick={() => onMentionClick?.(name)}
+              className={`cursor-pointer font-medium ${inThread ? "text-blue-300 hover:text-blue-200" : "text-orange-400 hover:text-orange-300"}`}>
+              @{name}
+            </span>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
   );
 }
 
@@ -336,13 +375,19 @@ export function MyOrgPage() {
   });
   const announcement = threadDetail?.context ? (() => { try { return JSON.parse(threadDetail.context).announcement || ""; } catch { return ""; } })() : "";
   const filteredMessages = showSearch && searchQuery ? messages.filter((m) => m.content?.toLowerCase().includes(searchQuery.toLowerCase())) : messages;
+  const threadMemberNames = threadDetail ? new Set(threadDetail.participants.map((p) => p.name || "").filter(Boolean)) : undefined;
+  function handleMentionClick(name: string) {
+    const bot = allBots.find((b) => b.name === name);
+    if (bot) selectDM(bot);
+  }
 
   return (
     <div className="h-[calc(100vh-80px)] flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold text-white shrink-0">{t("myOrg.title")}: {data.org_name}</h1>
-          <div className="relative flex-1 max-w-md">
+          <div className="flex-1" />
+          <div className="relative w-80">
             <input type="text" value={globalSearchQuery}
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleGlobalSearch(); }}
@@ -565,7 +610,7 @@ export function MyOrgPage() {
                       <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         {!isSelf && <div className="text-[10px] text-gray-400 mb-0.5">{(msg as ChatMessage).sender_name || msg.sender_id}</div>}
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
-                        {textContent}
+                        {textContent && <RenderContent content={textContent} threadMemberNames={target?.type === "thread" ? threadMemberNames : undefined} onMentionClick={handleMentionClick} />}
                       </div>
                     </div>
                   );
@@ -590,7 +635,8 @@ export function MyOrgPage() {
                   </div>
                   <div className="relative flex-1">
                     {showMention && <MentionPopup members={allBots.map((b) => ({ name: b.name, online: b.online }))} filter={mentionFilter}
-                      onSelect={handleMentionSelect} onClose={() => setShowMention(false)} />}
+                      onSelect={handleMentionSelect} onClose={() => setShowMention(false)}
+                      threadMembers={target?.type === "thread" ? threadMemberNames : undefined} />}
                     <input type="text" value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" disabled={sending} />
                   </div>
