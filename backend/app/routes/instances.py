@@ -368,7 +368,7 @@ async def configure_hxa_endpoint(
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
     import asyncio
     loop = asyncio.get_event_loop()
-    ok, message, real_token = await loop.run_in_executor(
+    ok, message = await loop.run_in_executor(
         None,
         lambda: configure_hxa_only(
             instance_id, runtime_dir, project,
@@ -397,7 +397,7 @@ async def configure_hxa_endpoint(
           org_token=COALESCE(excluded.org_token, instance_configs.org_token),
           updated_at=excluded.updated_at
         """,
-        (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, real_token or None, now, now),
+        (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, None, now, now),
     )
     db.commit()
     return {"ok": True, "message": message, "agent_name": agent_name}
