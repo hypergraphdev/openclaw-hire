@@ -7,6 +7,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const t = useT();
 
   const items = [
@@ -73,33 +74,44 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <div className="md:flex md:h-screen md:overflow-hidden">
         {/* Desktop sidebar */}
-        <aside className="hidden md:flex w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex-col">
-          <div className="px-6 py-5 border-b border-gray-800">
-            <div className="flex items-center gap-2">
-              <span className="text-blue-400 text-lg font-bold tracking-tight">{t("layout.brand")}</span>
-              <span className="text-xs text-gray-500 ml-1">{t("layout.brandSuffix")}</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">{t("layout.subtitle")}</p>
+        <aside className={`hidden md:flex ${sidebarCollapsed ? "w-16" : "w-64"} flex-shrink-0 bg-gray-900 border-r border-gray-800 flex-col transition-all duration-200`}>
+          <div className={`${sidebarCollapsed ? "px-3" : "px-6"} py-5 border-b border-gray-800 flex items-center`}>
+            {sidebarCollapsed ? (
+              <span className="text-blue-400 text-lg font-bold mx-auto">◈</span>
+            ) : (
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-400 text-lg font-bold tracking-tight">{t("layout.brand")}</span>
+                  <span className="text-xs text-gray-500 ml-1">{t("layout.brandSuffix")}</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">{t("layout.subtitle")}</p>
+              </div>
+            )}
+            <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors" title={sidebarCollapsed ? "展开" : "收缩"}>
+              {sidebarCollapsed ? "»" : "«"}
+            </button>
           </div>
 
-          <nav className="flex-1 px-3 py-4 space-y-1">
+          <nav className={`flex-1 ${sidebarCollapsed ? "px-2" : "px-3"} py-4 space-y-1`}>
             {items.map(({ to, label, icon }) => (
               <NavLink
                 key={to}
                 to={to}
+                title={sidebarCollapsed ? label : undefined}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                  `flex items-center ${sidebarCollapsed ? "justify-center" : "gap-3"} px-3 py-2 rounded-md text-sm transition-colors ${
                     isActive ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
                   }`
                 }
               >
                 <span className="text-base leading-none">{icon}</span>
-                {label}
+                {!sidebarCollapsed && label}
               </NavLink>
             ))}
           </nav>
 
-          {user && (
+          {user && !sidebarCollapsed && (
             <div className="px-4 py-4 border-t border-gray-800">
               <div className="text-xs text-gray-500 truncate">{user.email}</div>
               <div className="text-sm text-gray-300 truncate font-medium">{user.name}</div>
@@ -110,6 +122,11 @@ export function Layout({ children }: { children: ReactNode }) {
               >
                 {t("nav.signout")}
               </button>
+            </div>
+          )}
+          {user && sidebarCollapsed && (
+            <div className="px-2 py-4 border-t border-gray-800 flex justify-center">
+              <button onClick={handleLogout} className="text-gray-500 hover:text-red-400 text-sm" title={t("nav.signout")}>↗</button>
             </div>
           )}
         </aside>

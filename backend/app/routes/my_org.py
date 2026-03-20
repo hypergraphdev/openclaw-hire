@@ -405,14 +405,23 @@ def create_thread(
     if not thread_id:
         raise HTTPException(status_code=502, detail="Thread creation failed.")
 
-    # Invite participants by name
-    for name in req.participant_names:
-        if name in my_agent_names:
-            continue  # Skip self
+    # Invite participants by name — Hub requires bot_id, so resolve name→id first
+    if req.participant_names:
         try:
-            _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"name": name})
+            bots_result = _hub_request(hub_url, token, "GET", "/api/bots")
+            bots_list = bots_result if isinstance(bots_result, list) else bots_result.get("bots", bots_result.get("items", []))
+            name_to_id = {b.get("name", ""): b.get("id", "") for b in bots_list}
         except Exception:
-            pass  # Best effort invite
+            name_to_id = {}
+
+        for name in req.participant_names:
+            if name in my_agent_names:
+                continue  # Skip self
+            bot_id = name_to_id.get(name, name)  # Fall back to name (resolveBot supports both)
+            try:
+                _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"bot_id": bot_id})
+            except Exception:
+                pass  # Best effort invite
 
     return result
 
@@ -646,7 +655,8 @@ def invite_to_thread(
     token = _get_thread_token(user_id, info, hub_url, db)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
-    return _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"name": req.name})
+    # Hub requires bot_id, resolve name first
+    return _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"bot_id": req.name})
 
 
 # ---------------------------------------------------------------------------
