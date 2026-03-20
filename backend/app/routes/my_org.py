@@ -155,13 +155,26 @@ def get_my_org(
     all_bots_raw = _get_org_bots(org_id, org_secret) if org_secret else []
 
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+
+    # Get all instance agent_names in this org to filter out non-instance bots
+    with get_connection() as conn:
+        inst_rows = conn.execute(
+            "SELECT DISTINCT agent_name FROM instance_configs WHERE org_id = ? AND agent_name IS NOT NULL AND agent_name != ''",
+            (org_id,),
+        ).fetchall()
+    instance_agent_names = {r["agent_name"] for r in inst_rows}
+
     all_bots = []
     for b in all_bots_raw:
+        bot_name = b.get("name", "")
+        # Only show bots that have a running instance (skip admin/user bots)
+        if bot_name not in instance_agent_names:
+            continue
         all_bots.append({
             "bot_id": b.get("id", ""),
-            "name": b.get("name", ""),
+            "name": bot_name,
             "online": b.get("online", False),
-            "is_mine": b.get("name", "") in my_agent_names,
+            "is_mine": bot_name in my_agent_names,
         })
 
     return {

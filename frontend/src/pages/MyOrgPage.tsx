@@ -36,7 +36,7 @@ function Badge({ count }: { count: number }) {
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
   return (
-    <div className="absolute bottom-12 left-0 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-xl z-50">
+    <div className="absolute bottom-12 left-0 bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-xl z-50 w-[340px]">
       <div className="grid grid-cols-10 gap-1">
         {EMOJI_LIST.map((e) => (
           <button key={e} onClick={() => { onSelect(e); onClose(); }}
