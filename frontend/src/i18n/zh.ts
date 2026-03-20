@@ -241,6 +241,8 @@ export const zh: Record<string, string> = {
   "chat.loadingPeers": "加载 Bot 列表...",
   "chat.errorPeers": "加载 Bot 列表失败。",
   "chat.errorSend": "消息发送失败。",
+  "chat.expand": "展开聊天",
+  "chat.collapse": "收起聊天",
 
   // Settings
   "settings.title": "设置",

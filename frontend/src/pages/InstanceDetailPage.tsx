@@ -27,6 +27,11 @@ function formatDate(iso: string) {
   });
 }
 
+/** localStorage key for install-progress collapsed state per instance */
+function timelineCollapseKey(id: string) {
+  return `hire_timeline_collapsed_${id}`;
+}
+
 export function InstanceDetailPage() {
   const { instanceId } = useParams<{ instanceId: string }>();
   const t = useT();
@@ -46,6 +51,19 @@ export function InstanceDetailPage() {
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
   const [activeTab, setActiveTab] = useState<"info" | "chat">("info");
+  const [chatExpanded, setChatExpanded] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
+    if (!instanceId) return false;
+    return localStorage.getItem(timelineCollapseKey(instanceId)) === "1";
+  });
+
+  const toggleTimeline = () => {
+    setTimelineCollapsed((prev) => {
+      const next = !prev;
+      if (instanceId) localStorage.setItem(timelineCollapseKey(instanceId), next ? "1" : "0");
+      return next;
+    });
+  };
 
   const fetchDetail = useCallback(() => {
     if (!instanceId) return Promise.resolve();
@@ -206,24 +224,40 @@ export function InstanceDetailPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Install timeline */}
-        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-5">
-          <h2 className="text-sm font-medium text-gray-300 mb-4">{t("detail.installProgress")}</h2>
-          <InstallTimeline events={install_timeline} />
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-300">{t("detail.dockerLogs")}</h3>
-              {actionLoading === "logs" ? <span className="text-xs text-gray-500">{t("detail.loadingLogs")}</span> : null}
+      <div className={`grid grid-cols-1 gap-5 ${chatExpanded ? "" : "lg:grid-cols-3"}`}>
+        {/* Left panel: Install timeline + Docker logs */}
+        {!chatExpanded && (
+          <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-5">
+            {/* Collapsible install progress */}
+            <button
+              onClick={toggleTimeline}
+              className="w-full flex items-center justify-between mb-4 group"
+            >
+              <h2 className="text-sm font-medium text-gray-300">{t("detail.installProgress")}</h2>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className={`h-4 w-4 text-gray-500 group-hover:text-gray-300 transition-transform ${timelineCollapsed ? "-rotate-90" : ""}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {!timelineCollapsed && <InstallTimeline events={install_timeline} />}
+
+            <div className={timelineCollapsed ? "" : "mt-6"}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-300">{t("detail.dockerLogs")}</h3>
+                {actionLoading === "logs" ? <span className="text-xs text-gray-500">{t("detail.loadingLogs")}</span> : null}
+              </div>
+              <pre className="bg-gray-950 border border-gray-800 rounded-md p-3 text-xs text-gray-300 overflow-auto max-h-80 whitespace-pre-wrap">
+                {logs || t("detail.logsPlaceholder")}
+              </pre>
             </div>
-            <pre className="bg-gray-950 border border-gray-800 rounded-md p-3 text-xs text-gray-300 overflow-auto max-h-80 whitespace-pre-wrap">
-              {logs || t("detail.logsPlaceholder")}
-            </pre>
           </div>
-        </div>
+        )}
 
         {/* Right column: tabs + content */}
-        <div className="space-y-4">
+        <div className={`space-y-4 ${chatExpanded ? "col-span-full" : ""}`}>
           {/* Tab bar */}
           {detail?.config?.agent_name && (
             <div className="flex border-b border-gray-700">
@@ -252,7 +286,12 @@ export function InstanceDetailPage() {
 
           {/* Chat Panel */}
           {activeTab === "chat" && detail?.config?.agent_name && instanceId && (
-            <ChatPanel instanceId={instanceId} agentName={detail.config.agent_name} />
+            <ChatPanel
+              instanceId={instanceId}
+              agentName={detail.config.agent_name}
+              expanded={chatExpanded}
+              onToggleExpand={() => setChatExpanded((v) => !v)}
+            />
           )}
 
           {/* Info cards */}

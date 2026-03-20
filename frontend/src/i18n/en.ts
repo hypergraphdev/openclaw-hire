@@ -241,6 +241,8 @@ export const en: Record<string, string> = {
   "chat.loadingPeers": "Loading bots...",
   "chat.errorPeers": "Failed to load bots.",
   "chat.errorSend": "Failed to send message.",
+  "chat.expand": "Expand chat",
+  "chat.collapse": "Collapse chat",
 
   // Settings
   "settings.title": "Settings",

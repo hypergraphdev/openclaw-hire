@@ -8,9 +8,11 @@ import type { ChatInfo, ChatMessage } from "../types";
 interface ChatPanelProps {
   instanceId: string;
   agentName?: string | null;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
-export function ChatPanel({ instanceId }: ChatPanelProps) {
+export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelProps) {
   const t = useT();
 
   // State
@@ -26,12 +28,14 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
+  const [botTyping, setBotTyping] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userScrolledUp = useRef(false);
 
   // ─── Load chat info (target bot + admin bot identity) ───────────
@@ -61,7 +65,17 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
         ws.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
+            // Typing indicator from hub
+            if (data.type === "typing") {
+              setBotTyping(true);
+              clearTimeout(typingTimer.current);
+              typingTimer.current = setTimeout(() => setBotTyping(false), 5000);
+              return;
+            }
             if (data.type === "message" && data.message) {
+              // Bot replied, stop typing indicator
+              setBotTyping(false);
+              clearTimeout(typingTimer.current);
               const msg: ChatMessage = data.message;
               setMessages((prev) => {
                 if (prev.some((m) => m.id === msg.id)) return prev;
@@ -92,6 +106,7 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
     connectWs();
     return () => {
       clearTimeout(reconnectTimer.current);
+      clearTimeout(typingTimer.current);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -146,6 +161,10 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
     if (!chatInfo || !input.trim() || sending) return;
     setSending(true);
     setSendError("");
+    // Start typing indicator immediately after sending
+    setBotTyping(true);
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => setBotTyping(false), 30000);
     try {
       const res = await api.chatSend(instanceId, input.trim());
       if (!channelId) {
@@ -159,6 +178,8 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
       requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     } catch {
       setSendError(t("chat.errorSend"));
+      setBotTyping(false);
+      clearTimeout(typingTimer.current);
     } finally {
       setSending(false);
     }
@@ -199,6 +220,24 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
         }`}>
           {t(`chat.${wsStatus}`)}
         </span>
+        {/* Expand / collapse button */}
+        {onToggleExpand && (
+          <button
+            onClick={onToggleExpand}
+            className="text-gray-500 hover:text-gray-300 transition-colors p-1"
+            title={expanded ? t("chat.collapse") : t("chat.expand")}
+          >
+            {expanded ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       {infoError && (
@@ -244,6 +283,23 @@ export function ChatPanel({ instanceId }: ChatPanelProps) {
                 isSelf={msg.sender_name === adminBotName}
               />
             ))}
+            {/* Typing indicator */}
+            {botTyping && (
+              <div className="flex flex-col items-start">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[11px] font-medium text-gray-400">
+                    {chatInfo?.target_name}
+                  </span>
+                </div>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
+                  <span className="inline-flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </span>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </>
         )}
