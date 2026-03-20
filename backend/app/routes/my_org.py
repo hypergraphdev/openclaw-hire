@@ -347,3 +347,157 @@ async def org_chat_upload(
     filename = f"{uuid4().hex[:16]}{ext}"
     (_UPLOAD_DIR / filename).write_bytes(data)
     return {"url": f"https://www.ucai.net/openclaw/uploads/{filename}", "filename": filename}
+
+
+# ---------------------------------------------------------------------------
+#  Thread (Group Chat) endpoints
+# ---------------------------------------------------------------------------
+
+class CreateThreadRequest(BaseModel):
+    topic: str
+    participant_names: list[str] = []
+
+
+@router.post("/threads")
+def create_thread(
+    req: CreateThreadRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Create a new thread and invite participants."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    hub_url = _get_hub_url().rstrip("/")
+    # Use admin bot to create thread (as the user's identity)
+    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    display_name = user_row["name"] if user_row else ""
+
+    # Determine which token to use - prefer first instance bot
+    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    else:
+        token = _ensure_user_bot(hub_url, user_id, display_name)
+    if not token:
+        raise HTTPException(status_code=500, detail="No bot available to create thread.")
+
+    # Create thread
+    result = _hub_request(hub_url, token, "POST", "/api/threads", {
+        "topic": req.topic,
+    })
+    thread_id = result.get("id", "")
+    if not thread_id:
+        raise HTTPException(status_code=502, detail="Thread creation failed.")
+
+    # Invite participants by name
+    for name in req.participant_names:
+        if name in my_agent_names:
+            continue  # Skip self
+        try:
+            _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"name": name})
+        except Exception:
+            pass  # Best effort invite
+
+    return result
+
+
+@router.get("/threads")
+def list_threads(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List threads the user's bot participates in."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    hub_url = _get_hub_url().rstrip("/")
+
+    # Use first instance bot to list threads
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    else:
+        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
+    if not token:
+        return {"threads": []}
+
+    try:
+        result = _hub_request(hub_url, token, "GET", "/api/threads?status=active&limit=50")
+        threads = result if isinstance(result, list) else result.get("threads", result.get("items", []))
+    except Exception:
+        threads = []
+
+    return {"threads": threads}
+
+
+@router.get("/threads/{thread_id}/messages")
+def thread_messages(
+    thread_id: str,
+    before: str = Query(""),
+    limit: int = Query(50),
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Get messages in a thread."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    hub_url = _get_hub_url().rstrip("/")
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    else:
+        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+
+    params = f"limit={limit}"
+    if before:
+        params += f"&before={before}"
+    result = _hub_request(hub_url, token, "GET", f"/api/threads/{thread_id}/messages?{params}")
+    messages = result if isinstance(result, list) else result.get("messages", result.get("items", []))
+    return {"messages": messages, "has_more": len(messages) >= limit}
+
+
+class ThreadSendRequest(BaseModel):
+    content: str
+    image_url: str | None = None
+
+
+@router.post("/threads/{thread_id}/messages")
+def thread_send(
+    thread_id: str,
+    req: ThreadSendRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Send a message to a thread."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    hub_url = _get_hub_url().rstrip("/")
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    else:
+        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+
+    content = req.content
+    if req.image_url:
+        content = f"[image]({req.image_url})\n{content}" if content else f"[image]({req.image_url})"
+
+    result = _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/messages", {
+        "content": content,
+    })
+    return result

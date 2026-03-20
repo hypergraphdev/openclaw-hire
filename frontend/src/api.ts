@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, OrgThread, ProductCatalog, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -175,6 +175,22 @@ export const api = {
   },
   myOrgChatWsTicket: (target: string) =>
     request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?target=${encodeURIComponent(target)}`, { method: "POST" }),
+
+  // Threads (group chat)
+  myOrgThreads: () => request<{ threads: OrgThread[] }>("/api/my-org/threads"),
+  myOrgCreateThread: (topic: string, participantNames: string[]) =>
+    request<OrgThread>("/api/my-org/threads", {
+      method: "POST", body: JSON.stringify({ topic, participant_names: participantNames }),
+    }),
+  myOrgThreadMessages: (threadId: string, before?: string) => {
+    const params = new URLSearchParams({ limit: "50" });
+    if (before) params.set("before", before);
+    return request<{ messages: ThreadMessage[]; has_more: boolean }>(`/api/my-org/threads/${threadId}/messages?${params}`);
+  },
+  myOrgThreadSend: (threadId: string, content: string, imageUrl?: string) =>
+    request<ThreadMessage>(`/api/my-org/threads/${threadId}/messages`, {
+      method: "POST", body: JSON.stringify({ content, image_url: imageUrl || null }),
+    }),
 
   myOrgChatUpload: async (file: File): Promise<{ url: string; filename: string }> => {
     const token = getStoredToken();

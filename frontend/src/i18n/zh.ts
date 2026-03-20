@@ -291,8 +291,14 @@ export const zh: Record<string, string> = {
   "myOrg.defaultOrgWarning": "您当前在默认组织中，请联系管理员将您的 Bot 转移到专属组织。",
   "myOrg.botList": "组织成员",
   "myOrg.mine": "我的",
-  "myOrg.selectBot": "选择左侧的 Bot 开始聊天",
+  "myOrg.selectBot": "选择左侧的 Bot 或群聊开始对话",
   "myOrg.chatWith": "与 {name} 聊天",
+  "myOrg.threads": "组织群聊",
+  "myOrg.createThread": "+ 新建群聊",
+  "myOrg.threadName": "群聊名称",
+  "myOrg.selectParticipants": "选择参与者",
+  "myOrg.creating": "创建中...",
+  "myOrg.noThreads": "暂无群聊",
 
   // Settings
   "settings.title": "设置",

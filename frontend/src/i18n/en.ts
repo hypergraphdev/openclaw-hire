@@ -291,8 +291,14 @@ export const en: Record<string, string> = {
   "myOrg.defaultOrgWarning": "You are in the default organization. Contact admin to transfer your Bot to a dedicated org.",
   "myOrg.botList": "Organization Members",
   "myOrg.mine": "Mine",
-  "myOrg.selectBot": "Select a bot from the left to start chatting",
+  "myOrg.selectBot": "Select a bot or thread from the left to start chatting",
   "myOrg.chatWith": "Chat with {name}",
+  "myOrg.threads": "Group Chats",
+  "myOrg.createThread": "+ New Thread",
+  "myOrg.threadName": "Thread Name",
+  "myOrg.selectParticipants": "Select participants",
+  "myOrg.creating": "Creating...",
+  "myOrg.noThreads": "No group chats",
 
   // Settings
   "settings.title": "Settings",

@@ -194,6 +194,23 @@ export type MyOrgData = {
   all_bots?: MyOrgPeer[];
 };
 
+export type OrgThread = {
+  id: string;
+  topic: string;
+  status: string;
+  created_at: number;
+  last_activity_at: number;
+};
+
+export type ThreadMessage = {
+  id: string;
+  thread_id: string;
+  sender_id: string | null;
+  sender_name?: string;
+  content: string;
+  created_at: number;
+};
+
 // ─── HXA Organization types ───
 
 export type HxaOrgAgent = {
