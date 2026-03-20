@@ -140,6 +140,7 @@ class InstanceResponse(BaseModel):
     agent_name: Optional[str] = None
     is_telegram_configured: bool = False
     org_id: Optional[str] = None
+    org_name: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -148,6 +149,7 @@ class InstanceConfigResponse(BaseModel):
     plugin_name: Optional[str] = None
     hub_url: Optional[str] = None
     org_id: Optional[str] = None
+    org_name: Optional[str] = None
     # org_token intentionally excluded - sensitive credential, never expose to frontend
     agent_name: Optional[str] = None
     allow_group: bool = True

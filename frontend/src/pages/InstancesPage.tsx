@@ -308,7 +308,7 @@ export function InstancesPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-blue-400 text-xs">
-                      {inst.org_id ? (orgMap[inst.org_id] || inst.org_id.substring(0, 8) + "...") : "-"}
+                      {inst.org_name || (inst.org_id ? inst.org_id.substring(0, 8) + "..." : "-")}
                     </td>
                     <td className="px-5 py-3 text-gray-300 text-xs font-mono">{inst.agent_name || "-"}</td>
                     <td className="px-5 py-3 text-gray-300 text-xs font-mono">

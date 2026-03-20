@@ -72,6 +72,32 @@ def _require_compose(inst: dict) -> tuple[str, str, str]:
     return compose_file, project, runtime_dir
 
 
+def _resolve_org_names(org_ids: set[str]) -> dict[str, str]:
+    """Resolve org_ids to org_names. Try Hub admin API, fall back to local DB."""
+    if not org_ids:
+        return {}
+    result = {}
+    # Try admin API
+    try:
+        from .admin_hxa import _hub_admin_request
+        orgs = _hub_admin_request("GET", "/api/orgs")
+        for o in (orgs or []):
+            if o.get("id") in org_ids:
+                result[o["id"]] = o.get("name", "")
+    except Exception:
+        pass
+    # Fall back to local org_secrets for any missing
+    missing = org_ids - set(result.keys())
+    if missing:
+        from ..database import get_connection
+        with get_connection() as conn:
+            placeholders = ",".join("?" for _ in missing)
+            rows = conn.execute(f"SELECT org_id, org_name FROM org_secrets WHERE org_id IN ({placeholders})", list(missing)).fetchall()
+            for r in rows:
+                result[r["org_id"]] = r["org_name"]
+    return result
+
+
 def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
     """Backfill list/detail fields from instance_configs when legacy rows are partially empty."""
     cfg = db.execute(
@@ -141,11 +167,18 @@ def list_instances(
         (current_user["id"],),
     ).fetchall()
     merged = [_merge_instance_config_fields(dict(row), db) for row in rows]
+
+    # Resolve org_id → org_name for all instances
+    org_ids = {m["org_id"] for m in merged if m.get("org_id")}
+    org_name_map = _resolve_org_names(org_ids)
+
     # Convert to response: drop sensitive fields, add bool flag
     results = []
     for m in merged:
         m["is_telegram_configured"] = bool(m.pop("telegram_bot_token", None))
         m.pop("org_token", None)
+        if m.get("org_id"):
+            m["org_name"] = org_name_map.get(m["org_id"], "")
         results.append(InstanceResponse(**m))
     return results
 
@@ -174,10 +207,15 @@ def get_instance(
     config = None
     if cfg:
         c = dict(cfg)
+        org_name = ""
+        if c.get("org_id"):
+            names = _resolve_org_names({c["org_id"]})
+            org_name = names.get(c["org_id"], "")
         config = InstanceConfigResponse(
             plugin_name=c.get("plugin_name"),
             hub_url=c.get("hub_url"),
             org_id=c.get("org_id"),
+            org_name=org_name,
             org_token=c.get("org_token"),
             agent_name=c.get("agent_name"),
             allow_group=bool(c.get("allow_group", 1)),
@@ -725,8 +763,8 @@ def chat_info(
         admin_bot_name = "hire_admin_panel"
         admin_bot_id = ""
     # Check if target bot is online
-    result = _hub_request(hub_url, admin_token, "GET", "/api/bots?limit=100")
-    bots = result if isinstance(result, list) else result.get("items", [])
+    result = _hub_request(hub_url, admin_token, "GET", "/api/bots")
+    bots = result if isinstance(result, list) else result.get("bots", result.get("items", []))
     target = next((b for b in bots if b.get("name") == target_name), None)
     target_id = target.get("id", "") if target else ""
 

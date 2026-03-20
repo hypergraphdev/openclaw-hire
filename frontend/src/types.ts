@@ -37,6 +37,7 @@ export type Instance = {
   // org_token removed - sensitive
   agent_name?: string | null;
   org_id?: string | null;
+  org_name?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -55,6 +56,7 @@ export type InstanceConfig = {
   plugin_name?: string | null;
   hub_url?: string | null;
   org_id?: string | null;
+  org_name?: string | null;
   // org_token removed - sensitive
   agent_name?: string | null;
   allow_group?: boolean;

@@ -354,7 +354,7 @@ export function InstanceDetailPage() {
               {(hxaResult?.ok || config?.agent_name) && (
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                    {hxaResult?.message || t("org.alreadyConnected")}
+                    {hxaResult?.message || t("org.alreadyConnected")}{config?.org_name ? ` — ${config.org_name}` : ""}
                   </div>
                   <dl className="space-y-1 text-xs">
                     <div><dt className="text-gray-500">{t("org.agentName")}</dt><dd className="text-gray-300 font-mono">{hxaResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
