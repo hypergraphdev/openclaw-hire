@@ -513,29 +513,28 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
     if current_org_id == target_org_id:
         raise HTTPException(status_code=400, detail="Bot is already in the target organization.")
 
-    # 2. Delete bot from old org using admin secret
+    # Helper: get org_secret for an org_id
+    def _resolve_org_secret(oid: str) -> str:
+        default_oid = get_setting("hxa_org_id", "")
+        if oid == default_oid:
+            return get_setting("hxa_org_secret", "")
+        with get_connection() as conn:
+            row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (oid,)).fetchone()
+        return row["org_secret"] if row else ""
+
+    # 2. Delete bot from old org using org admin session
+    current_org_secret = _resolve_org_secret(current_org_id)
+    if not current_org_secret:
+        raise HTTPException(status_code=400, detail="Cannot find secret for current org. Cannot delete bot.")
     try:
-        _hub_admin_request("DELETE", f"/api/bots/{bot_id}")
+        _hub_org_admin_request("DELETE", f"/api/bots/{bot_id}", current_org_id, current_org_secret)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to delete bot from old org: {e}")
 
-    # 3. Get target org secret - for default org use stored, otherwise need admin rotate
-    # For now, we need the org_secret to register a new bot via ticket
-    # We'll use admin API to create a ticket directly
-    # Actually, we need to login as org admin to create ticket. We need org_secret.
-    # Strategy: if target is default org, use stored secret. Otherwise, error for now.
-    default_org_id = get_setting("hxa_org_id", "")
-    if target_org_id == default_org_id:
-        target_org_secret = get_setting("hxa_org_secret", "")
-    else:
-        # For non-default orgs, we need to store their secrets
-        # For now, try to get from local org_secrets table
-        with get_connection() as conn:
-            row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (target_org_id,)).fetchone()
-        if row:
-            target_org_secret = row["org_secret"]
-        else:
-            raise HTTPException(status_code=400, detail="Target org secret not available. Only default org or orgs with stored secrets are supported.")
+    # 3. Get target org secret
+    target_org_secret = _resolve_org_secret(target_org_id)
+    if not target_org_secret:
+        raise HTTPException(status_code=400, detail="Target org secret not available.")
 
     if not target_org_secret:
         raise HTTPException(status_code=400, detail="Target org secret is empty.")
