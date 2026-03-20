@@ -162,7 +162,7 @@ export const api = {
     request<ChatWsTicketResponse>(`/api/instances/${id}/chat/ws-ticket`, { method: "POST" }),
 
   // My Organization
-  myOrg: () => request<MyOrgData>("/api/my-org"),
+  myOrg: (orgId?: string) => request<MyOrgData>(`/api/my-org${orgId ? `?org=${orgId}` : ""}`),
   myOrgChatInfo: (target: string) => request<ChatInfo>(`/api/my-org/chat/info?target=${encodeURIComponent(target)}`),
   myOrgChatSend: (target: string, content: string, imageUrl?: string) =>
     request<ChatSendResponse>("/api/my-org/chat/send", {

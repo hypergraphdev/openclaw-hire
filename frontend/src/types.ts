@@ -185,6 +185,13 @@ export type MyOrgPeer = {
   is_mine: boolean;
 };
 
+export type MyOrgInfo = {
+  org_id: string;
+  org_name: string;
+  is_default: boolean;
+  is_active: boolean;
+};
+
 export type MyOrgData = {
   status: "ok" | "no_instances" | "no_org";
   org_id?: string;
@@ -192,6 +199,7 @@ export type MyOrgData = {
   is_default_org?: boolean;
   my_bots?: MyOrgBot[];
   all_bots?: MyOrgPeer[];
+  orgs?: MyOrgInfo[];
 };
 
 export type OrgThread = {

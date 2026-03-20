@@ -24,9 +24,9 @@ router = APIRouter(prefix="/api/my-org", tags=["my-org"])
 #  Helpers
 # ---------------------------------------------------------------------------
 
-def _get_user_org_info(user_id: str, db: sqlite3.Connection) -> dict:
-    """Return user's org context: instances, org_id, etc."""
-    # Get user's instances with config
+def _get_user_org_info(user_id: str, db: sqlite3.Connection, target_org_id: str = "") -> dict:
+    """Return user's org context: instances, org_id, etc.
+    If target_org_id given, scope to that org. Otherwise pick first."""
     rows = db.execute(
         """SELECT i.id, i.name, i.product, i.agent_name, i.install_state,
                   c.org_id, c.agent_name AS cfg_agent_name
@@ -40,25 +40,39 @@ def _get_user_org_info(user_id: str, db: sqlite3.Connection) -> dict:
     if not rows:
         return {"status": "no_instances"}
 
-    # Find first org_id
-    org_id = None
-    my_bots = []
+    # Collect all org_ids and bots per org
+    orgs_seen: dict[str, list[dict]] = {}
+    all_bots: list[dict] = []
     for r in rows:
         agent_name = r["cfg_agent_name"] or r["agent_name"] or ""
-        if r["org_id"] and not org_id:
-            org_id = r["org_id"]
+        oid = r["org_id"] or ""
+        bot_info = {
+            "instance_id": r["id"],
+            "instance_name": r["name"],
+            "agent_name": agent_name,
+            "product": r["product"],
+            "org_id": oid,
+        }
         if agent_name:
-            my_bots.append({
-                "instance_id": r["id"],
-                "instance_name": r["name"],
-                "agent_name": agent_name,
-                "product": r["product"],
-            })
+            all_bots.append(bot_info)
+        if oid:
+            orgs_seen.setdefault(oid, [])
+            if agent_name:
+                orgs_seen[oid].append(bot_info)
 
-    if not org_id:
-        return {"status": "no_org", "my_bots": my_bots}
+    if not orgs_seen:
+        return {"status": "no_org", "my_bots": all_bots}
 
-    return {"status": "ok", "org_id": org_id, "my_bots": my_bots}
+    # Pick org
+    if target_org_id and target_org_id in orgs_seen:
+        org_id = target_org_id
+    else:
+        org_id = next(iter(orgs_seen))
+
+    my_bots = orgs_seen.get(org_id, [])
+    org_ids = list(orgs_seen.keys())
+
+    return {"status": "ok", "org_id": org_id, "my_bots": my_bots, "all_org_ids": org_ids}
 
 
 def _resolve_org_secret(org_id: str) -> str:
@@ -136,38 +150,49 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
 
 @router.get("")
 def get_my_org(
+    org_id: str = Query("", alias="org"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Get user's organization info and bot list."""
+    """Get user's organization info and bot list. Supports multi-org via ?org=id."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org_id)
 
     if info["status"] != "ok":
         return info
 
-    org_id = info["org_id"]
+    active_org_id = info["org_id"]
     default_org_id = get_setting("hxa_org_id", "")
-    org_name = _get_org_name(org_id)
+    org_name = _get_org_name(active_org_id)
 
-    # Get all bots in org
-    org_secret = _resolve_org_secret(org_id)
-    all_bots_raw = _get_org_bots(org_id, org_secret) if org_secret else []
+    # Build orgs list with names
+    all_org_ids = info.get("all_org_ids", [active_org_id])
+    orgs_list = []
+    for oid in all_org_ids:
+        orgs_list.append({
+            "org_id": oid,
+            "org_name": _get_org_name(oid),
+            "is_default": oid == default_org_id,
+            "is_active": oid == active_org_id,
+        })
+
+    # Get all bots in active org
+    org_secret = _resolve_org_secret(active_org_id)
+    all_bots_raw = _get_org_bots(active_org_id, org_secret) if org_secret else []
 
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
 
-    # Get all instance agent_names in this org to filter out non-instance bots
+    # Filter to instance bots only
     with get_connection() as conn:
         inst_rows = conn.execute(
             "SELECT DISTINCT agent_name FROM instance_configs WHERE org_id = ? AND agent_name IS NOT NULL AND agent_name != ''",
-            (org_id,),
+            (active_org_id,),
         ).fetchall()
     instance_agent_names = {r["agent_name"] for r in inst_rows}
 
     all_bots = []
     for b in all_bots_raw:
         bot_name = b.get("name", "")
-        # Only show bots that have a running instance (skip admin/user bots)
         if bot_name not in instance_agent_names:
             continue
         all_bots.append({
@@ -179,11 +204,12 @@ def get_my_org(
 
     return {
         "status": "ok",
-        "org_id": org_id,
+        "org_id": active_org_id,
         "org_name": org_name,
-        "is_default_org": org_id == default_org_id,
+        "is_default_org": active_org_id == default_org_id,
         "my_bots": info["my_bots"],
         "all_bots": all_bots,
+        "orgs": orgs_list,
     }
 
 

@@ -164,7 +164,8 @@ export function MyOrgPage() {
   const userScrolledUp = useRef(false);
   const currentTargetRef = useRef("");
 
-  useEffect(() => { api.myOrg().then(setData).finally(() => setLoading(false)); }, []);
+  const [activeOrgId, setActiveOrgId] = useState("");
+  useEffect(() => { api.myOrg(activeOrgId || undefined).then(setData).finally(() => setLoading(false)); }, [activeOrgId]);
   useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
   function sortMsgs(msgs: (ChatMessage | ThreadMessage)[]) { return [...msgs].sort((a, b) => (a.created_at || 0) - (b.created_at || 0)); }
@@ -388,7 +389,19 @@ export function MyOrgPage() {
     <div className="h-[calc(100vh-80px)] flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold text-white shrink-0">{t("myOrg.title")}: {data.org_name}</h1>
+          <div className="flex items-center gap-2 shrink-0">
+            <h1 className="text-lg font-semibold text-white">{t("myOrg.title")}:</h1>
+            {data.orgs && data.orgs.length > 1 ? (
+              <select value={data.org_id || ""} onChange={(e) => { setActiveOrgId(e.target.value); setTarget(null); setLoading(true); }}
+                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500">
+                {data.orgs.map((o) => (
+                  <option key={o.org_id} value={o.org_id}>{o.org_name}{o.is_default ? " (默认)" : ""}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-lg font-semibold text-white">{data.org_name}</span>
+            )}
+          </div>
           <div className="flex-1" />
           <div className="relative w-80">
             <input type="text" value={globalSearchQuery}
