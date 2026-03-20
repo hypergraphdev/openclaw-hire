@@ -52,3 +52,28 @@ def list_user_instances(
         user=_row_to_user(urow),
         instances=[InstanceResponse(**dict(row)) for row in irows],
     )
+
+
+@router.get("/stats")
+def platform_stats(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Global platform statistics visible to all users."""
+    total_users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    total_bots = db.execute(
+        "SELECT COUNT(*) FROM instances WHERE install_state = 'running'"
+    ).fetchone()[0]
+    running_bots = db.execute(
+        "SELECT COUNT(*) FROM instances WHERE install_state = 'running' AND status = 'active'"
+    ).fetchone()[0]
+    org_bots = db.execute(
+        "SELECT COUNT(*) FROM instance_configs WHERE agent_name IS NOT NULL AND agent_name != ''"
+    ).fetchone()[0]
+
+    return {
+        "total_users": total_users,
+        "total_bots": total_bots,
+        "running_bots": running_bots,
+        "org_bots": org_bots,
+    }

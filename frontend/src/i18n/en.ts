@@ -68,6 +68,10 @@ export const en: Record<string, string> = {
   "dashboard.userId": "User ID",
   "dashboard.memberSince": "Member since",
   "dashboard.loadFailed": "Failed to load dashboard.",
+  "dashboard.totalUsers": "Total Users",
+  "dashboard.totalBots": "Total BOTs",
+  "dashboard.runningBots": "Running BOTs",
+  "dashboard.orgBots": "In Organization",
 
   // Catalog
   "catalog.title": "Product Catalog",

@@ -14,19 +14,24 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
+type PlatformStats = { total_users: number; total_bots: number; running_bots: number; org_bots: number };
+
 export function DashboardPage() {
   const { user } = useAuth();
   const t = useT();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [stats, setStats] = useState<PlatformStats | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api.dashboard()
       .then(setData)
       .catch(() => setError(t("dashboard.loadFailed")));
+    api.platformStats().then(setStats).catch(() => {});
 
     const interval = setInterval(() => {
       api.dashboard().then(setData).catch(() => {});
+      api.platformStats().then(setStats).catch(() => {});
     }, 15_000);
     return () => clearInterval(interval);
   }, [t]);
@@ -49,6 +54,15 @@ export function DashboardPage() {
         </div>
       )}
 
+      {/* Platform-wide stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <StatCard label={t("dashboard.totalUsers")} value={stats?.total_users ?? 0} accent="text-purple-400" />
+        <StatCard label={t("dashboard.totalBots")} value={stats?.total_bots ?? 0} accent="text-cyan-400" />
+        <StatCard label={t("dashboard.runningBots")} value={stats?.running_bots ?? 0} accent="text-green-400" />
+        <StatCard label={t("dashboard.orgBots")} value={stats?.org_bots ?? 0} accent="text-yellow-400" />
+      </div>
+
+      {/* User's instance stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <StatCard label={t("dashboard.totalInstances")} value={data?.summary.total ?? 0} />
         <StatCard label={t("dashboard.running")} value={data?.summary.running ?? 0} accent="text-green-400" />

@@ -68,6 +68,10 @@ export const zh: Record<string, string> = {
   "dashboard.userId": "用户 ID",
   "dashboard.memberSince": "注册时间",
   "dashboard.loadFailed": "加载仪表盘失败。",
+  "dashboard.totalUsers": "总用户数",
+  "dashboard.totalBots": "总 BOT 数",
+  "dashboard.runningBots": "已启动 BOT",
+  "dashboard.orgBots": "已加入组织",
 
   // Catalog
   "catalog.title": "产品目录",

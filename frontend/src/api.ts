@@ -116,6 +116,8 @@ export const api = {
     return { user, summary } as DashboardData;
   }),
 
+  platformStats: () => request<{ total_users: number; total_bots: number; running_bots: number; org_bots: number }>("/api/admin/stats"),
+
   adminUsers: () => request<User[]>("/api/admin/users"),
 
   adminUserInstances: (userId: string) =>
