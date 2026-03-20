@@ -584,12 +584,16 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     if not target_agent_name:
         raise HTTPException(status_code=400, detail="Instance has no agent name.")
 
+    # Get instance's org_id for admin bot registration
+    cfg2 = db.execute("SELECT org_id FROM instance_configs WHERE instance_id = ?", (instance_id,)).fetchone()
+    instance_org_id = cfg2["org_id"] if cfg2 and cfg2["org_id"] else None
+
     # Get user display name for bot registration
     user_row = db.execute("SELECT name, email FROM users WHERE id = ?", (owner_id,)).fetchone()
     display_name = (user_row["name"] if user_row else "") or ""
 
-    # Get or register per-user admin bot
-    admin_token = _ensure_user_bot(hub_url, owner_id, display_name)
+    # Get or register per-user admin bot in the SAME org as the instance
+    admin_token = _ensure_user_bot(hub_url, owner_id, display_name, target_org_id=instance_org_id)
     if not admin_token:
         raise HTTPException(status_code=500, detail="Failed to initialize chat bot.")
     return hub_url, admin_token, target_agent_name
@@ -611,17 +615,21 @@ def _make_admin_bot_name(display_name: str, user_id: str) -> str:
     return f"u_{short_id}"
 
 
-def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
-    """Return per-user bot token, registering one if needed. Token is stable."""
+def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "", target_org_id: str | None = None) -> str:
+    """Return per-user bot token, registering one if needed. Token is stable.
+    If target_org_id is given, register in that org instead of default."""
     from ..database import get_setting, set_setting
     from ..services.install_service import _get_org_id, _get_org_secret
 
-    setting_key = f"hxa_user_bot_token_{user_id}"
+    # Cache key includes org_id so different orgs get different bots
+    cache_suffix = f"_{target_org_id[:8]}" if target_org_id else ""
+    setting_key = f"hxa_user_bot_token_{user_id}{cache_suffix}"
+    cache_key = f"{user_id}{cache_suffix}"
     bot_name = _make_admin_bot_name(display_name, user_id)
 
     # Check memory cache first
-    if user_id in _user_bot_cache:
-        return _user_bot_cache[user_id]
+    if cache_key in _user_bot_cache:
+        return _user_bot_cache[cache_key]
 
     # Check DB — token is stable, only verify once per process
     token = get_setting(setting_key, "")
@@ -644,14 +652,27 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
                     ), timeout=5)
                 except Exception:
                     pass
-            _user_bot_cache[user_id] = token
+            _user_bot_cache[cache_key] = token
             return token
         except Exception:
             pass  # Token invalid, re-register below
 
-    # Register a new bot for this user
-    org_secret = _get_org_secret()
-    org_id = _get_org_id()
+    # Register a new bot for this user — use target org if specified
+    if target_org_id:
+        from .admin_hxa import _hub_org_admin_request
+        from ..database import get_connection as _gc
+        # Resolve org_secret for target org
+        default_oid = _get_org_id()
+        if target_org_id == default_oid:
+            org_secret = _get_org_secret()
+        else:
+            with _gc() as conn:
+                row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (target_org_id,)).fetchone()
+            org_secret = row["org_secret"] if row else ""
+        org_id = target_org_id
+    else:
+        org_secret = _get_org_secret()
+        org_id = _get_org_id()
     if not org_secret:
         return ""
 
@@ -675,7 +696,7 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
             )
             with urllib.request.urlopen(bots_req, timeout=10) as resp:
                 bots = json.loads(resp.read().decode())
-            items = bots if isinstance(bots, list) else bots.get("items", [])
+            items = bots if isinstance(bots, list) else bots.get("bots", bots.get("items", []))
             for b in items:
                 if b.get("name") == bot_name:
                     urllib.request.urlopen(urllib.request.Request(
@@ -708,7 +729,7 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
                 new_token = result.get("token", "")
                 if new_token:
                     set_setting(setting_key, new_token)
-                    _user_bot_cache[user_id] = new_token
+                    _user_bot_cache[cache_key] = new_token
                     return new_token
             except urllib.error.HTTPError as e:
                 body = e.read().decode() if e.fp else ""
