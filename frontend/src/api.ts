@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, OrgThread, ProductCatalog, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, OrgThread, ProductCatalog, SearchResult, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -199,6 +199,17 @@ export const api = {
     request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/leave`, { method: "POST" }),
   myOrgThreadInvite: (threadId: string, name: string) =>
     request<unknown>(`/api/my-org/threads/${threadId}/invite`, { method: "POST", body: JSON.stringify({ name }) }),
+
+  // Search
+  myOrgSearchSync: () => request<{ ok: boolean; new_messages: number }>("/api/my-org/search/sync", { method: "POST" }),
+  myOrgSearch: (params: { q?: string; in?: string; from?: string; to?: string }) => {
+    const p = new URLSearchParams();
+    if (params.q) p.set("q", params.q);
+    if (params.in) p.set("in", params.in);
+    if (params.from) p.set("from", params.from);
+    if (params.to) p.set("to", params.to);
+    return request<{ results: SearchResult[]; total: number }>(`/api/my-org/search?${p}`);
+  },
 
   myOrgChatUpload: async (file: File): Promise<{ url: string; filename: string }> => {
     const token = getStoredToken();

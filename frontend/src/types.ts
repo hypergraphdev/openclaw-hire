@@ -211,6 +211,19 @@ export type ThreadMessage = {
   created_at: number;
 };
 
+export type SearchResult = {
+  id: string;
+  org_id: string;
+  channel_type: string;
+  channel_id: string;
+  channel_name: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  mentions: string;
+  created_at: number;
+};
+
 // ─── HXA Organization types ───
 
 export type HxaOrgAgent = {

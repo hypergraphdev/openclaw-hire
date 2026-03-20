@@ -647,3 +647,65 @@ def invite_to_thread(
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
     return _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"name": req.name})
+
+
+# ---------------------------------------------------------------------------
+#  Message Search
+# ---------------------------------------------------------------------------
+
+@router.post("/search/sync")
+def search_sync(
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Trigger message sync for search index."""
+    from ..message_index import sync_messages
+
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    hub_url = _get_hub_url().rstrip("/")
+    org_id = info["org_id"]
+
+    # Collect all tokens (instance bots + admin bot)
+    tokens: list[tuple[str, str]] = []
+    for bot in info["my_bots"]:
+        t = _get_agent_token(bot["instance_id"])
+        if t:
+            tokens.append((t, bot["agent_name"]))
+
+    # Also add admin bot
+    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    display_name = user_row["name"] if user_row else ""
+    admin_token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
+    if admin_token:
+        bot_name = _make_admin_bot_name(display_name, user_id)
+        tokens.append((admin_token, bot_name))
+
+    count = sync_messages(user_id, org_id, tokens, hub_url)
+    return {"ok": True, "new_messages": count}
+
+
+@router.get("/search")
+def search_messages_endpoint(
+    q: str = Query(""),
+    in_channel: str = Query("", alias="in"),
+    from_sender: str = Query("", alias="from"),
+    to_name: str = Query("", alias="to"),
+    limit: int = Query(50),
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Search indexed messages."""
+    from ..message_index import search_messages
+
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    org_id = info["org_id"]
+    results = search_messages(org_id, query=q, in_channel=in_channel, from_sender=from_sender, to_name=to_name, limit=limit)
+    return {"results": results, "total": len(results)}

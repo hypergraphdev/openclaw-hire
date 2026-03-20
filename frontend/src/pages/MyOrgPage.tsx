@@ -2,9 +2,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
-import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, ThreadMessage } from "../types";
+import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, SearchResult, ThreadMessage } from "../types";
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
+
+// @ Mention popup
+function MentionPopup({ members, filter, onSelect, onClose }: { members: { name: string; online: boolean }[]; filter: string; onSelect: (name: string) => void; onClose: () => void }) {
+  const filtered = members.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase()));
+  if (filtered.length === 0) return null;
+  return (
+    <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-40 overflow-auto w-56">
+      {filtered.map((m) => (
+        <button key={m.name} onClick={() => { onSelect(m.name); onClose(); }}
+          className="w-full text-left px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+          <span className={`inline-block h-2 w-2 rounded-full ${m.online ? "bg-green-400" : "bg-gray-500"}`} />
+          {m.name}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function playNotificationSound() {
   try { const c = new AudioContext(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 800; g.gain.value = 0.1; o.start(); o.stop(c.currentTime + 0.15); } catch { /* */ }
@@ -79,6 +96,19 @@ export function MyOrgPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showRenameTopic, setShowRenameTopic] = useState(false);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // Global search
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+
+  // @ mention
+  const [mentionFilter, setMentionFilter] = useState("");
+  const [showMention, setShowMention] = useState(false);
   const [topicDraft, setTopicDraft] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
   const [threadDetail, setThreadDetail] = useState<{ initiator_id: string; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[]; context: string | null } | null>(null);
@@ -221,11 +251,83 @@ export function MyOrgPage() {
     setThreadParticipants(all);
   }
 
+  // @ mention handling in chat input
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setInput(val);
+    // Check for @ trigger
+    const atMatch = val.match(/@([\w\-\u4e00-\u9fff]*)$/);
+    if (atMatch) {
+      setMentionFilter(atMatch[1]);
+      setShowMention(true);
+    } else {
+      setShowMention(false);
+    }
+  }
+
+  function handleMentionSelect(name: string) {
+    // Replace @partial with @name
+    setInput((prev) => prev.replace(/@[\w\-\u4e00-\u9fff]*$/, `@${name} `));
+    setShowMention(false);
+  }
+
+  // Global search
+  async function handleGlobalSearch() {
+    if (!globalSearchQuery.trim()) return;
+    // First sync
+    setSyncing(true);
+    try { await api.myOrgSearchSync(); } catch { /* */ }
+    setSyncing(false);
+
+    // Parse search syntax
+    const params: { q?: string; in?: string; from?: string; to?: string } = {};
+    let q = globalSearchQuery;
+
+    const inMatch = q.match(/in:@?([\w\-\u4e00-\u9fff#]+)/);
+    if (inMatch) { params.in = inMatch[1]; q = q.replace(inMatch[0], "").trim(); }
+
+    const fromMatch = q.match(/from:@?([\w\-\u4e00-\u9fff]+)/);
+    if (fromMatch) { params.from = fromMatch[1]; q = q.replace(fromMatch[0], "").trim(); }
+
+    const toMatch = q.match(/to:@?([\w\-\u4e00-\u9fff]+)/);
+    if (toMatch) { params.to = toMatch[1]; q = q.replace(toMatch[0], "").trim(); }
+
+    if (q) params.q = q;
+
+    setSearching(true);
+    try {
+      const r = await api.myOrgSearch(params);
+      setSearchResults(r.results || []);
+      setShowSearchResults(true);
+    } catch { /* */ }
+    setSearching(false);
+  }
+
+  function handleSearchInputChange(val: string) {
+    setGlobalSearchQuery(val);
+    // Show suggestions when typing @
+    const atMatch = val.match(/@([\w\-\u4e00-\u9fff]*)$/);
+    if (atMatch) {
+      const filter = atMatch[1].toLowerCase();
+      const names = [...allBots.map((b) => b.name), ...threads.map((t) => `#${t.topic}`)];
+      setSearchSuggestions(names.filter((n) => n.toLowerCase().includes(filter)));
+      setShowSearchSuggestions(true);
+    } else {
+      setShowSearchSuggestions(false);
+    }
+  }
+
+  function handleSearchSuggestionSelect(name: string) {
+    setGlobalSearchQuery((prev) => prev.replace(/@[\w\-\u4e00-\u9fff#]*$/, `@${name} `));
+    setShowSearchSuggestions(false);
+  }
+
+  const allBots = data?.all_bots || [];
+
   if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
   if (!data || data.status === "no_instances") return (<div className="flex flex-col items-center justify-center h-[60vh] text-center"><div className="text-4xl mb-4">📦</div><h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noInstances")}</h2><p className="text-gray-500 text-sm mb-4">{t("myOrg.noInstancesDesc")}</p><Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToCatalog")}</Link></div>);
   if (data.status === "no_org") return (<div className="flex flex-col items-center justify-center h-[60vh] text-center"><div className="text-4xl mb-4">🔗</div><h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noOrg")}</h2><p className="text-gray-500 text-sm mb-4">{t("myOrg.noOrgDesc")}</p><Link to="/instances" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToInstances")}</Link></div>);
 
-  const allBots = data.all_bots || [];
   const myBotId = myBotIdRef.current;
   const selectedKey = target ? (target.type === "dm" ? `dm_${target.bot.bot_id}` : `thread_${target.thread.id}`) : "";
   const isThreadCreator = target?.type === "thread" && threadDetail?.initiator_id && data.my_bots?.some((b) => {
@@ -238,7 +340,57 @@ export function MyOrgPage() {
   return (
     <div className="h-[calc(100vh-80px)] flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800">
-        <h1 className="text-lg font-semibold text-white">{t("myOrg.title")}: {data.org_name}</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-semibold text-white shrink-0">{t("myOrg.title")}: {data.org_name}</h1>
+          <div className="relative flex-1 max-w-md">
+            <input type="text" value={globalSearchQuery}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleGlobalSearch(); }}
+              placeholder="搜索消息... (支持 in:@name from:@name to:@name)"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500 placeholder-gray-600" />
+            {(searching || syncing) && <span className="absolute right-2 top-1.5 text-[10px] text-yellow-400">{syncing ? "同步中..." : "搜索中..."}</span>}
+            {showSearchSuggestions && searchSuggestions.length > 0 && (
+              <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-32 overflow-auto w-full">
+                {searchSuggestions.slice(0, 8).map((s) => (
+                  <button key={s} onClick={() => handleSearchSuggestionSelect(s)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">{s}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Search results overlay */}
+        {showSearchResults && (
+          <div className="mt-2 bg-gray-800 border border-gray-700 rounded-lg p-3 max-h-60 overflow-auto">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-400">搜索结果 ({searchResults.length})</span>
+              <button onClick={() => setShowSearchResults(false)} className="text-xs text-gray-500 hover:text-gray-300">✕ 关闭</button>
+            </div>
+            {searchResults.length === 0 ? (
+              <div className="text-xs text-gray-500 text-center py-2">无结果</div>
+            ) : searchResults.map((r) => (
+              <div key={r.id} className="px-2 py-1.5 hover:bg-gray-700 rounded text-xs cursor-pointer" onClick={() => {
+                // Jump to conversation
+                const bot = allBots.find((b) => b.name === r.channel_name);
+                if (bot && r.channel_type === "dm") selectDM(bot);
+                else if (r.channel_type === "thread") {
+                  const thread = threads.find((t) => t.topic === r.channel_name);
+                  if (thread) selectThread(thread);
+                }
+                setShowSearchResults(false);
+              }}>
+                <div className="flex items-center gap-2 text-gray-500">
+                  <span>{r.channel_type === "thread" ? "#" : "@"}{r.channel_name}</span>
+                  <span>·</span>
+                  <span>{r.sender_name}</span>
+                  <span>·</span>
+                  <span>{new Date(r.created_at).toLocaleString()}</span>
+                </div>
+                <div className="text-gray-300 mt-0.5 truncate">{r.content}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {data.is_default_org && <div className="mt-2 px-3 py-2 bg-yellow-900/30 border border-yellow-700 rounded text-yellow-300 text-xs">⚠ {t("myOrg.defaultOrgWarning")}</div>}
       </div>
 
@@ -436,8 +588,12 @@ export function MyOrgPage() {
                     <button onClick={() => setShowEmoji(!showEmoji)} className="shrink-0 p-2 text-gray-400 hover:text-gray-200" title="Emoji">😀</button>
                     {showEmoji && <EmojiPicker onSelect={(e) => setInput((v) => v + e)} onClose={() => setShowEmoji(false)} />}
                   </div>
-                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                    placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" disabled={sending} />
+                  <div className="relative flex-1">
+                    {showMention && <MentionPopup members={allBots.map((b) => ({ name: b.name, online: b.online }))} filter={mentionFilter}
+                      onSelect={handleMentionSelect} onClose={() => setShowMention(false)} />}
+                    <input type="text" value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" disabled={sending} />
+                  </div>
                   <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || sending} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
                     {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
                   </button>
