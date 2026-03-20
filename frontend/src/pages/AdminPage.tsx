@@ -53,7 +53,7 @@ export function AdminPage() {
     if (!name) return;
     setRenameSaving(true);
     try {
-      const res = await api.renameAgent(inst.id, name);
+      const res = await api.put(`/api/admin/hxa/agents/${inst.id}/name`, { agent_name: name }).then(r => r.json());
       // Update local state
       if (detail) {
         setDetail({
