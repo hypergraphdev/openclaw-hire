@@ -35,18 +35,18 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userScrolledUp = useRef(false);
 
-  // ─── Load peers ─────────────────────────────────────────────────
+  // ─── Load peers & auto-select current instance bot ─────────────
 
   useEffect(() => {
     setPeersLoading(true);
     setPeersError("");
     api.chatPeers(instanceId)
       .then((list) => {
-        // Filter out self (by agentName)
-        const filtered = agentName
-          ? list.filter((p) => p.name !== agentName)
-          : list;
-        setPeers(filtered);
+        setPeers(list);
+        if (agentName) {
+          const self = list.find((p) => p.name === agentName);
+          if (self) setSelectedPeer(self);
+        }
       })
       .catch(() => setPeersError(t("chat.errorPeers")))
       .finally(() => setPeersLoading(false));
@@ -189,25 +189,23 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
 
   return (
     <div className="flex flex-col h-[600px] bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-      {/* Header: peer selector + WS status */}
+      {/* Header: direct connection to instance bot */}
       <div className="shrink-0 px-4 py-3 border-b border-gray-800 flex items-center gap-3">
-        <select
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500"
-          value={selectedPeer?.id ?? ""}
-          onChange={(e) => {
-            const peer = peers.find((p) => p.id === e.target.value);
-            setSelectedPeer(peer ?? null);
-            setChannelId(null);
-            setMessages([]);
-          }}
-        >
-          <option value="">{peersLoading ? t("chat.loadingPeers") : t("chat.selectBot")}</option>
-          {peers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.online ? "🟢" : "⚫"} {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex-1 flex items-center gap-2 text-sm text-gray-200">
+          {peersLoading ? (
+            <span className="text-gray-500">{t("chat.loadingPeers")}</span>
+          ) : selectedPeer ? (
+            <>
+              <span className={`inline-block h-2 w-2 rounded-full ${selectedPeer.online ? "bg-green-400" : "bg-gray-600"}`} />
+              <span className="font-medium">{selectedPeer.name}</span>
+              <span className="text-xs text-gray-500">
+                {selectedPeer.online ? t("chat.online") : t("chat.offline")}
+              </span>
+            </>
+          ) : (
+            <span className="text-gray-500">{peersError || t("chat.noPeers")}</span>
+          )}
+        </div>
         <span className={`text-[10px] shrink-0 ${
           wsStatus === "connected" ? "text-green-400" :
           wsStatus === "connecting" ? "text-yellow-400" : "text-red-400"
@@ -228,7 +226,7 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
       >
         {!selectedPeer ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-            {peers.length === 0 && !peersLoading ? t("chat.noPeers") : t("chat.selectBot")}
+            {peersLoading ? t("chat.loadingPeers") : (peersError || t("chat.noPeers"))}
           </div>
         ) : messagesLoading ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
