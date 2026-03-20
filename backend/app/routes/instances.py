@@ -430,26 +430,125 @@ def delete_instance(
 # ─── Chat proxy helpers ─────────────────────────────────────────────
 
 def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
-    """Return (hub_url, org_token) for an instance, or raise 400/404."""
-    from .admin_hxa import _get_agent_token
+    """Return (hub_url, admin_bot_token, target_agent_name) for chatting WITH an instance bot.
 
+    Uses a dedicated admin bot identity so the user chats with (not as) the instance bot.
+    """
     inst = db.execute(
-        "SELECT id FROM instances WHERE id = ? AND owner_id = ?",
+        "SELECT id, agent_name FROM instances WHERE id = ? AND owner_id = ?",
         (instance_id, owner_id),
     ).fetchone()
     if not inst:
         raise HTTPException(status_code=404, detail="Instance not found.")
     cfg = db.execute(
-        "SELECT hub_url FROM instance_configs WHERE instance_id = ?",
+        "SELECT hub_url, agent_name FROM instance_configs WHERE instance_id = ?",
         (instance_id,),
     ).fetchone()
     if not cfg or not cfg["hub_url"]:
         raise HTTPException(status_code=400, detail="Instance not configured for HXA.")
-    # Read real bot token from runtime config files (not DB placeholder)
-    token = _get_agent_token(instance_id)
-    if not token:
-        raise HTTPException(status_code=400, detail="No agent token found. Configure HXA first.")
-    return cfg["hub_url"].rstrip("/"), token
+
+    hub_url = cfg["hub_url"].rstrip("/")
+    target_agent_name = cfg["agent_name"] or inst["agent_name"] or ""
+    if not target_agent_name:
+        raise HTTPException(status_code=400, detail="Instance has no agent name.")
+
+    # Get or register admin bot
+    admin_token = _ensure_admin_bot(hub_url)
+    if not admin_token:
+        raise HTTPException(status_code=500, detail="Failed to initialize admin bot for chat.")
+    return hub_url, admin_token, target_agent_name
+
+
+def _ensure_admin_bot(hub_url: str) -> str:
+    """Return admin bot token, registering one if needed. Cached in DB settings."""
+    from ..database import get_setting, set_setting
+    from ..services.install_service import _get_org_id, _get_org_secret
+
+    token = get_setting("hxa_admin_bot_token", "")
+    if token:
+        # Verify token is still valid by calling /api/me (lightweight check)
+        try:
+            req = urllib.request.Request(
+                f"{hub_url}/api/bots?limit=1",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            return token
+        except Exception:
+            # Token invalid, re-register
+            pass
+
+    # Register a new admin bot
+    org_secret = _get_org_secret()
+    org_id = _get_org_id()
+    if not org_secret:
+        return ""
+
+    origin = "https://www.ucai.net"
+    admin_name = "MW_OpenClaw"
+
+    try:
+        # Step 1: Admin login
+        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+        login_req = urllib.request.Request(
+            f"{hub_url}/api/auth/login", data=login_data,
+            headers={"Content-Type": "application/json", "Origin": origin}, method="POST",
+        )
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+
+        # Step 2: Cleanup existing bot with same name (best effort)
+        try:
+            bots_req = urllib.request.Request(
+                f"{hub_url}/api/org/bots?limit=200",
+                headers={"Cookie": cookie, "Origin": origin},
+            )
+            with urllib.request.urlopen(bots_req, timeout=10) as resp:
+                bots = json.loads(resp.read().decode())
+            items = bots if isinstance(bots, list) else bots.get("items", [])
+            for b in items:
+                if b.get("name") == admin_name:
+                    del_req = urllib.request.Request(
+                        f"{hub_url}/api/org/bots/{b['id']}",
+                        headers={"Cookie": cookie, "Origin": origin},
+                        method="DELETE",
+                    )
+                    urllib.request.urlopen(del_req, timeout=10)
+                    break
+        except Exception:
+            pass
+
+        # Step 3: Create ticket
+        ticket_data = json.dumps({"reusable": False}).encode()
+        ticket_req = urllib.request.Request(
+            f"{hub_url}/api/org/tickets", data=ticket_data,
+            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin},
+            method="POST",
+        )
+        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
+            ticket_result = json.loads(resp.read().decode())
+        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
+        if not ticket_secret:
+            return ""
+
+        # Step 4: Register admin bot
+        reg_data = json.dumps({"org_id": org_id, "ticket": ticket_secret, "name": admin_name}).encode()
+        reg_req = urllib.request.Request(
+            f"{hub_url}/api/auth/register", data=reg_data,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urllib.request.urlopen(reg_req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+
+        new_token = result.get("token", "")
+        if new_token:
+            set_setting("hxa_admin_bot_token", new_token)
+            set_setting("hxa_admin_bot_name", admin_name)
+            return new_token
+    except Exception:
+        pass
+    return ""
 
 
 def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | None = None):
@@ -478,29 +577,32 @@ def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | 
 
 # ─── Chat proxy endpoints ───────────────────────────────────────────
 
-@router.get("/{instance_id}/chat/peers")
-def chat_peers(
+@router.get("/{instance_id}/chat/info")
+def chat_info(
     instance_id: str,
     current_user=Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """List bots in the org (excluding self)."""
-    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
-    result = _hub_request(hub_url, token, "GET", "/api/bots?limit=100")
+    """Return chat info: target bot status and admin bot name."""
+    from ..database import get_setting
+    hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
+    admin_bot_name = get_setting("hxa_admin_bot_name", "MW_OpenClaw")
+    # Check if target bot is online
+    result = _hub_request(hub_url, admin_token, "GET", "/api/bots?limit=100")
     bots = result if isinstance(result, list) else result.get("items", [])
-    # Determine self bot_id from token prefix or by filtering
-    # We return all bots; frontend can filter by agent_name
-    return [
-        {"id": b["id"], "name": b["name"], "online": b.get("online", False)}
-        for b in bots
-    ]
+    target = next((b for b in bots if b.get("name") == target_name), None)
+    return {
+        "target_name": target_name,
+        "target_online": target.get("online", False) if target else False,
+        "target_id": target.get("id", "") if target else "",
+        "admin_bot_name": admin_bot_name,
+    }
 
 
 from pydantic import BaseModel as _BaseModel
 
 
 class _ChatSendRequest(_BaseModel):
-    to: str
     content: str
 
 
@@ -511,9 +613,9 @@ def chat_send(
     current_user=Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Send a DM to a bot via Hub API."""
-    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
-    result = _hub_request(hub_url, token, "POST", "/api/send", {"to": req.to, "content": req.content})
+    """Send a DM to the instance bot via admin bot."""
+    hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
+    result = _hub_request(hub_url, admin_token, "POST", "/api/send", {"to": target_name, "content": req.content})
     return result
 
 
@@ -527,12 +629,12 @@ def chat_messages(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Get messages from a DM channel."""
-    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
+    hub_url, admin_token, _ = _get_chat_config(instance_id, current_user["id"], db)
     params = [f"limit={min(limit, 200)}"]
     if before:
         params.append(f"before={before}")
     qs = "&".join(params)
-    result = _hub_request(hub_url, token, "GET", f"/api/channels/{channel_id}/messages?{qs}")
+    result = _hub_request(hub_url, admin_token, "GET", f"/api/channels/{channel_id}/messages?{qs}")
     return result
 
 
@@ -542,10 +644,9 @@ def chat_ws_ticket(
     current_user=Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Get a WebSocket ticket for real-time chat."""
-    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
-    result = _hub_request(hub_url, token, "POST", "/api/ws-ticket", {})
-    # Convert hub_url to ws_url
+    """Get a WebSocket ticket for real-time chat (using admin bot identity)."""
+    hub_url, admin_token, _ = _get_chat_config(instance_id, current_user["id"], db)
+    result = _hub_request(hub_url, admin_token, "POST", "/api/ws-ticket", {})
     ws_url = hub_url.replace("https://", "wss://").replace("http://", "ws://")
     if not ws_url.endswith("/ws"):
         ws_url = ws_url.rstrip("/") + "/ws"

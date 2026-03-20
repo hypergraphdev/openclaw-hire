@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
-import type { ChatMessage, ChatPeer } from "../types";
+import type { ChatInfo, ChatMessage } from "../types";
 
 // ─── ChatPanel ──────────────────────────────────────────────────────
 
@@ -10,14 +10,13 @@ interface ChatPanelProps {
   agentName?: string | null;
 }
 
-export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
+export function ChatPanel({ instanceId }: ChatPanelProps) {
   const t = useT();
 
   // State
-  const [peers, setPeers] = useState<ChatPeer[]>([]);
-  const [peersLoading, setPeersLoading] = useState(true);
-  const [peersError, setPeersError] = useState("");
-  const [selectedPeer, setSelectedPeer] = useState<ChatPeer | null>(null);
+  const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
+  const [infoLoading, setInfoLoading] = useState(true);
+  const [infoError, setInfoError] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [channelId, setChannelId] = useState<string | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -35,22 +34,16 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userScrolledUp = useRef(false);
 
-  // ─── Load peers & auto-select current instance bot ─────────────
+  // ─── Load chat info (target bot + admin bot identity) ───────────
 
   useEffect(() => {
-    setPeersLoading(true);
-    setPeersError("");
-    api.chatPeers(instanceId)
-      .then((list) => {
-        setPeers(list);
-        if (agentName) {
-          const self = list.find((p) => p.name === agentName);
-          if (self) setSelectedPeer(self);
-        }
-      })
-      .catch(() => setPeersError(t("chat.errorPeers")))
-      .finally(() => setPeersLoading(false));
-  }, [instanceId, agentName, t]);
+    setInfoLoading(true);
+    setInfoError("");
+    api.chatInfo(instanceId)
+      .then((info) => setChatInfo(info))
+      .catch(() => setInfoError(t("chat.errorPeers")))
+      .finally(() => setInfoLoading(false));
+  }, [instanceId, t]);
 
   // ─── WebSocket connection ───────────────────────────────────────
 
@@ -77,11 +70,6 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
               if (!userScrolledUp.current) {
                 requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
               }
-            } else if (data.type === "bot_online" || data.type === "bot_offline") {
-              const online = data.type === "bot_online";
-              setPeers((prev) =>
-                prev.map((p) => (p.id === data.bot?.id ? { ...p, online } : p)),
-              );
             }
           } catch { /* ignore malformed */ }
         };
@@ -89,7 +77,6 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
         ws.onclose = () => {
           setWsStatus("disconnected");
           wsRef.current = null;
-          // Auto-reconnect after 5s
           reconnectTimer.current = setTimeout(connectWs, 5000);
         };
 
@@ -110,10 +97,10 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
     };
   }, [connectWs]);
 
-  // ─── Load messages when peer selected ───────────────────────────
+  // ─── Load messages when channel known ─────────────────────────
 
   useEffect(() => {
-    if (!selectedPeer || !channelId) {
+    if (!channelId) {
       setMessages([]);
       return;
     }
@@ -128,7 +115,7 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
         setMessagesLoading(false);
         requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView());
       });
-  }, [instanceId, channelId, selectedPeer]);
+  }, [instanceId, channelId]);
 
   // ─── Load older ─────────────────────────────────────────────────
 
@@ -156,16 +143,14 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
   // ─── Send message ───────────────────────────────────────────────
 
   async function handleSend() {
-    if (!selectedPeer || !input.trim() || sending) return;
+    if (!chatInfo || !input.trim() || sending) return;
     setSending(true);
     setSendError("");
     try {
-      const res = await api.chatSend(instanceId, selectedPeer.name, input.trim());
-      // Set channel_id from first send
+      const res = await api.chatSend(instanceId, input.trim());
       if (!channelId) {
         setChannelId(res.channel_id);
       }
-      // Append sent message
       setMessages((prev) => {
         if (prev.some((m) => m.id === res.message.id)) return prev;
         return [...prev, res.message];
@@ -185,6 +170,8 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
     userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
   }
 
+  const adminBotName = chatInfo?.admin_bot_name || "MW_OpenClaw";
+
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
@@ -192,18 +179,18 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
       {/* Header: direct connection to instance bot */}
       <div className="shrink-0 px-4 py-3 border-b border-gray-800 flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2 text-sm text-gray-200">
-          {peersLoading ? (
+          {infoLoading ? (
             <span className="text-gray-500">{t("chat.loadingPeers")}</span>
-          ) : selectedPeer ? (
+          ) : chatInfo ? (
             <>
-              <span className={`inline-block h-2 w-2 rounded-full ${selectedPeer.online ? "bg-green-400" : "bg-gray-600"}`} />
-              <span className="font-medium">{selectedPeer.name}</span>
+              <span className={`inline-block h-2 w-2 rounded-full ${chatInfo.target_online ? "bg-green-400" : "bg-gray-600"}`} />
+              <span className="font-medium">{chatInfo.target_name}</span>
               <span className="text-xs text-gray-500">
-                {selectedPeer.online ? t("chat.online") : t("chat.offline")}
+                {chatInfo.target_online ? t("chat.online") : t("chat.offline")}
               </span>
             </>
           ) : (
-            <span className="text-gray-500">{peersError || t("chat.noPeers")}</span>
+            <span className="text-gray-500">{infoError || t("chat.noPeers")}</span>
           )}
         </div>
         <span className={`text-[10px] shrink-0 ${
@@ -214,8 +201,8 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
         </span>
       </div>
 
-      {peersError && (
-        <div className="px-4 py-2 text-xs text-red-400">{peersError}</div>
+      {infoError && (
+        <div className="px-4 py-2 text-xs text-red-400">{infoError}</div>
       )}
 
       {/* Messages area */}
@@ -224,9 +211,9 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0"
       >
-        {!selectedPeer ? (
+        {!chatInfo ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-            {peersLoading ? t("chat.loadingPeers") : (peersError || t("chat.noPeers"))}
+            {infoLoading ? t("chat.loadingPeers") : (infoError || t("chat.noPeers"))}
           </div>
         ) : messagesLoading ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -254,7 +241,7 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                isSelf={msg.sender_name === agentName}
+                isSelf={msg.sender_name === adminBotName}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -263,7 +250,7 @@ export function ChatPanel({ instanceId, agentName }: ChatPanelProps) {
       </div>
 
       {/* Input area */}
-      {selectedPeer && (
+      {chatInfo && (
         <div className="shrink-0 px-4 py-3 border-t border-gray-800">
           {sendError && <div className="text-xs text-red-400 mb-2">{sendError}</div>}
           <div className="flex gap-2">
@@ -300,7 +287,7 @@ function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: bool
     <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
       <div className="flex items-center gap-2 mb-0.5">
         <span className={`text-[11px] font-medium ${isSelf ? "text-blue-400" : "text-gray-400"}`}>
-          {message.sender_name}
+          {isSelf ? "我" : message.sender_name}
         </span>
         <span className="text-[10px] text-gray-600">{time}</span>
       </div>
@@ -319,7 +306,6 @@ function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: bool
 
 /** Extract displayable content from a message. */
 function extractContent(msg: ChatMessage): string {
-  // If parts exist, concatenate text/markdown parts
   if (msg.parts && msg.parts.length > 0) {
     const texts = msg.parts
       .filter((p) => p.type === "text" || p.type === "markdown")

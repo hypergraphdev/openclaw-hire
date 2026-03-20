@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -116,13 +116,16 @@ export const api = {
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
 
   // Chat proxy
+  chatInfo: (id: string) =>
+    request<ChatInfo>(`/api/instances/${id}/chat/info`),
+
   chatPeers: (id: string) =>
     request<ChatPeer[]>(`/api/instances/${id}/chat/peers`),
 
-  chatSend: (id: string, to: string, content: string) =>
+  chatSend: (id: string, content: string) =>
     request<ChatSendResponse>(`/api/instances/${id}/chat/send`, {
       method: "POST",
-      body: JSON.stringify({ to, content }),
+      body: JSON.stringify({ content }),
     }),
 
   chatMessages: (id: string, channelId: string, before?: string) => {

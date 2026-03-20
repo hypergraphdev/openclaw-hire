@@ -112,6 +112,13 @@ export type ChatPeer = {
   online: boolean;
 };
 
+export type ChatInfo = {
+  target_name: string;
+  target_online: boolean;
+  target_id: string;
+  admin_bot_name: string;
+};
+
 export type ChatMessage = {
   id: string;
   channel_id: string;
