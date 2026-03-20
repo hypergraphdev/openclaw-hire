@@ -5,8 +5,10 @@ import json
 import sqlite3
 import urllib.request
 import urllib.error
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 
 from ..database import get_setting, get_connection
@@ -322,3 +324,26 @@ def org_chat_ws_ticket(
     result = _hub_request(hub_url, token, "POST", "/api/ws-ticket", {})
     ws_url = hub_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
     return {"ticket": result.get("ticket", ""), "ws_url": ws_url}
+
+
+_UPLOAD_DIR = Path("/home/wwwroot/openclaw-hire/frontend/dist/uploads")
+_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_MAX_IMAGE_SIZE = 10 * 1024 * 1024
+
+
+@router.post("/chat/upload")
+async def org_chat_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload an image and return a public URL."""
+    ext = Path(file.filename or "img.png").suffix.lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported image format: {ext}")
+    data = await file.read()
+    if len(data) > _MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex[:16]}{ext}"
+    (_UPLOAD_DIR / filename).write_bytes(data)
+    return {"url": f"https://www.ucai.net/openclaw/uploads/{filename}", "filename": filename}

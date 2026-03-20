@@ -176,6 +176,22 @@ export const api = {
   myOrgChatWsTicket: (target: string) =>
     request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?target=${encodeURIComponent(target)}`, { method: "POST" }),
 
+  myOrgChatUpload: async (file: File): Promise<{ url: string; filename: string }> => {
+    const token = getStoredToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_BASE}/api/my-org/chat/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(err.detail || "Upload failed");
+    }
+    return res.json();
+  },
+
   // HXA Organization management
   hxaOrgs: () => request<{ orgs: HxaOrg[] }>("/api/admin/hxa/orgs"),
 
