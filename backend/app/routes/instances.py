@@ -501,7 +501,7 @@ def _ensure_admin_bot(hub_url: str) -> str:
         # Step 2: Cleanup existing bot with same name (best effort)
         try:
             bots_req = urllib.request.Request(
-                f"{hub_url}/api/org/bots?limit=200",
+                f"{hub_url}/api/bots?limit=200",
                 headers={"Cookie": cookie, "Origin": origin},
             )
             with urllib.request.urlopen(bots_req, timeout=10) as resp:
@@ -510,7 +510,7 @@ def _ensure_admin_bot(hub_url: str) -> str:
             for b in items:
                 if b.get("name") == admin_name:
                     del_req = urllib.request.Request(
-                        f"{hub_url}/api/org/bots/{b['id']}",
+                        f"{hub_url}/api/bots/{b['id']}",
                         headers={"Cookie": cookie, "Origin": origin},
                         method="DELETE",
                     )
