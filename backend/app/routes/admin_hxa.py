@@ -488,27 +488,42 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
     if not target_org_id:
         raise HTTPException(status_code=400, detail="Target org ID is required.")
 
-    # 1. Read current bot info
-    agent_token = _get_agent_token(instance_id)
-    if not agent_token:
-        raise HTTPException(status_code=400, detail="No agent token found for this instance.")
-
-    # Get current bot info via token
+    # 1. Read current bot info — try token first, fall back to DB
     hub = _get_hub_url().rstrip("/")
-    try:
-        me_req = urllib.request.Request(
-            f"{hub}/api/me",
-            headers={"Authorization": f"Bearer {agent_token}"},
-            method="GET",
-        )
-        with urllib.request.urlopen(me_req, timeout=10) as resp:
-            bot_info = json.loads(resp.read().decode())
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to get bot info: {e}")
+    agent_token = _get_agent_token(instance_id)
+    bot_id = ""
+    agent_name = ""
+    current_org_id = ""
 
-    bot_id = bot_info.get("id", "")
-    agent_name = bot_info.get("name", "")
-    current_org_id = bot_info.get("org_id", "")
+    if agent_token:
+        try:
+            me_req = urllib.request.Request(
+                f"{hub}/api/me",
+                headers={"Authorization": f"Bearer {agent_token}"},
+                method="GET",
+            )
+            with urllib.request.urlopen(me_req, timeout=10) as resp:
+                bot_info = json.loads(resp.read().decode())
+            bot_id = bot_info.get("id", "")
+            agent_name = bot_info.get("name", "")
+            current_org_id = bot_info.get("org_id", "")
+        except Exception:
+            pass  # Token invalid/expired, fall back to DB
+
+    # Fall back to DB if token didn't work
+    if not agent_name:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT agent_name, org_id FROM instance_configs WHERE instance_id = ?",
+                (instance_id,),
+            ).fetchone()
+            inst_row = conn.execute("SELECT agent_name FROM instances WHERE id = ?", (instance_id,)).fetchone()
+        agent_name = (row["agent_name"] if row and row["agent_name"] else None) or \
+                     (inst_row["agent_name"] if inst_row and inst_row["agent_name"] else "")
+        current_org_id = row["org_id"] if row and row["org_id"] else ""
+
+    if not agent_name:
+        raise HTTPException(status_code=400, detail="Cannot determine agent name for this instance.")
 
     if current_org_id == target_org_id:
         raise HTTPException(status_code=400, detail="Bot is already in the target organization.")
