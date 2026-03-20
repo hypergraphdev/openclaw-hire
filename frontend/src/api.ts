@@ -191,6 +191,14 @@ export const api = {
     request<ThreadMessage>(`/api/my-org/threads/${threadId}/messages`, {
       method: "POST", body: JSON.stringify({ content, image_url: imageUrl || null }),
     }),
+  myOrgThreadDetail: (threadId: string) =>
+    request<{ id: string; topic: string; initiator_id: string; context: string | null; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[] }>(`/api/my-org/threads/${threadId}`),
+  myOrgThreadUpdate: (threadId: string, body: { topic?: string; context?: Record<string, unknown> }) =>
+    request<unknown>(`/api/my-org/threads/${threadId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  myOrgThreadLeave: (threadId: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/leave`, { method: "POST" }),
+  myOrgThreadInvite: (threadId: string, name: string) =>
+    request<unknown>(`/api/my-org/threads/${threadId}/invite`, { method: "POST", body: JSON.stringify({ name }) }),
 
   myOrgChatUpload: async (file: File): Promise<{ url: string; filename: string }> => {
     const token = getStoredToken();

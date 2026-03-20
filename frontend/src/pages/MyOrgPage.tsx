@@ -6,19 +6,8 @@ import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, ThreadMess
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
 
-// Notification sound (short beep via Web Audio API)
 function playNotificationSound() {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 800;
-    gain.gain.value = 0.1;
-    osc.start();
-    osc.stop(ctx.currentTime + 0.15);
-  } catch { /* ignore */ }
+  try { const c = new AudioContext(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 800; g.gain.value = 0.1; o.start(); o.stop(c.currentTime + 0.15); } catch { /* */ }
 }
 
 function OnlineDot({ online }: { online: boolean }) {
@@ -27,32 +16,28 @@ function OnlineDot({ online }: { online: boolean }) {
 
 function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
-  return (
-    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-      {count > 99 ? "99+" : count}
-    </span>
-  );
+  return <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{count > 99 ? "99+" : count}</span>;
 }
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
   return (
     <div className="absolute bottom-12 left-0 bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-xl z-50 w-[340px]">
       <div className="grid grid-cols-10 gap-1">
-        {EMOJI_LIST.map((e) => (
-          <button key={e} onClick={() => { onSelect(e); onClose(); }}
-            className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-700 rounded">{e}</button>
-        ))}
+        {EMOJI_LIST.map((e) => (<button key={e} onClick={() => { onSelect(e); onClose(); }} className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-700 rounded">{e}</button>))}
       </div>
     </div>
   );
 }
 
-function SectionHeader({ title, count, collapsed, onToggle }: { title: string; count: number; collapsed: boolean; onToggle: () => void }) {
+function SectionHeader({ title, count, collapsed, onToggle, action }: { title: string; count: number; collapsed: boolean; onToggle: () => void; action?: React.ReactNode }) {
   return (
-    <button onClick={onToggle} className="w-full flex items-center gap-1 text-xs text-gray-500 mb-2 hover:text-gray-300 transition-colors">
-      <span className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}>▾</span>
-      {title} ({count})
-    </button>
+    <div className="flex items-center gap-1 mb-2">
+      <button onClick={onToggle} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors flex-1">
+        <span className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}>▾</span>
+        {title} ({count})
+      </button>
+      {action}
+    </div>
   );
 }
 
@@ -62,22 +47,18 @@ export function MyOrgPage() {
   const t = useT();
   const [data, setData] = useState<MyOrgData | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Sections collapse
   const [membersCollapsed, setMembersCollapsed] = useState(false);
   const [threadsCollapsed, setThreadsCollapsed] = useState(false);
-
-  // Threads
   const [threads, setThreads] = useState<OrgThread[]>([]);
+
+  // Create thread
   const [showCreateThread, setShowCreateThread] = useState(false);
   const [threadTopic, setThreadTopic] = useState("");
   const [threadParticipants, setThreadParticipants] = useState<string[]>([]);
   const [creatingThread, setCreatingThread] = useState(false);
 
-  // Chat target
+  // Target + chat state
   const [target, setTarget] = useState<ChatTarget | null>(null);
-
-  // DM chat state
   const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
   const [messages, setMessages] = useState<(ChatMessage | ThreadMessage)[]>([]);
   const [channelId, setChannelId] = useState<string | null>(null);
@@ -87,79 +68,61 @@ export function MyOrgPage() {
   const [wsStatus, setWsStatus] = useState<"connected" | "connecting" | "disconnected">("disconnected");
   const [botTyping, setBotTyping] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-
-  // Image upload
   const [pendingImage, setPendingImage] = useState<{ file: File; preview: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Unread tracking
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
+  // Thread management
+  const [showThreadMenu, setShowThreadMenu] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showRenameTopic, setShowRenameTopic] = useState(false);
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [topicDraft, setTopicDraft] = useState("");
+  const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [threadDetail, setThreadDetail] = useState<{ initiator_id: string; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[]; context: string | null } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const myBotIdRef = useRef("");
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const userScrolledUp = useRef(false);
-  const currentTargetRef = useRef<string>("");
+  const currentTargetRef = useRef("");
 
-  useEffect(() => {
-    api.myOrg().then(setData).finally(() => setLoading(false));
-  }, []);
+  useEffect(() => { api.myOrg().then(setData).finally(() => setLoading(false)); }, []);
+  useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
-  // Load threads when data is available
-  useEffect(() => {
-    if (data?.status === "ok") {
-      api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {});
-    }
-  }, [data?.status]);
+  function sortMsgs(msgs: (ChatMessage | ThreadMessage)[]) { return [...msgs].sort((a, b) => (a.created_at || 0) - (b.created_at || 0)); }
 
-  function sortMessages(msgs: (ChatMessage | ThreadMessage)[]) {
-    return [...msgs].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+  // Load thread detail when selecting a thread
+  async function loadThreadDetail(threadId: string) {
+    try {
+      const d = await api.myOrgThreadDetail(threadId);
+      setThreadDetail({ initiator_id: d.initiator_id, participant_count: d.participant_count, participants: d.participants, context: d.context });
+    } catch { setThreadDetail(null); }
   }
 
-  // Select DM bot
   const selectDM = useCallback(async (bot: MyOrgPeer) => {
-    setTarget({ type: "dm", bot });
-    currentTargetRef.current = `dm_${bot.bot_id}`;
-    setMessages([]);
-    setChannelId(null);
-    setChatInfo(null);
-    setBotTyping(false);
-    setPendingImage(null);
-    setShowEmoji(false);
-    // Clear unread
-    setUnreadCounts((prev) => ({ ...prev, [`dm_${bot.bot_id}`]: 0 }));
+    setTarget({ type: "dm", bot }); currentTargetRef.current = `dm_${bot.bot_id}`;
+    setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
+    setShowThreadMenu(false); setShowMembers(false); setShowSearch(false); setThreadDetail(null);
+    setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
     try {
-      const info = await api.myOrgChatInfo(bot.name);
-      setChatInfo(info);
-      myBotIdRef.current = info.admin_bot_id;
-      if (info.dm_channel_id) {
-        setChannelId(info.dm_channel_id);
-        const hist = await api.myOrgChatMessages(info.dm_channel_id, bot.name);
-        setMessages(sortMessages(hist.messages));
-        setHasMore(hist.has_more);
-      }
+      const info = await api.myOrgChatInfo(bot.name); setChatInfo(info); myBotIdRef.current = info.admin_bot_id;
+      if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
     } catch { /* */ }
   }, []);
 
-  // Select Thread
   const selectThread = useCallback(async (thread: OrgThread) => {
-    setTarget({ type: "thread", thread });
-    currentTargetRef.current = `thread_${thread.id}`;
-    setMessages([]);
-    setChannelId(null);
-    setChatInfo(null);
-    setBotTyping(false);
-    setPendingImage(null);
-    setShowEmoji(false);
-    setUnreadCounts((prev) => ({ ...prev, [`thread_${thread.id}`]: 0 }));
-    try {
-      const hist = await api.myOrgThreadMessages(thread.id);
-      setMessages(sortMessages(hist.messages));
-      setHasMore(hist.has_more);
-    } catch { /* */ }
+    setTarget({ type: "thread", thread }); currentTargetRef.current = `thread_${thread.id}`;
+    setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
+    setShowThreadMenu(false); setShowMembers(false); setShowSearch(false);
+    setUnreadCounts((p) => ({ ...p, [`thread_${thread.id}`]: 0 }));
+    await loadThreadDetail(thread.id);
+    try { const h = await api.myOrgThreadMessages(thread.id); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); } catch { /* */ }
   }, []);
 
   // WebSocket for DM
@@ -170,47 +133,19 @@ export function MyOrgPage() {
       setWsStatus("connecting");
       try {
         const { ticket, ws_url } = await api.myOrgChatWsTicket((target as { type: "dm"; bot: MyOrgPeer }).bot.name);
-        const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
-        wsRef.current = ws;
+        const ws = new WebSocket(`${ws_url}?ticket=${ticket}`); wsRef.current = ws;
         ws.onopen = () => mounted && setWsStatus("connected");
-        ws.onclose = () => {
-          if (!mounted) return;
-          setWsStatus("disconnected");
-          wsRef.current = null;
-          setTimeout(() => mounted && connect(), 3000);
-        };
+        ws.onclose = () => { if (!mounted) return; setWsStatus("disconnected"); wsRef.current = null; setTimeout(() => mounted && connect(), 3000); };
         ws.onerror = () => ws.close();
         ws.onmessage = (ev) => {
           try {
             const d = JSON.parse(ev.data);
-            if (d.type === "typing") {
-              setBotTyping(true);
-              clearTimeout(typingTimer.current);
-              typingTimer.current = setTimeout(() => setBotTyping(false), 5000);
-              return;
-            }
+            if (d.type === "typing") { setBotTyping(true); clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => setBotTyping(false), 5000); return; }
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
-              const isFromOther = msg.sender_id !== myBotIdRef.current;
-              if (isFromOther) {
-                setBotTyping(false);
-                clearTimeout(typingTimer.current);
-                // Check if this message belongs to the currently viewed chat
-                const botTarget = (target as { type: "dm"; bot: MyOrgPeer }).bot;
-                const targetKey = `dm_${botTarget.bot_id}`;
-                if (currentTargetRef.current !== targetKey) {
-                  setUnreadCounts((prev) => ({ ...prev, [targetKey]: (prev[targetKey] || 0) + 1 }));
-                }
-                playNotificationSound();
-              }
-              setMessages((prev) => {
-                if (prev.some((m) => m.id === msg.id)) return prev;
-                return sortMessages([...prev, msg]);
-              });
-              if (!channelId && msg.channel_id) setChannelId(msg.channel_id);
-              if (!userScrolledUp.current) {
-                requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
-              }
+              if (msg.sender_id !== myBotIdRef.current) { setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound(); }
+              setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
+              if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
             }
           } catch { /* */ }
         };
@@ -220,65 +155,29 @@ export function MyOrgPage() {
     return () => { mounted = false; wsRef.current?.close(); wsRef.current = null; };
   }, [target?.type === "dm" ? (target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id : null, chatInfo?.admin_bot_id]);
 
-  useEffect(() => {
-    if (!userScrolledUp.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  useEffect(() => { if (!userScrolledUp.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
-  function handleScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
-  }
-
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPendingImage({ file, preview: URL.createObjectURL(file) });
-    e.target.value = "";
-  }
-
-  function cancelImage() {
-    if (pendingImage) { URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); }
-  }
+  function handleScroll() { const el = containerRef.current; if (el) userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100; }
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) setPendingImage({ file: f, preview: URL.createObjectURL(f) }); e.target.value = ""; }
+  function cancelImage() { if (pendingImage) { URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); } }
 
   async function handleSend() {
     if ((!input.trim() && !pendingImage) || !target || sending) return;
-    setSending(true);
-    setBotTyping(true);
-    clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => setBotTyping(false), 30000);
+    setSending(true); setBotTyping(true); clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => setBotTyping(false), 30000);
     try {
-      let imageUrl: string | undefined;
-      if (pendingImage) {
-        setUploading(true);
-        const uploaded = await api.myOrgChatUpload(pendingImage.file);
-        imageUrl = uploaded.url;
-        URL.revokeObjectURL(pendingImage.preview);
-        setPendingImage(null);
-        setUploading(false);
-      }
+      let imgUrl: string | undefined;
+      if (pendingImage) { setUploading(true); const u = await api.myOrgChatUpload(pendingImage.file); imgUrl = u.url; URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); setUploading(false); }
       if (target.type === "dm") {
-        const result = await api.myOrgChatSend(target.bot.name, input.trim(), imageUrl);
-        if (result.channel_id && !channelId) setChannelId(result.channel_id);
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === result.message.id)) return prev;
-          return sortMessages([...prev, result.message]);
-        });
+        const r = await api.myOrgChatSend(target.bot.name, input.trim(), imgUrl);
+        if (r.channel_id && !channelId) setChannelId(r.channel_id);
+        setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
       } else {
-        const result = await api.myOrgThreadSend(target.thread.id, input.trim(), imageUrl);
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === result.id)) return prev;
-          return sortMessages([...prev, result]);
-        });
+        const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl);
+        setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
         setBotTyping(false);
       }
-      setInput("");
-      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
-    } catch {
-      setBotTyping(false);
-      setUploading(false);
-      clearTimeout(typingTimer.current);
-    }
+      setInput(""); requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+    } catch { setBotTyping(false); setUploading(false); clearTimeout(typingTimer.current); }
     setSending(false);
   }
 
@@ -286,135 +185,106 @@ export function MyOrgPage() {
     if (messages.length === 0 || !target) return;
     const oldest = messages[0];
     try {
-      if (target.type === "dm" && channelId) {
-        const hist = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id);
-        setMessages((prev) => sortMessages([...hist.messages, ...prev]));
-        setHasMore(hist.has_more);
-      } else if (target.type === "thread") {
-        const hist = await api.myOrgThreadMessages(target.thread.id, oldest.id);
-        setMessages((prev) => sortMessages([...hist.messages, ...prev]));
-        setHasMore(hist.has_more);
-      }
+      if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
+      else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, oldest.id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
     } catch { /* */ }
   }
 
   async function handleCreateThread() {
-    if (!threadTopic.trim()) return;
-    setCreatingThread(true);
-    try {
-      await api.myOrgCreateThread(threadTopic.trim(), threadParticipants);
-      setShowCreateThread(false);
-      setThreadTopic("");
-      setThreadParticipants([]);
-      const r = await api.myOrgThreads();
-      setThreads(r.threads || []);
-    } catch (e: unknown) {
-      alert((e as Error).message || "Failed");
-    }
+    if (!threadTopic.trim()) return; setCreatingThread(true);
+    try { await api.myOrgCreateThread(threadTopic.trim(), threadParticipants); setShowCreateThread(false); setThreadTopic(""); setThreadParticipants([]); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
+    catch (e: unknown) { alert((e as Error).message || "Failed"); }
     setCreatingThread(false);
   }
 
+  async function handleRenameTopic() {
+    if (!topicDraft.trim() || !target || target.type !== "thread") return;
+    try { await api.myOrgThreadUpdate(target.thread.id, { topic: topicDraft.trim() }); setShowRenameTopic(false); const r = await api.myOrgThreads(); setThreads(r.threads || []); setTarget({ type: "thread", thread: { ...target.thread, topic: topicDraft.trim() } }); }
+    catch (e: unknown) { alert((e as Error).message || "Failed"); }
+  }
+
+  async function handleSaveAnnouncement() {
+    if (!target || target.type !== "thread") return;
+    try { await api.myOrgThreadUpdate(target.thread.id, { context: { announcement: announcementDraft } }); setShowAnnouncement(false); await loadThreadDetail(target.thread.id); }
+    catch (e: unknown) { alert((e as Error).message || "Failed"); }
+  }
+
+  async function handleLeaveThread() {
+    if (!target || target.type !== "thread") return;
+    if (!confirm("确定退出群聊？")) return;
+    try { await api.myOrgThreadLeave(target.thread.id); setTarget(null); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
+    catch (e: unknown) { alert((e as Error).message || "Failed"); }
+  }
+
+  function selectAllParticipants() {
+    const all = (data?.all_bots || []).filter((b) => !b.is_mine).map((b) => b.name);
+    setThreadParticipants(all);
+  }
+
   if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
-
-  if (!data || data.status === "no_instances") {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <div className="text-4xl mb-4">📦</div>
-        <h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noInstances")}</h2>
-        <p className="text-gray-500 text-sm mb-4">{t("myOrg.noInstancesDesc")}</p>
-        <Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToCatalog")}</Link>
-      </div>
-    );
-  }
-
-  if (data.status === "no_org") {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <div className="text-4xl mb-4">🔗</div>
-        <h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noOrg")}</h2>
-        <p className="text-gray-500 text-sm mb-4">{t("myOrg.noOrgDesc")}</p>
-        <Link to="/instances" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToInstances")}</Link>
-      </div>
-    );
-  }
+  if (!data || data.status === "no_instances") return (<div className="flex flex-col items-center justify-center h-[60vh] text-center"><div className="text-4xl mb-4">📦</div><h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noInstances")}</h2><p className="text-gray-500 text-sm mb-4">{t("myOrg.noInstancesDesc")}</p><Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToCatalog")}</Link></div>);
+  if (data.status === "no_org") return (<div className="flex flex-col items-center justify-center h-[60vh] text-center"><div className="text-4xl mb-4">🔗</div><h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noOrg")}</h2><p className="text-gray-500 text-sm mb-4">{t("myOrg.noOrgDesc")}</p><Link to="/instances" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToInstances")}</Link></div>);
 
   const allBots = data.all_bots || [];
   const myBotId = myBotIdRef.current;
   const selectedKey = target ? (target.type === "dm" ? `dm_${target.bot.bot_id}` : `thread_${target.thread.id}`) : "";
+  const isThreadCreator = target?.type === "thread" && threadDetail?.initiator_id && data.my_bots?.some((b) => {
+    // Check if any of my bots is the initiator
+    return threadDetail.participants?.some((p) => p.bot_id === threadDetail.initiator_id && p.name === b.agent_name);
+  });
+  const announcement = threadDetail?.context ? (() => { try { return JSON.parse(threadDetail.context).announcement || ""; } catch { return ""; } })() : "";
+  const filteredMessages = showSearch && searchQuery ? messages.filter((m) => m.content?.toLowerCase().includes(searchQuery.toLowerCase())) : messages;
 
   return (
     <div className="h-[calc(100vh-80px)] flex flex-col">
       <div className="px-4 py-3 border-b border-gray-800">
         <h1 className="text-lg font-semibold text-white">{t("myOrg.title")}: {data.org_name}</h1>
-        {data.is_default_org && (
-          <div className="mt-2 px-3 py-2 bg-yellow-900/30 border border-yellow-700 rounded text-yellow-300 text-xs">⚠ {t("myOrg.defaultOrgWarning")}</div>
-        )}
+        {data.is_default_org && <div className="mt-2 px-3 py-2 bg-yellow-900/30 border border-yellow-700 rounded text-yellow-300 text-xs">⚠ {t("myOrg.defaultOrgWarning")}</div>}
       </div>
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <div className="w-64 border-r border-gray-800 overflow-auto p-3">
-          {/* Members section */}
           <SectionHeader title={t("myOrg.botList")} count={allBots.length} collapsed={membersCollapsed} onToggle={() => setMembersCollapsed(!membersCollapsed)} />
-          {!membersCollapsed && (
-            <div className="space-y-1 mb-4">
-              {allBots.map((bot) => (
-                <button key={bot.bot_id} onClick={() => selectDM(bot)}
-                  className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${
-                    selectedKey === `dm_${bot.bot_id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"
-                  }`}>
-                  <OnlineDot online={bot.online} />
-                  <span className="text-sm text-gray-200 truncate flex-1">{bot.name}</span>
-                  {bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
-                  <Badge count={unreadCounts[`dm_${bot.bot_id}`] || 0} />
-                </button>
-              ))}
-            </div>
-          )}
+          {!membersCollapsed && <div className="space-y-1 mb-4">{allBots.map((bot) => (
+            <button key={bot.bot_id} onClick={() => selectDM(bot)} className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${selectedKey === `dm_${bot.bot_id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"}`}>
+              <OnlineDot online={bot.online} /><span className="text-sm text-gray-200 truncate flex-1">{bot.name}</span>
+              {bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
+              <Badge count={unreadCounts[`dm_${bot.bot_id}`] || 0} />
+            </button>
+          ))}</div>}
 
-          {/* Threads section */}
-          <SectionHeader title={t("myOrg.threads")} count={threads.length} collapsed={threadsCollapsed} onToggle={() => setThreadsCollapsed(!threadsCollapsed)} />
-          {!threadsCollapsed && (
-            <div className="space-y-1">
-              <button onClick={() => setShowCreateThread(true)}
-                className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded">
-                {t("myOrg.createThread")}
+          <SectionHeader title={t("myOrg.threads")} count={threads.length} collapsed={threadsCollapsed} onToggle={() => setThreadsCollapsed(!threadsCollapsed)}
+            action={<button onClick={() => setShowCreateThread(true)} className="text-gray-500 hover:text-blue-400 text-sm" title={t("myOrg.createThread")}>+</button>} />
+          {!threadsCollapsed && <div className="space-y-1">
+            {threads.length === 0 && <div className="text-xs text-gray-600 px-3">{t("myOrg.noThreads")}</div>}
+            {threads.map((thread) => (
+              <button key={thread.id} onClick={() => selectThread(thread)} className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${selectedKey === `thread_${thread.id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"}`}>
+                <span className="text-gray-400">#</span><span className="text-sm text-gray-200 truncate flex-1">{thread.topic}</span>
+                <Badge count={unreadCounts[`thread_${thread.id}`] || 0} />
               </button>
-              {threads.length === 0 && <div className="text-xs text-gray-600 px-3">{t("myOrg.noThreads")}</div>}
-              {threads.map((thread) => (
-                <button key={thread.id} onClick={() => selectThread(thread)}
-                  className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${
-                    selectedKey === `thread_${thread.id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"
-                  }`}>
-                  <span className="text-gray-400">#</span>
-                  <span className="text-sm text-gray-200 truncate flex-1">{thread.topic}</span>
-                  <Badge count={unreadCounts[`thread_${thread.id}`] || 0} />
-                </button>
-              ))}
-            </div>
-          )}
+            ))}
+          </div>}
         </div>
 
-        {/* Chat area */}
+        {/* Chat */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Create thread modal */}
           {showCreateThread && (
-            <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowCreateThread(false)}>
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowCreateThread(false)}>
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-96 space-y-3" onClick={(e) => e.stopPropagation()}>
                 <h3 className="text-sm font-medium text-white">{t("myOrg.createThread")}</h3>
-                <input type="text" value={threadTopic} onChange={(e) => setThreadTopic(e.target.value)}
-                  placeholder={t("myOrg.threadName")}
+                <input type="text" value={threadTopic} onChange={(e) => setThreadTopic(e.target.value)} placeholder={t("myOrg.threadName")}
                   className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">{t("myOrg.selectParticipants")}</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-gray-400">{t("myOrg.selectParticipants")}</label>
+                    <button onClick={selectAllParticipants} className="text-[10px] text-blue-400 hover:text-blue-300">全选</button>
+                  </div>
                   <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
                     {allBots.filter((b) => !b.is_mine).map((bot) => (
                       <label key={bot.bot_id} className="flex items-center gap-1 px-2 py-1 bg-gray-800 rounded text-xs text-gray-300 cursor-pointer hover:bg-gray-700">
-                        <input type="checkbox" checked={threadParticipants.includes(bot.name)}
-                          onChange={(e) => {
-                            if (e.target.checked) setThreadParticipants((p) => [...p, bot.name]);
-                            else setThreadParticipants((p) => p.filter((n) => n !== bot.name));
-                          }} className="rounded bg-gray-700 border-gray-600" />
+                        <input type="checkbox" checked={threadParticipants.includes(bot.name)} onChange={(e) => { if (e.target.checked) setThreadParticipants((p) => [...p, bot.name]); else setThreadParticipants((p) => p.filter((n) => n !== bot.name)); }} className="rounded bg-gray-700 border-gray-600" />
                         {bot.name}
                       </label>
                     ))}
@@ -422,10 +292,58 @@ export function MyOrgPage() {
                 </div>
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowCreateThread(false)} className="text-xs text-gray-500 hover:text-gray-300">{t("common.cancel")}</button>
-                  <button onClick={handleCreateThread} disabled={creatingThread || !threadTopic.trim()}
-                    className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-1.5 rounded">
-                    {creatingThread ? t("myOrg.creating") : t("myOrg.createThread")}
+                  <button onClick={handleCreateThread} disabled={creatingThread || !threadTopic.trim()} className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-1.5 rounded">
+                    {creatingThread ? t("myOrg.creating") : t("common.ok")}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Members modal */}
+          {showMembers && threadDetail && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowMembers(false)}>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-2" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-sm font-medium text-white">群成员 ({threadDetail.participant_count})</h3>
+                <div className="max-h-60 overflow-auto space-y-1">
+                  {threadDetail.participants.map((p) => (
+                    <div key={p.bot_id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800">
+                      <OnlineDot online={p.online} /><span className="text-sm text-gray-200">{p.name || p.bot_id.substring(0, 8)}</span>
+                      {p.bot_id === threadDetail.initiator_id && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">创建者</span>}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => setShowMembers(false)} className="text-xs text-gray-500 hover:text-gray-300 w-full text-center pt-2">{t("common.close")}</button>
+              </div>
+            </div>
+          )}
+
+          {/* Rename topic modal */}
+          {showRenameTopic && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowRenameTopic(false)}>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-3" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-sm font-medium text-white">修改群名</h3>
+                <input type="text" value={topicDraft} onChange={(e) => setTopicDraft(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+                  onKeyDown={(e) => e.key === "Enter" && handleRenameTopic()} />
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowRenameTopic(false)} className="text-xs text-gray-500">{t("common.cancel")}</button>
+                  <button onClick={handleRenameTopic} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded">{t("common.ok")}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Announcement modal */}
+          {showAnnouncement && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowAnnouncement(false)}>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-96 space-y-3" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-sm font-medium text-white">群公告</h3>
+                <textarea value={announcementDraft} onChange={(e) => setAnnouncementDraft(e.target.value)} rows={4}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none" placeholder="输入群公告内容..." />
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowAnnouncement(false)} className="text-xs text-gray-500">{t("common.cancel")}</button>
+                  <button onClick={handleSaveAnnouncement} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded">{t("common.save")}</button>
                 </div>
               </div>
             </div>
@@ -438,35 +356,61 @@ export function MyOrgPage() {
               {/* Header */}
               <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-2">
                 {target.type === "dm" ? (
-                  <>
-                    <OnlineDot online={target.bot.online} />
-                    <span className="text-sm font-medium text-white">{target.bot.name}</span>
-                    {target.bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
-                  </>
+                  <><OnlineDot online={target.bot.online} /><span className="text-sm font-medium text-white">{target.bot.name}</span>
+                    {target.bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}</>
                 ) : (
-                  <>
-                    <span className="text-gray-400 text-sm">#</span>
-                    <span className="text-sm font-medium text-white">{target.thread.topic}</span>
-                  </>
+                  <><span className="text-gray-400 text-sm">#</span><span className="text-sm font-medium text-white">{target.thread.topic}</span>
+                    {threadDetail && <span className="text-xs text-gray-500">({threadDetail.participant_count})</span>}</>
                 )}
-                <span className={`ml-auto text-[10px] ${wsStatus === "connected" ? "text-green-400" : wsStatus === "connecting" ? "text-yellow-400" : "text-gray-500"}`}>
-                  {target.type === "dm" ? (wsStatus === "connected" ? t("chat.connected") : wsStatus === "connecting" ? t("chat.connecting") : t("chat.disconnected")) : ""}
-                </span>
+
+                {/* DM status */}
+                {target.type === "dm" && <span className={`ml-auto text-[10px] ${wsStatus === "connected" ? "text-green-400" : wsStatus === "connecting" ? "text-yellow-400" : "text-gray-500"}`}>
+                  {wsStatus === "connected" ? t("chat.connected") : wsStatus === "connecting" ? t("chat.connecting") : t("chat.disconnected")}
+                </span>}
+
+                {/* Thread menu */}
+                {target.type === "thread" && (
+                  <div className="ml-auto relative">
+                    <button onClick={() => setShowThreadMenu(!showThreadMenu)} className="text-gray-400 hover:text-gray-200 p-1">⋯</button>
+                    {showThreadMenu && (
+                      <div className="absolute right-0 top-8 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1 w-36">
+                        <button onClick={() => { setShowMembers(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">👥 成员列表</button>
+                        <button onClick={() => { setShowSearch(!showSearch); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">🔍 消息搜索</button>
+                        {isThreadCreator && <>
+                          <button onClick={() => { setTopicDraft(target.thread.topic); setShowRenameTopic(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">✏️ 修改群名</button>
+                          <button onClick={() => { setAnnouncementDraft(announcement); setShowAnnouncement(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">📢 群公告</button>
+                        </>}
+                        {!isThreadCreator && <button onClick={() => { handleLeaveThread(); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700">🚪 退出群聊</button>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Announcement banner */}
+              {target.type === "thread" && announcement && (
+                <div className="px-4 py-2 bg-blue-900/20 border-b border-blue-800/30 text-xs text-blue-300">📢 {announcement}</div>
+              )}
+
+              {/* Search bar */}
+              {showSearch && (
+                <div className="px-4 py-2 border-b border-gray-800">
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜索消息内容..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
+                </div>
+              )}
 
               {/* Messages */}
               <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-3 space-y-2">
                 {hasMore && <button onClick={loadMore} className="text-xs text-blue-400 hover:text-blue-300 block mx-auto mb-2">{t("chat.loadMore")}</button>}
-                {messages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{t("chat.noMessages")}</div>}
-                {messages.map((msg) => {
+                {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? "无搜索结果" : t("chat.noMessages")}</div>}
+                {filteredMessages.map((msg) => {
                   const isSelf = msg.sender_id === myBotId;
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
                   return (
                     <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                        isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"
-                      }`}>
+                      <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         {!isSelf && <div className="text-[10px] text-gray-400 mb-0.5">{(msg as ChatMessage).sender_name || msg.sender_id}</div>}
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
                         {textContent}
@@ -474,43 +418,27 @@ export function MyOrgPage() {
                     </div>
                   );
                 })}
-                {botTyping && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm"><span className="animate-pulse">正在输入...</span></div>
-                  </div>
-                )}
+                {botTyping && <div className="flex justify-start"><div className="bg-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm"><span className="animate-pulse">正在输入...</span></div></div>}
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Image preview */}
-              {pendingImage && (
-                <div className="px-4 py-2 border-t border-gray-800 flex items-center gap-2">
-                  <img src={pendingImage.preview} alt="" className="h-16 rounded" />
-                  <button onClick={cancelImage} className="text-xs text-red-400 hover:text-red-300">✕</button>
-                </div>
-              )}
+              {pendingImage && <div className="px-4 py-2 border-t border-gray-800 flex items-center gap-2"><img src={pendingImage.preview} alt="" className="h-16 rounded" /><button onClick={cancelImage} className="text-xs text-red-400">✕</button></div>}
 
               {/* Input */}
               <div className="px-4 py-3 border-t border-gray-800">
                 <div className="flex items-center gap-2 relative">
                   <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-                  <button onClick={() => fileInputRef.current?.click()} disabled={sending}
-                    className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title="上传图片">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" />
-                    </svg>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={sending} className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title="上传图片">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" /></svg>
                   </button>
                   <div className="relative">
                     <button onClick={() => setShowEmoji(!showEmoji)} className="shrink-0 p-2 text-gray-400 hover:text-gray-200" title="Emoji">😀</button>
                     {showEmoji && <EmojiPicker onSelect={(e) => setInput((v) => v + e)} onClose={() => setShowEmoji(false)} />}
                   </div>
-                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                    placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
-                    disabled={sending} />
-                  <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || sending}
-                    className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
+                  <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                    placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" disabled={sending} />
+                  <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || sending} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
                     {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
                   </button>
                 </div>

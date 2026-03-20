@@ -514,3 +514,136 @@ def thread_send(
         "content": content,
     })
     return result
+
+
+def _get_thread_token(user_id: str, info: dict, hub_url: str, db: sqlite3.Connection) -> str:
+    """Get bot token for thread operations."""
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+        if token:
+            return token
+    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    return _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "", target_org_id=info.get("org_id") or None)
+
+
+@router.get("/threads/{thread_id}")
+def get_thread_detail(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Get thread detail with participants."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+    hub_url = _get_hub_url().rstrip("/")
+    token = _get_thread_token(user_id, info, hub_url, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+    return _hub_request(hub_url, token, "GET", f"/api/threads/{thread_id}")
+
+
+class UpdateThreadRequest(BaseModel):
+    topic: str | None = None
+    context: dict | None = None
+
+
+@router.patch("/threads/{thread_id}")
+def update_thread(
+    thread_id: str,
+    req: UpdateThreadRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Update thread topic or context (announcement)."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+    hub_url = _get_hub_url().rstrip("/")
+    token = _get_thread_token(user_id, info, hub_url, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+
+    body: dict = {}
+    if req.topic is not None:
+        body["topic"] = req.topic
+    if req.context is not None:
+        body["context"] = json.dumps(req.context)
+    if not body:
+        raise HTTPException(status_code=400, detail="Nothing to update.")
+    return _hub_request(hub_url, token, "PATCH", f"/api/threads/{thread_id}", body)
+
+
+@router.post("/threads/{thread_id}/leave")
+def leave_thread(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Leave a thread. Sends DM to initiator notifying departure."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+    hub_url = _get_hub_url().rstrip("/")
+    token = _get_thread_token(user_id, info, hub_url, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+
+    # Get thread detail to find initiator
+    thread = _hub_request(hub_url, token, "GET", f"/api/threads/{thread_id}")
+    initiator_id = thread.get("initiator_id", "")
+    thread_topic = thread.get("topic", "")
+
+    # Get my bot info
+    me = _hub_request(hub_url, token, "GET", "/api/me")
+    my_bot_id = me.get("id", "")
+    my_bot_name = me.get("name", "")
+
+    # Leave thread
+    _hub_request(hub_url, token, "DELETE", f"/api/threads/{thread_id}/participants/{my_bot_id}")
+
+    # Notify initiator via DM
+    if initiator_id and initiator_id != my_bot_id:
+        try:
+            # Find initiator name
+            participants = thread.get("participants", [])
+            initiator_name = ""
+            for p in participants:
+                if p.get("bot_id") == initiator_id:
+                    initiator_name = p.get("name", "")
+                    break
+            if initiator_name:
+                _hub_request(hub_url, token, "POST", "/api/send", {
+                    "to": initiator_name,
+                    "content": f"[通知] {my_bot_name} 已退出群聊「{thread_topic}」",
+                })
+        except Exception:
+            pass  # Best effort notification
+
+    return {"ok": True}
+
+
+class InviteRequest(BaseModel):
+    name: str
+
+
+@router.post("/threads/{thread_id}/invite")
+def invite_to_thread(
+    thread_id: str,
+    req: InviteRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Invite a bot to thread by name."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+    hub_url = _get_hub_url().rstrip("/")
+    token = _get_thread_token(user_id, info, hub_url, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+    return _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"name": req.name})
