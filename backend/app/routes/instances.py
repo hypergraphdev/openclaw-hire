@@ -653,20 +653,28 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
         except Exception:
             pass
 
-        # Register with org_secret
-        reg_data = json.dumps({"org_id": org_id, "org_secret": org_secret, "name": bot_name}).encode()
-        reg_req = urllib.request.Request(
-            f"{hub_url}/api/auth/register", data=reg_data,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
-        with urllib.request.urlopen(reg_req, timeout=15) as resp:
-            result = json.loads(resp.read().decode())
-
-        new_token = result.get("token", "")
-        if new_token:
-            set_setting(setting_key, new_token)
-            _user_bot_cache[user_id] = new_token
-            return new_token
+        # Register — try with display name first, fallback with user_id suffix on conflict
+        short_id = user_id.replace("user_", "")[:7]
+        candidates = [bot_name, f"{bot_name}_{short_id}"]
+        for name_candidate in candidates:
+            try:
+                reg_data = json.dumps({"org_id": org_id, "org_secret": org_secret, "name": name_candidate}).encode()
+                reg_req = urllib.request.Request(
+                    f"{hub_url}/api/auth/register", data=reg_data,
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+                with urllib.request.urlopen(reg_req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+                new_token = result.get("token", "")
+                if new_token:
+                    set_setting(setting_key, new_token)
+                    _user_bot_cache[user_id] = new_token
+                    return new_token
+            except urllib.error.HTTPError as e:
+                body = e.read().decode() if e.fp else ""
+                if e.code == 409 and "NAME" in body:
+                    continue  # Try next candidate
+                break
     except Exception:
         pass
     return ""
