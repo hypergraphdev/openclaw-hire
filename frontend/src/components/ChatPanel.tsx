@@ -128,7 +128,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     setMessagesLoading(true);
     api.chatMessages(instanceId, channelId)
       .then((res) => {
-        setMessages([...res.messages].reverse());
+        setMessages([...res.messages].sort((a, b) => a.created_at - b.created_at));
         setHasOlder(res.has_more);
       })
       .catch(() => {})
@@ -148,7 +148,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     try {
       const cursor = messages[0]?.id;
       const res = await api.chatMessages(instanceId, channelId, cursor);
-      const older = [...res.messages].reverse();
+      const older = [...res.messages].sort((a, b) => a.created_at - b.created_at);
       setMessages((prev) => {
         const ids = new Set(prev.map((m) => m.id));
         return [...older.filter((m) => !ids.has(m.id)), ...prev];

@@ -622,9 +622,13 @@ def chat_info(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Return chat info: target bot status and admin bot name."""
-    from ..database import get_setting
     hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
-    admin_bot_name = get_setting("hxa_admin_bot_name", "MW_OpenClaw")
+    # Get real admin bot name from Hub /api/me
+    try:
+        me = _hub_request(hub_url, admin_token, "GET", "/api/me")
+        admin_bot_name = me.get("name", "hire_admin_panel")
+    except Exception:
+        admin_bot_name = "hire_admin_panel"
     # Check if target bot is online
     result = _hub_request(hub_url, admin_token, "GET", "/api/bots?limit=100")
     bots = result if isinstance(result, list) else result.get("items", [])
