@@ -96,18 +96,18 @@ def _get_org_name(org_id: str) -> str:
     return row["org_name"] if row else org_id[:12]
 
 
-def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str], hub_url: str, db: sqlite3.Connection) -> tuple[str, str]:
+def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str], hub_url: str, db: sqlite3.Connection, org_id: str = "") -> tuple[str, str]:
     """Pick the right token for chatting.
     Returns (token, identity_type) where identity_type is 'admin' or instance_id.
 
-    - Target is MY bot → use admin bot token
+    - Target is MY bot → use admin bot token (in same org)
     - Target is OTHER's bot → use my first instance bot token
     """
     if target_bot_name in my_bot_names:
-        # Chat with own bot → use admin bot
+        # Chat with own bot → use admin bot in the SAME org
         user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
         display_name = user_row["name"] if user_row else ""
-        token = _ensure_user_bot(hub_url, user_id, display_name)
+        token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
         if not token:
             raise HTTPException(status_code=500, detail="Failed to initialize admin bot.")
         return token, "admin"
@@ -207,7 +207,7 @@ def org_chat_send(
 
     hub_url = _get_hub_url().rstrip("/")
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
-    token, _ = _pick_chat_token(user_id, req.target_bot_name, my_agent_names, hub_url, db)
+    token, _ = _pick_chat_token(user_id, req.target_bot_name, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
     content = req.content
     if req.image_url:
@@ -234,7 +234,7 @@ def org_chat_info(
 
     hub_url = _get_hub_url().rstrip("/")
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
-    token, identity = _pick_chat_token(user_id, target, my_agent_names, hub_url, db)
+    token, identity = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
     # Get my identity
     try:
@@ -299,7 +299,7 @@ def org_chat_messages(
 
     hub_url = _get_hub_url().rstrip("/")
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
-    token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db)
+    token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
     params = f"limit={limit}"
     if before:
@@ -325,7 +325,7 @@ def org_chat_ws_ticket(
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
 
     if target:
-        token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db)
+        token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
     else:
         # Default: use admin bot
         user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
