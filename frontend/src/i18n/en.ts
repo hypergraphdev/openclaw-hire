@@ -41,7 +41,7 @@ export const en: Record<string, string> = {
   "register.brand": "◈ OpenClaw Hire",
   "register.subtitle": "Create your cloud console account",
   "register.title": "Create account",
-  "register.name": "Full name",
+  "register.name": "Username",
   "register.email": "Email address",
   "register.company": "Company (optional)",
   "register.password": "Password",

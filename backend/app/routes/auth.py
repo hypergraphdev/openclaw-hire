@@ -31,10 +31,22 @@ def register(payload: RegisterRequest, db: sqlite3.Connection = Depends(get_db))
     now = _utc_now()
     pw_hash = hash_password(payload.password)
     is_admin = 1 if payload.email.lower() == ADMIN_EMAIL else 0
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="用户名不能为空。")
+
+    # Check name uniqueness
+    existing = db.execute("SELECT id FROM users WHERE name = ?", (name,)).fetchone()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该用户名已被使用，请换一个。建议使用企业邮箱用户名。",
+        )
+
     try:
         db.execute(
             "INSERT INTO users (id, name, email, company_name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, payload.name.strip(), payload.email.lower(), payload.company_name, pw_hash, is_admin, now),
+            (user_id, name, payload.email.lower(), payload.company_name, pw_hash, is_admin, now),
         )
         db.commit()
     except sqlite3.IntegrityError:

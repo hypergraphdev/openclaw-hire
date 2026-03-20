@@ -66,6 +66,7 @@ export function RegisterPage() {
                 className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Jane Smith"
               />
+              <p className="text-[11px] text-gray-600 mt-1">用户名需唯一，建议使用企业邮箱用户名</p>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">{t("register.email")}</label>

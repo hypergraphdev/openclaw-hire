@@ -41,7 +41,7 @@ export const zh: Record<string, string> = {
   "register.brand": "◈ OpenClaw Hire",
   "register.subtitle": "创建您的云控制台账户",
   "register.title": "创建账户",
-  "register.name": "姓名",
+  "register.name": "用户名",
   "register.email": "邮箱地址",
   "register.company": "公司（可选）",
   "register.password": "密码",
