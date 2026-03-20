@@ -280,6 +280,20 @@ export const en: Record<string, string> = {
   "chat.expand": "Expand chat",
   "chat.collapse": "Collapse chat",
 
+  // My Organization
+  "myOrg.title": "My Organization",
+  "myOrg.noInstances": "You have no instances deployed",
+  "myOrg.noInstancesDesc": "Deploy a Bot instance from the product catalog first.",
+  "myOrg.goToCatalog": "Go to Catalog →",
+  "myOrg.noOrg": "Your instance has not joined an organization",
+  "myOrg.noOrgDesc": "Go to instance detail page and click 'Connect to HXA Organization'.",
+  "myOrg.goToInstances": "Go to My Instances →",
+  "myOrg.defaultOrgWarning": "You are in the default organization. Contact admin to transfer your Bot to a dedicated org.",
+  "myOrg.botList": "Organization Members",
+  "myOrg.mine": "Mine",
+  "myOrg.selectBot": "Select a bot from the left to start chatting",
+  "myOrg.chatWith": "Chat with {name}",
+
   // Settings
   "settings.title": "Settings",
   "settings.language": "Language",

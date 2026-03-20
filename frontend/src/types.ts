@@ -167,6 +167,33 @@ export type HxaOrgDetail = {
   created_at?: number;
 };
 
+// ─── My Org types ───
+
+export type MyOrgBot = {
+  instance_id: string;
+  instance_name: string;
+  agent_name: string;
+  product: string;
+};
+
+export type MyOrgPeer = {
+  bot_id: string;
+  name: string;
+  online: boolean;
+  is_mine: boolean;
+};
+
+export type MyOrgData = {
+  status: "ok" | "no_instances" | "no_org";
+  org_id?: string;
+  org_name?: string;
+  is_default_org?: boolean;
+  my_bots?: MyOrgBot[];
+  all_bots?: MyOrgPeer[];
+};
+
+// ─── HXA Organization types ───
+
 export type HxaOrgAgent = {
   bot_id: string;
   name: string;

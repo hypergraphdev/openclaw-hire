@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -160,6 +160,21 @@ export const api = {
 
   chatWsTicket: (id: string) =>
     request<ChatWsTicketResponse>(`/api/instances/${id}/chat/ws-ticket`, { method: "POST" }),
+
+  // My Organization
+  myOrg: () => request<MyOrgData>("/api/my-org"),
+  myOrgChatInfo: (target: string) => request<ChatInfo>(`/api/my-org/chat/info?target=${encodeURIComponent(target)}`),
+  myOrgChatSend: (target: string, content: string, imageUrl?: string) =>
+    request<ChatSendResponse>("/api/my-org/chat/send", {
+      method: "POST", body: JSON.stringify({ target_bot_name: target, content, image_url: imageUrl || null }),
+    }),
+  myOrgChatMessages: (channelId: string, target: string, before?: string) => {
+    const params = new URLSearchParams({ channel_id: channelId, target, limit: "50" });
+    if (before) params.set("before", before);
+    return request<ChatMessagesResponse>(`/api/my-org/chat/messages?${params}`);
+  },
+  myOrgChatWsTicket: (target: string) =>
+    request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?target=${encodeURIComponent(target)}`, { method: "POST" }),
 
   // HXA Organization management
   hxaOrgs: () => request<{ orgs: HxaOrg[] }>("/api/admin/hxa/orgs"),

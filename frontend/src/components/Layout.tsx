@@ -13,6 +13,7 @@ export function Layout({ children }: { children: ReactNode }) {
     { to: "/dashboard", label: t("nav.dashboard"), icon: "▦" },
     { to: "/catalog", label: t("nav.catalog"), icon: "◈" },
     { to: "/instances", label: t("nav.instances"), icon: "⊞" },
+    { to: "/my-org", label: t("myOrg.title"), icon: "🏢" },
     ...(user?.is_admin ? [{ to: "/admin", label: t("nav.admin"), icon: "⚙" }] : []),
     { to: "/settings", label: t("nav.settings"), icon: "☰" },
   ];

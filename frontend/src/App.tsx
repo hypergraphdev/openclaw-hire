@@ -12,6 +12,7 @@ import { AdminPage } from "./pages/AdminPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminHXAPage from "./pages/AdminHXAPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { MyOrgPage } from "./pages/MyOrgPage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -133,6 +134,14 @@ export default function App() {
               <AdminRoute>
                 <AdminHXAPage />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/my-org"
+            element={
+              <ProtectedRoute>
+                <MyOrgPage />
+              </ProtectedRoute>
             }
           />
           <Route

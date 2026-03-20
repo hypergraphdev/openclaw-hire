@@ -280,6 +280,20 @@ export const zh: Record<string, string> = {
   "chat.expand": "展开聊天",
   "chat.collapse": "收起聊天",
 
+  // My Organization
+  "myOrg.title": "我的组织",
+  "myOrg.noInstances": "您还没有部署任何实例",
+  "myOrg.noInstancesDesc": "请先到产品目录部署一个 Bot 实例。",
+  "myOrg.goToCatalog": "前往产品目录 →",
+  "myOrg.noOrg": "您的实例尚未加入组织",
+  "myOrg.noOrgDesc": "请到实例详情页点击「连接到 HXA 组织」。",
+  "myOrg.goToInstances": "前往我的实例 →",
+  "myOrg.defaultOrgWarning": "您当前在默认组织中，请联系管理员将您的 Bot 转移到专属组织。",
+  "myOrg.botList": "组织成员",
+  "myOrg.mine": "我的",
+  "myOrg.selectBot": "选择左侧的 Bot 开始聊天",
+  "myOrg.chatWith": "与 {name} 聊天",
+
   // Settings
   "settings.title": "设置",
   "settings.language": "语言",
