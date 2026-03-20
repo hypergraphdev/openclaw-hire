@@ -429,10 +429,43 @@ def delete_instance(
 
 # ─── Chat proxy helpers ─────────────────────────────────────────────
 
+RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+
+
+def _read_runtime_agent_name(instance_id: str) -> str:
+    """Read agent name from runtime config files (source of truth)."""
+    runtime_dir = RUNTIME_ROOT / instance_id
+
+    # OpenClaw: openclaw-config/openclaw.json
+    oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
+    if oc_cfg.exists():
+        try:
+            cfg = json.loads(oc_cfg.read_text())
+            name = cfg.get("channels", {}).get("hxa-connect", {}).get("agentName", "")
+            if name:
+                return name
+        except Exception:
+            pass
+
+    # Zylos: zylos-data/components/hxa-connect/config.json
+    zy_cfg = runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
+    if zy_cfg.exists():
+        try:
+            cfg = json.loads(zy_cfg.read_text())
+            name = cfg.get("orgs", {}).get("default", {}).get("agent_name", "")
+            if name:
+                return name
+        except Exception:
+            pass
+
+    return ""
+
+
 def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     """Return (hub_url, admin_bot_token, target_agent_name) for chatting WITH an instance bot.
 
     Uses a dedicated admin bot identity so the user chats with (not as) the instance bot.
+    Reads agent_name from runtime config (source of truth) rather than DB which may be stale.
     """
     inst = db.execute(
         "SELECT id, agent_name FROM instances WHERE id = ? AND owner_id = ?",
@@ -448,7 +481,12 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
         raise HTTPException(status_code=400, detail="Instance not configured for HXA.")
 
     hub_url = cfg["hub_url"].rstrip("/")
-    target_agent_name = cfg["agent_name"] or inst["agent_name"] or ""
+
+    # Read agent_name from runtime config (source of truth)
+    target_agent_name = _read_runtime_agent_name(instance_id)
+    # Fall back to DB if runtime read fails
+    if not target_agent_name:
+        target_agent_name = cfg["agent_name"] or inst["agent_name"] or ""
     if not target_agent_name:
         raise HTTPException(status_code=400, detail="Instance has no agent name.")
 
