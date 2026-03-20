@@ -265,7 +265,7 @@ export function InstancesPage() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+          <div className="hidden md:block bg-gray-900 border border-gray-800 rounded-lg overflow-visible">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800">
