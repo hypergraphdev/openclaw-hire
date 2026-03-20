@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
-import type { Instance } from "../types";
+import type { HxaOrg, Instance } from "../types";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString([], {
@@ -171,6 +171,8 @@ export function InstancesPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string>("");
   const [renamingInst, setRenamingInst] = useState<Instance | null>(null);
+  const [orgs, setOrgs] = useState<HxaOrg[]>([]);
+  const orgMap = Object.fromEntries(orgs.map((o) => [o.id, o.name]));
 
   function configStatus(inst: Instance) {
     if (!inst.is_telegram_configured) return t("instances.configTelegramNo");
@@ -180,6 +182,7 @@ export function InstancesPage() {
 
   useEffect(() => {
     api.listInstances().then(setInstances).finally(() => setLoading(false));
+    api.hxaOrgs().then((r) => setOrgs(r.orgs || [])).catch(() => {});
     const interval = setInterval(() => {
       api.listInstances().then(setInstances).catch(() => {});
     }, 8_000);
@@ -274,6 +277,7 @@ export function InstancesPage() {
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.product")}</th>
                   <th className="text-center px-3 py-3 text-xs text-gray-500 font-medium" title="安装状态">状态</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.configured")}</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">组织</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.orgName")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.ports")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.deployed")}</th>
@@ -302,6 +306,9 @@ export function InstancesPage() {
                         </span>
                         <ConfigDot inst={inst} />
                       </span>
+                    </td>
+                    <td className="px-5 py-3 text-blue-400 text-xs">
+                      {inst.org_id ? (orgMap[inst.org_id] || inst.org_id.substring(0, 8) + "...") : "-"}
                     </td>
                     <td className="px-5 py-3 text-gray-300 text-xs font-mono">{inst.agent_name || "-"}</td>
                     <td className="px-5 py-3 text-gray-300 text-xs font-mono">

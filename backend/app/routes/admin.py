@@ -61,17 +61,60 @@ def platform_stats(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Global platform statistics visible to all users."""
-    total_users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    total_bots = db.execute(
-        "SELECT COUNT(*) FROM instances WHERE install_state = 'running'"
-    ).fetchone()[0]
-    running_bots = db.execute(
-        "SELECT COUNT(*) FROM instances WHERE install_state = 'running' AND status = 'active'"
-    ).fetchone()[0]
-    org_bots = db.execute(
-        "SELECT COUNT(*) FROM instance_configs WHERE agent_name IS NOT NULL AND agent_name != ''"
-    ).fetchone()[0]
+    """Platform statistics. Admin sees global; regular user sees own org scope."""
+    is_admin = bool(current_user.get("is_admin", 0))
+
+    if is_admin:
+        total_users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        total_bots = db.execute(
+            "SELECT COUNT(*) FROM instances WHERE install_state = 'running'"
+        ).fetchone()[0]
+        running_bots = db.execute(
+            "SELECT COUNT(*) FROM instances WHERE install_state = 'running' AND status = 'active'"
+        ).fetchone()[0]
+        org_bots = db.execute(
+            "SELECT COUNT(*) FROM instance_configs WHERE agent_name IS NOT NULL AND agent_name != ''"
+        ).fetchone()[0]
+    else:
+        # Get org_ids that this user's bots belong to
+        user_id = current_user["id"]
+        user_org_ids = db.execute(
+            """SELECT DISTINCT c.org_id FROM instance_configs c
+               JOIN instances i ON c.instance_id = i.id
+               WHERE i.owner_id = ? AND c.org_id IS NOT NULL AND c.org_id != ''""",
+            (user_id,),
+        ).fetchall()
+        org_ids = [r[0] for r in user_org_ids]
+
+        if not org_ids:
+            return {"total_users": 0, "total_bots": 0, "running_bots": 0, "org_bots": 0}
+
+        placeholders = ",".join("?" for _ in org_ids)
+        # Count users who have bots in these orgs
+        total_users = db.execute(
+            f"""SELECT COUNT(DISTINCT i.owner_id) FROM instances i
+                JOIN instance_configs c ON i.id = c.instance_id
+                WHERE c.org_id IN ({placeholders})""",
+            org_ids,
+        ).fetchone()[0]
+        # Count running bots in these orgs
+        total_bots = db.execute(
+            f"""SELECT COUNT(*) FROM instances i
+                JOIN instance_configs c ON i.id = c.instance_id
+                WHERE i.install_state = 'running' AND c.org_id IN ({placeholders})""",
+            org_ids,
+        ).fetchone()[0]
+        running_bots = db.execute(
+            f"""SELECT COUNT(*) FROM instances i
+                JOIN instance_configs c ON i.id = c.instance_id
+                WHERE i.install_state = 'running' AND i.status = 'active' AND c.org_id IN ({placeholders})""",
+            org_ids,
+        ).fetchone()[0]
+        org_bots = db.execute(
+            f"""SELECT COUNT(*) FROM instance_configs c
+                WHERE c.agent_name IS NOT NULL AND c.agent_name != '' AND c.org_id IN ({placeholders})""",
+            org_ids,
+        ).fetchone()[0]
 
     return {
         "total_users": total_users,

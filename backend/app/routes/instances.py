@@ -75,7 +75,7 @@ def _require_compose(inst: dict) -> tuple[str, str, str]:
 def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
     """Backfill list/detail fields from instance_configs when legacy rows are partially empty."""
     cfg = db.execute(
-        "SELECT telegram_bot_token, org_token, agent_name FROM instance_configs WHERE instance_id = ?",
+        "SELECT telegram_bot_token, org_token, agent_name, org_id FROM instance_configs WHERE instance_id = ?",
         (inst["id"],),
     ).fetchone()
     if cfg:
@@ -86,6 +86,8 @@ def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
             inst["org_token"] = c.get("org_token")
         if not inst.get("agent_name") and c.get("agent_name"):
             inst["agent_name"] = c.get("agent_name")
+        if not inst.get("org_id") and c.get("org_id"):
+            inst["org_id"] = c.get("org_id")
     return inst
 
 
