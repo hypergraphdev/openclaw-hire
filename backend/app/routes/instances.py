@@ -544,8 +544,12 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     if not target_agent_name:
         raise HTTPException(status_code=400, detail="Instance has no agent name.")
 
+    # Get user display name for bot registration
+    user_row = db.execute("SELECT name, email FROM users WHERE id = ?", (owner_id,)).fetchone()
+    display_name = (user_row["name"] if user_row else "") or ""
+
     # Get or register per-user admin bot
-    admin_token = _ensure_user_bot(hub_url, owner_id)
+    admin_token = _ensure_user_bot(hub_url, owner_id, display_name)
     if not admin_token:
         raise HTTPException(status_code=500, detail="Failed to initialize chat bot.")
     return hub_url, admin_token, target_agent_name
@@ -555,23 +559,33 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
 _user_bot_cache: dict[str, str] = {}
 
 
-def _ensure_user_bot(hub_url: str, user_id: str) -> str:
-    """Return per-user bot token, registering one if needed. Cached in DB per user."""
+def _make_admin_bot_name(display_name: str, user_id: str) -> str:
+    """Generate admin bot name: '{Name}_Admin', fallback to 'u_{short_id}_Admin'."""
+    import re
+    if display_name:
+        sanitized = re.sub(r'[^a-zA-Z0-9_\-\u4e00-\u9fff]', '_', display_name.strip())
+        sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+        if sanitized:
+            return f"{sanitized}_Admin"
+    short_id = user_id.replace("user_", "")[:12]
+    return f"u_{short_id}_Admin"
+
+
+def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:
+    """Return per-user bot token, registering one if needed. Token is stable."""
     from ..database import get_setting, set_setting
     from ..services.install_service import _get_org_id, _get_org_secret
 
     setting_key = f"hxa_user_bot_token_{user_id}"
-    short_id = user_id.replace("user_", "")[:12]
-    bot_name = f"u_{short_id}"
+    bot_name = _make_admin_bot_name(display_name, user_id)
 
     # Check memory cache first
     if user_id in _user_bot_cache:
         return _user_bot_cache[user_id]
 
-    # Check DB
+    # Check DB — token is stable, only verify once per process
     token = get_setting(setting_key, "")
     if token:
-        # Verify token is still valid
         try:
             req = urllib.request.Request(
                 f"{hub_url}/api/me",
@@ -579,10 +593,21 @@ def _ensure_user_bot(hub_url: str, user_id: str) -> str:
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 me = json.loads(resp.read().decode())
+            # Rename if user changed their display name
+            if me.get("name", "") != bot_name:
+                try:
+                    urllib.request.urlopen(urllib.request.Request(
+                        f"{hub_url}/api/me/name",
+                        data=json.dumps({"name": bot_name}).encode(),
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                        method="PATCH",
+                    ), timeout=5)
+                except Exception:
+                    pass
             _user_bot_cache[user_id] = token
             return token
         except Exception:
-            pass  # Token invalid, re-register
+            pass  # Token invalid, re-register below
 
     # Register a new bot for this user
     org_secret = _get_org_secret()
