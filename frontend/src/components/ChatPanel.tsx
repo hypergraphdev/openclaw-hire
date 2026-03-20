@@ -44,7 +44,13 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     setInfoLoading(true);
     setInfoError("");
     api.chatInfo(instanceId)
-      .then((info) => setChatInfo(info))
+      .then((info) => {
+        setChatInfo(info);
+        // Auto-load history if DM channel already exists
+        if (info.dm_channel_id) {
+          setChannelId(info.dm_channel_id);
+        }
+      })
       .catch(() => setInfoError(t("chat.errorPeers")))
       .finally(() => setInfoLoading(false));
   }, [instanceId, t]);

@@ -629,11 +629,27 @@ def chat_info(
     result = _hub_request(hub_url, admin_token, "GET", "/api/bots?limit=100")
     bots = result if isinstance(result, list) else result.get("items", [])
     target = next((b for b in bots if b.get("name") == target_name), None)
+    target_id = target.get("id", "") if target else ""
+
+    # Find existing DM channel_id from inbox
+    dm_channel_id = ""
+    if target_id:
+        try:
+            inbox = _hub_request(hub_url, admin_token, "GET", "/api/inbox?since=0&limit=50")
+            if isinstance(inbox, list):
+                for msg in inbox:
+                    if msg.get("sender_id") == target_id or msg.get("sender_name") == target_name:
+                        dm_channel_id = msg.get("channel_id", "")
+                        break
+        except Exception:
+            pass
+
     return {
         "target_name": target_name,
         "target_online": target.get("online", False) if target else False,
-        "target_id": target.get("id", "") if target else "",
+        "target_id": target_id,
         "admin_bot_name": admin_bot_name,
+        "dm_channel_id": dm_channel_id,
     }
 
 
