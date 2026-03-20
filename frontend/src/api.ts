@@ -173,8 +173,11 @@ export const api = {
     if (before) params.set("before", before);
     return request<ChatMessagesResponse>(`/api/my-org/chat/messages?${params}`);
   },
-  myOrgChatWsTicket: (target: string) =>
-    request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?target=${encodeURIComponent(target)}`, { method: "POST" }),
+  myOrgChatWsTicket: (target: string, extraParams?: URLSearchParams) => {
+    const p = new URLSearchParams({ target });
+    if (extraParams) extraParams.forEach((v, k) => p.set(k, v));
+    return request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?${p}`, { method: "POST" });
+  },
 
   // Threads (group chat)
   myOrgThreads: () => request<{ threads: OrgThread[] }>("/api/my-org/threads"),

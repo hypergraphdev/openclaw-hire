@@ -338,10 +338,11 @@ def org_chat_messages(
 @router.post("/chat/ws-ticket")
 def org_chat_ws_ticket(
     target: str = Query(""),
+    mode: str = Query("dm"),
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Get WebSocket ticket. Uses appropriate bot identity based on target."""
+    """Get WebSocket ticket. mode=dm uses chat identity, mode=thread uses instance bot."""
     user_id = current_user["id"]
     info = _get_user_org_info(user_id, db)
     if info["status"] != "ok":
@@ -350,10 +351,17 @@ def org_chat_ws_ticket(
     hub_url = _get_hub_url().rstrip("/")
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
 
-    if target:
+    if mode == "thread":
+        # Thread WS must use instance bot (thread participant)
+        if info["my_bots"]:
+            token = _get_agent_token(info["my_bots"][0]["instance_id"])
+        else:
+            token = None
+        if not token:
+            raise HTTPException(status_code=400, detail="No instance bot available for thread WS.")
+    elif target:
         token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
     else:
-        # Default: use admin bot
         user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
         display_name = user_row["name"] if user_row else ""
         token = _ensure_user_bot(hub_url, user_id, display_name)

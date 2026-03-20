@@ -237,14 +237,15 @@ export function MyOrgPage() {
       setWsStatus("connecting");
       try {
         // Use empty target to get instance bot ws ticket
-        const { ticket, ws_url } = await api.myOrgChatWsTicket("");
+        // Use instance bot token for thread WS (bot is thread participant)
+        const params = new URLSearchParams({ mode: "thread" });
+        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params);
         const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
         wsRef.current = ws;
         ws.onopen = () => {
           if (!mounted) return;
           setWsStatus("connected");
-          // Subscribe to thread
-          ws.send(JSON.stringify({ type: "subscribe", thread_id: (target as { type: "thread"; thread: OrgThread }).thread.id }));
+          // Bot WS auto-receives thread_message for threads it participates in (no subscribe needed)
         };
         ws.onclose = () => {
           if (!mounted) return;
