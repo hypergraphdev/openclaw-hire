@@ -118,6 +118,10 @@ def update_agent_name(instance_id: str, payload: UpdateAgentNameRequest, current
     if not new_name:
         raise HTTPException(status_code=400, detail="Agent name cannot be empty.")
 
+    # Auto-append _Bot if not already ending with _Bot or _bot
+    if not new_name.lower().endswith("_bot"):
+        new_name = f"{new_name}_Bot"
+
     # Check duplicate name across all agents in org
     existing_agents = _get_agents()
     for a in existing_agents:

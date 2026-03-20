@@ -560,15 +560,15 @@ _user_bot_cache: dict[str, str] = {}
 
 
 def _make_admin_bot_name(display_name: str, user_id: str) -> str:
-    """Generate admin bot name: '{Name}_Admin', fallback to 'u_{short_id}_Admin'."""
+    """Generate admin bot name from user's display name."""
     import re
     if display_name:
         sanitized = re.sub(r'[^a-zA-Z0-9_\-\u4e00-\u9fff]', '_', display_name.strip())
         sanitized = re.sub(r'_+', '_', sanitized).strip('_')
         if sanitized:
-            return f"{sanitized}_Admin"
+            return sanitized
     short_id = user_id.replace("user_", "")[:12]
-    return f"u_{short_id}_Admin"
+    return f"u_{short_id}"
 
 
 def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "") -> str:

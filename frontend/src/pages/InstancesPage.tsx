@@ -145,6 +145,7 @@ function RenameDialog({
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
           autoFocus
         />
+        <p className="text-[11px] text-gray-600 mt-1">名称未以 _Bot 结尾时会自动补全</p>
         {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5">取消</button>
