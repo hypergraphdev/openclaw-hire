@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel as _BaseModel
 
 from ..deps import get_current_user, get_db
 from ..schemas import (
@@ -711,9 +712,6 @@ def chat_info(
         "admin_bot_id": admin_bot_id,
         "dm_channel_id": dm_channel_id,
     }
-
-
-from pydantic import BaseModel as _BaseModel
 
 
 class _ChatSendRequest(_BaseModel):
