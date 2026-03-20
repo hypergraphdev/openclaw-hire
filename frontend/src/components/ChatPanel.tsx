@@ -197,7 +197,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
   }
 
-  const adminBotName = chatInfo?.admin_bot_name || "MW_OpenClaw";
+  const adminBotId = chatInfo?.admin_bot_id || "";
 
   // ─── Render ─────────────────────────────────────────────────────
 
@@ -286,28 +286,28 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                isSelf={msg.sender_name === adminBotName}
+                isSelf={msg.sender_id === adminBotId}
               />
             ))}
-            {/* Typing indicator */}
-            {botTyping && (
-              <div className="flex flex-col items-start">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[11px] font-medium text-gray-400">
-                    {chatInfo?.target_name}
-                  </span>
-                </div>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
-                  <span className="inline-flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </span>
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </>
+        )}
+        {/* Typing indicator — outside message loading condition so it always shows */}
+        {botTyping && (
+          <div className="flex flex-col items-start px-4 pb-2">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[11px] font-medium text-gray-400">
+                {chatInfo?.target_name}
+              </span>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
+              <span className="inline-flex gap-1">
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+            </div>
+          </div>
         )}
       </div>
 

@@ -623,12 +623,14 @@ def chat_info(
 ):
     """Return chat info: target bot status and admin bot name."""
     hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
-    # Get real admin bot name from Hub /api/me
+    # Get admin bot identity from Hub /api/me
     try:
         me = _hub_request(hub_url, admin_token, "GET", "/api/me")
         admin_bot_name = me.get("name", "hire_admin_panel")
+        admin_bot_id = me.get("id", "")
     except Exception:
         admin_bot_name = "hire_admin_panel"
+        admin_bot_id = ""
     # Check if target bot is online
     result = _hub_request(hub_url, admin_token, "GET", "/api/bots?limit=100")
     bots = result if isinstance(result, list) else result.get("items", [])
@@ -653,6 +655,7 @@ def chat_info(
         "target_online": target.get("online", False) if target else False,
         "target_id": target_id,
         "admin_bot_name": admin_bot_name,
+        "admin_bot_id": admin_bot_id,
         "dm_channel_id": dm_channel_id,
     }
 

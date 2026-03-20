@@ -117,6 +117,7 @@ export type ChatInfo = {
   target_online: boolean;
   target_id: string;
   admin_bot_name: string;
+  admin_bot_id: string;
   dm_channel_id?: string;
 };
 
