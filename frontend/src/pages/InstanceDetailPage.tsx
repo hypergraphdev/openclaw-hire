@@ -237,16 +237,7 @@ export function InstanceDetailPage() {
                 <dt className="text-xs text-gray-500">{t("detail.status")}</dt>
                 <dd><StatusPill state={instance.status} /></dd>
               </div>
-              {instance.web_console_url && (
-                <div>
-                  <dt className="text-xs text-gray-500">{t("detail.webConsole")}</dt>
-                  <dd className="text-xs break-all">
-                    <a href={instance.web_console_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
-                      {t("detail.openConsole")}
-                    </a>
-                  </dd>
-                </div>
-              )}
+              {/* Web Console link removed - users interact via Telegram */}
               {instance.web_console_port && (
                 <div>
                   <dt className="text-xs text-gray-500">{t("detail.gatewayPort")}</dt>
