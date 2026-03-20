@@ -368,7 +368,7 @@ async def configure_hxa_endpoint(
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
     import asyncio
     loop = asyncio.get_event_loop()
-    ok, message = await loop.run_in_executor(
+    ok, message, real_token = await loop.run_in_executor(
         None,
         lambda: configure_hxa_only(
             instance_id, runtime_dir, project,
@@ -387,16 +387,17 @@ async def configure_hxa_endpoint(
     )
     db.execute(
         """
-        INSERT INTO instance_configs (instance_id, agent_name, plugin_name, hub_url, org_id, configured_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO instance_configs (instance_id, agent_name, plugin_name, hub_url, org_id, org_token, configured_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(instance_id) DO UPDATE SET
           agent_name=excluded.agent_name,
           plugin_name=excluded.plugin_name,
           hub_url=excluded.hub_url,
           org_id=excluded.org_id,
+          org_token=COALESCE(excluded.org_token, instance_configs.org_token),
           updated_at=excluded.updated_at
         """,
-        (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, now, now),
+        (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, real_token or None, now, now),
     )
     db.commit()
     return {"ok": True, "message": message, "agent_name": agent_name}
@@ -430,6 +431,8 @@ def delete_instance(
 
 def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     """Return (hub_url, org_token) for an instance, or raise 400/404."""
+    from .admin_hxa import _get_agent_token
+
     inst = db.execute(
         "SELECT id FROM instances WHERE id = ? AND owner_id = ?",
         (instance_id, owner_id),
@@ -437,12 +440,16 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     if not inst:
         raise HTTPException(status_code=404, detail="Instance not found.")
     cfg = db.execute(
-        "SELECT hub_url, org_token FROM instance_configs WHERE instance_id = ?",
+        "SELECT hub_url FROM instance_configs WHERE instance_id = ?",
         (instance_id,),
     ).fetchone()
-    if not cfg or not cfg["org_token"] or not cfg["hub_url"]:
+    if not cfg or not cfg["hub_url"]:
         raise HTTPException(status_code=400, detail="Instance not configured for HXA.")
-    return cfg["hub_url"].rstrip("/"), cfg["org_token"]
+    # Read real bot token from runtime config files (not DB placeholder)
+    token = _get_agent_token(instance_id)
+    if not token:
+        raise HTTPException(status_code=400, detail="No agent token found. Configure HXA first.")
+    return cfg["hub_url"].rstrip("/"), token
 
 
 def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | None = None):
