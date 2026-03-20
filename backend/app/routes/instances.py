@@ -486,7 +486,7 @@ def _ensure_admin_bot(hub_url: str) -> str:
         return ""
 
     origin = "https://www.ucai.net"
-    admin_name = "MW_OpenClaw"
+    admin_name = "hire_admin_panel"
 
     try:
         # Step 1: Admin login
