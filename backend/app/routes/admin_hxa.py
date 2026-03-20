@@ -522,14 +522,13 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
             row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (oid,)).fetchone()
         return row["org_secret"] if row else ""
 
-    # 2. Delete bot from old org using org admin session
+    # 2. Try to delete bot from old org (best effort - skip on failure)
     current_org_secret = _resolve_org_secret(current_org_id)
-    if not current_org_secret:
-        raise HTTPException(status_code=400, detail="Cannot find secret for current org. Cannot delete bot.")
-    try:
-        _hub_org_admin_request("DELETE", f"/api/bots/{bot_id}", current_org_id, current_org_secret)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to delete bot from old org: {e}")
+    if current_org_secret:
+        try:
+            _hub_org_admin_request("DELETE", f"/api/bots/{bot_id}", current_org_id, current_org_secret)
+        except Exception:
+            pass  # Bot may not exist in old org anymore, continue with registration
 
     # 3. Get target org secret
     target_org_secret = _resolve_org_secret(target_org_id)
