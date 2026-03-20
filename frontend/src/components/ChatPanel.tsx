@@ -37,6 +37,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userScrolledUp = useRef(false);
+  const adminBotIdRef = useRef("");
 
   // ─── Load chat info (target bot + admin bot identity) ───────────
 
@@ -46,6 +47,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     api.chatInfo(instanceId)
       .then((info) => {
         setChatInfo(info);
+        adminBotIdRef.current = info.admin_bot_id || "";
         // Auto-load history if DM channel already exists
         if (info.dm_channel_id) {
           setChannelId(info.dm_channel_id);
@@ -79,10 +81,12 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               return;
             }
             if (data.type === "message" && data.message) {
-              // Bot replied, stop typing indicator
-              setBotTyping(false);
-              clearTimeout(typingTimer.current);
               const msg: ChatMessage = data.message;
+              // Only stop typing when the BOT replies (not our own echo)
+              if (msg.sender_id !== adminBotIdRef.current) {
+                setBotTyping(false);
+                clearTimeout(typingTimer.current);
+              }
               setMessages((prev) => {
                 if (prev.some((m) => m.id === msg.id)) return prev;
                 return [...prev, msg];
