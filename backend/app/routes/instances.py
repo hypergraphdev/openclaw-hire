@@ -689,6 +689,11 @@ def chat_messages(
         params.append(f"before={before}")
     qs = "&".join(params)
     result = _hub_request(hub_url, admin_token, "GET", f"/api/channels/{channel_id}/messages?{qs}")
+    # Hub may return a raw array or {messages: [], has_more: bool} — normalize
+    if isinstance(result, list):
+        return {"messages": result, "has_more": len(result) >= limit}
+    if "messages" not in result:
+        return {"messages": [], "has_more": False}
     return result
 
 
