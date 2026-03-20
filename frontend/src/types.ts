@@ -175,4 +175,6 @@ export type HxaOrgAgent = {
   instance_id?: string | null;
   instance_name?: string | null;
   product?: string | null;
+  owner_name?: string | null;
+  owner_email?: string | null;
 };

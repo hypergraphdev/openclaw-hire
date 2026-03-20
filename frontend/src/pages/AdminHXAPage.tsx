@@ -49,6 +49,9 @@ export default function AdminHXAPage() {
   const [transferTargetOrg, setTransferTargetOrg] = useState("");
   const [transferring, setTransferring] = useState(false);
 
+  // Filter
+  const [onlyWithInstance, setOnlyWithInstance] = useState(false);
+
   // Secret display
   const [showOrgSecret, setShowOrgSecret] = useState<string | null>(null);
   const [newSecret, setNewSecret] = useState("");
@@ -343,65 +346,85 @@ export default function AdminHXAPage() {
             </div>
           </div>
 
-          <h3 className="text-xs text-gray-400 mb-2">{t("adminHxa.agents")} ({orgAgents.length})</h3>
-          {loadingAgents ? (
-            <p className="text-gray-500 text-xs">{t("common.loading")}</p>
-          ) : orgAgents.length === 0 ? (
-            <p className="text-gray-500 text-xs">{t("adminHxa.noAgents")}</p>
-          ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-500 border-b border-gray-800">
-                  <th className="text-left py-1.5">Bot</th>
-                  <th className="text-center py-1.5">状态</th>
-                  <th className="text-left py-1.5">{t("adminHxa.role")}</th>
-                  <th className="text-left py-1.5">{t("adminHxa.instance")}</th>
-                  <th className="text-left py-1.5">{t("adminHxa.token")}</th>
-                  <th className="text-right py-1.5">{t("adminHxa.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orgAgents.map((agent) => (
-                  <tr key={agent.bot_id} className="border-b border-gray-800/50">
-                    <td className="py-1.5 text-gray-200 font-mono">
-                      <span className="inline-flex items-center gap-1.5">
-                        <OnlineDot online={agent.online} />
-                        {agent.name}
-                      </span>
-                    </td>
-                    <td className="py-1.5 text-center text-gray-400">
-                      {agent.online ? t("adminHxa.online") : t("adminHxa.offline")}
-                    </td>
-                    <td className="py-1.5 text-gray-400">{agent.auth_role}</td>
-                    <td className="py-1.5 text-gray-400">{agent.instance_name || "-"}</td>
-                    <td className="py-1.5 text-gray-400 font-mono">{agent.token_prefix || "-"}</td>
-                    <td className="py-1.5 text-right">
-                      {agent.instance_id && orgs.length > 1 && (
-                        transferBotId === agent.bot_id ? (
-                          <div className="inline-flex items-center gap-1">
-                            <select value={transferTargetOrg} onChange={(e) => setTransferTargetOrg(e.target.value)}
-                              className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
-                              <option value="">{t("adminHxa.transferTo")}</option>
-                              {orgs.filter((o) => o.id !== selectedOrgId).map((o) => (
-                                <option key={o.id} value={o.id}>{o.name}</option>
-                              ))}
-                            </select>
-                            <button onClick={() => handleTransfer(agent)} disabled={transferring || !transferTargetOrg}
-                              className="text-blue-400 hover:text-blue-300 disabled:opacity-50">
-                              {transferring ? "..." : t("common.ok")}
-                            </button>
-                            <button onClick={() => { setTransferBotId(""); setTransferTargetOrg(""); }} className="text-gray-500">X</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => setTransferBotId(agent.bot_id)} className="text-yellow-500 hover:text-yellow-400">{t("adminHxa.transfer")}</button>
-                        )
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {(() => {
+            const filtered = onlyWithInstance ? orgAgents.filter((a) => a.instance_id) : orgAgents;
+            return (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs text-gray-400">{t("adminHxa.agents")} ({filtered.length}{onlyWithInstance ? ` / ${orgAgents.length}` : ""})</h3>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" checked={onlyWithInstance} onChange={(e) => setOnlyWithInstance(e.target.checked)}
+                      className="rounded bg-gray-800 border-gray-600" />
+                    只看有实例的
+                  </label>
+                </div>
+                {loadingAgents ? (
+                  <p className="text-gray-500 text-xs">{t("common.loading")}</p>
+                ) : filtered.length === 0 ? (
+                  <p className="text-gray-500 text-xs">{t("adminHxa.noAgents")}</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-800">
+                        <th className="text-left py-1.5">Bot</th>
+                        <th className="text-center py-1.5">状态</th>
+                        <th className="text-left py-1.5">{t("adminHxa.role")}</th>
+                        <th className="text-left py-1.5">所有者</th>
+                        <th className="text-left py-1.5">{t("adminHxa.instance")}</th>
+                        <th className="text-left py-1.5">{t("adminHxa.token")}</th>
+                        <th className="text-right py-1.5">{t("adminHxa.actions")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((agent) => (
+                        <tr key={agent.bot_id} className="border-b border-gray-800/50">
+                          <td className="py-1.5 text-gray-200 font-mono">
+                            <span className="inline-flex items-center gap-1.5">
+                              <OnlineDot online={agent.online} />
+                              {agent.name}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-center text-gray-400">
+                            {agent.online ? t("adminHxa.online") : t("adminHxa.offline")}
+                          </td>
+                          <td className="py-1.5 text-gray-400">{agent.auth_role}</td>
+                          <td className="py-1.5 text-gray-400">
+                            {agent.owner_name ? (
+                              <span title={agent.owner_email || ""}>{agent.owner_name}</span>
+                            ) : "-"}
+                          </td>
+                          <td className="py-1.5 text-gray-400">{agent.instance_name || "-"}</td>
+                          <td className="py-1.5 text-gray-400 font-mono">{agent.token_prefix || "-"}</td>
+                          <td className="py-1.5 text-right">
+                            {agent.instance_id && orgs.length > 1 && (
+                              transferBotId === agent.bot_id ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <select value={transferTargetOrg} onChange={(e) => setTransferTargetOrg(e.target.value)}
+                                    className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
+                                    <option value="">{t("adminHxa.transferTo")}</option>
+                                    {orgs.filter((o) => o.id !== selectedOrgId).map((o) => (
+                                      <option key={o.id} value={o.id}>{o.name}</option>
+                                    ))}
+                                  </select>
+                                  <button onClick={() => handleTransfer(agent)} disabled={transferring || !transferTargetOrg}
+                                    className="text-blue-400 hover:text-blue-300 disabled:opacity-50">
+                                    {transferring ? "..." : t("common.ok")}
+                                  </button>
+                                  <button onClick={() => { setTransferBotId(""); setTransferTargetOrg(""); }} className="text-gray-500">X</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setTransferBotId(agent.bot_id)} className="text-yellow-500 hover:text-yellow-400">{t("adminHxa.transfer")}</button>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

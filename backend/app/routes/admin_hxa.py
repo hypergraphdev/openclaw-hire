@@ -437,20 +437,37 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
         except Exception:
             pass
 
-    # Enrich with local instance info
+    # Build instance owner map for enrichment
+    with get_connection() as conn:
+        owner_rows = conn.execute("""
+            SELECT i.id, i.name AS inst_name, i.product, u.name AS owner_name, u.email AS owner_email
+            FROM instances i JOIN users u ON i.owner_id = u.id
+        """).fetchall()
+    owner_map = {}
+    for r in owner_rows:
+        owner_map[r["id"]] = {
+            "inst_name": r["inst_name"], "product": r["product"],
+            "owner_name": r["owner_name"], "owner_email": r["owner_email"],
+        }
+
+    # Enrich with local instance info (match by agent_name since Hub doesn't return token)
     enriched = []
     for bot in bots:
-        bot_token = bot.get("token", "")
-        local = next((a for a in local_agents if a.get("agent_token") == bot_token), None)
+        bot_name = bot.get("name", "")
+        local = next((a for a in local_agents if a.get("agent_name") == bot_name), None)
+        inst_id = local["instance_id"] if local else None
+        owner_info = owner_map.get(inst_id, {}) if inst_id else {}
         enriched.append({
             "bot_id": bot.get("id", ""),
-            "name": bot.get("name", ""),
+            "name": bot_name,
             "online": bot.get("online", False),
             "auth_role": bot.get("auth_role", "member"),
-            "token_prefix": (bot_token[:12] + "...") if bot_token else "",
-            "instance_id": local["instance_id"] if local else None,
+            "token_prefix": (local["agent_token"][:12] + "...") if local and local.get("agent_token") else "",
+            "instance_id": inst_id,
             "instance_name": local["instance_name"] if local else None,
             "product": local["product"] if local else None,
+            "owner_name": owner_info.get("owner_name"),
+            "owner_email": owner_info.get("owner_email"),
         })
     return {"agents": enriched, "org_name": org.get("name", "")}
 
