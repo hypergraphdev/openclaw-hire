@@ -148,6 +148,9 @@ export function MyOrgPage() {
   // @ mention
   const [mentionFilter, setMentionFilter] = useState("");
   const [showMention, setShowMention] = useState(false);
+
+  // Invite to thread
+  const [showInvite, setShowInvite] = useState(false);
   const [topicDraft, setTopicDraft] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
   const [threadDetail, setThreadDetail] = useState<{ initiator_id: string; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[]; context: string | null } | null>(null);
@@ -501,16 +504,51 @@ export function MyOrgPage() {
           {showMembers && threadDetail && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowMembers(false)}>
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-2" onClick={(e) => e.stopPropagation()}>
-                <h3 className="text-sm font-medium text-white">群成员 ({threadDetail.participant_count})</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-white">群成员 ({threadDetail.participant_count})</h3>
+                  <button onClick={() => { setShowMembers(false); setShowInvite(true); }}
+                    className="text-xs text-blue-400 hover:text-blue-300" title="邀请成员">+ 邀请</button>
+                </div>
                 <div className="max-h-60 overflow-auto space-y-1">
                   {threadDetail.participants.map((p) => (
-                    <div key={p.bot_id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800">
+                    <button key={p.bot_id} onClick={() => {
+                      const bot = allBots.find((b) => b.name === p.name);
+                      if (bot) { selectDM(bot); setShowMembers(false); }
+                    }} className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer">
                       <OnlineDot online={p.online} /><span className="text-sm text-gray-200">{p.name || p.bot_id.substring(0, 8)}</span>
                       {p.bot_id === threadDetail.initiator_id && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">创建者</span>}
-                    </div>
+                      <span className="ml-auto text-[10px] text-gray-600">私聊 →</span>
+                    </button>
                   ))}
                 </div>
                 <button onClick={() => setShowMembers(false)} className="text-xs text-gray-500 hover:text-gray-300 w-full text-center pt-2">{t("common.close")}</button>
+              </div>
+            </div>
+          )}
+
+          {/* Invite to thread modal */}
+          {showInvite && target?.type === "thread" && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowInvite(false)}>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-3" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-sm font-medium text-white">邀请成员加入群聊</h3>
+                <div className="max-h-48 overflow-auto space-y-1">
+                  {allBots.filter((b) => !threadMemberNames?.has(b.name)).map((bot) => (
+                    <button key={bot.bot_id} onClick={async () => {
+                      try {
+                        await api.myOrgThreadInvite(target.thread.id, bot.name);
+                        await loadThreadDetail(target.thread.id);
+                      } catch (e: unknown) { alert((e as Error).message || "Failed"); }
+                    }} className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800">
+                      <OnlineDot online={bot.online} />
+                      <span className="text-sm text-gray-200">{bot.name}</span>
+                      <span className="ml-auto text-[10px] text-blue-400">邀请</span>
+                    </button>
+                  ))}
+                  {allBots.filter((b) => !threadMemberNames?.has(b.name)).length === 0 && (
+                    <div className="text-xs text-gray-500 text-center py-2">所有成员都已在群中</div>
+                  )}
+                </div>
+                <button onClick={() => setShowInvite(false)} className="text-xs text-gray-500 hover:text-gray-300 w-full text-center">{t("common.close")}</button>
               </div>
             </div>
           )}
