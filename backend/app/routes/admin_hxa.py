@@ -23,10 +23,15 @@ def _get_agents() -> list[dict]:
     if not RUNTIME_ROOT.exists():
         return agents
 
-    # Get instance names from DB
+    # Get instance names + status from DB
     with get_connection() as conn:
-        rows = conn.execute("SELECT id, name, product FROM instances").fetchall()
-        instance_map = {r["id"]: {"name": r["name"], "product": r["product"]} for r in rows}
+        rows = conn.execute("SELECT id, name, product, install_state, agent_name, status FROM instances").fetchall()
+        instance_map = {r["id"]: {
+            "name": r["name"], "product": r["product"],
+            "install_state": r["install_state"] or "idle",
+            "agent_name_db": r["agent_name"] or "",
+            "status": r["status"] or "",
+        } for r in rows}
 
     for runtime_dir in sorted(RUNTIME_ROOT.iterdir()):
         instance_id = runtime_dir.name
@@ -71,6 +76,8 @@ def _get_agents() -> list[dict]:
                 "agent_token_prefix": (agent_token[:12] + "...") if agent_token else "",
                 "agent_token": agent_token or "",
                 "agent_id": agent_id or "",
+                "install_state": instance_info.get("install_state", "idle"),
+                "is_configured": bool(instance_info.get("agent_name_db")),
             })
 
     return agents

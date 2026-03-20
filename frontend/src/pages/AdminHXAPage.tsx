@@ -17,6 +17,21 @@ interface Agent {
   agent_token_prefix: string;
   agent_token: string;
   agent_id: string;
+  install_state: string;
+  is_configured: boolean;
+}
+
+function InstallDot({ state }: { state: string }) {
+  const color =
+    state === "running" ? "bg-green-400" :
+    state === "failed" ? "bg-red-400" :
+    ["pulling", "configuring", "starting"].includes(state) ? "bg-yellow-400 animate-pulse" :
+    "bg-gray-500";
+  return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
+}
+
+function ConfigDot({ configured }: { configured: boolean }) {
+  return <span className={`inline-block h-2 w-2 rounded-full ${configured ? "bg-green-400" : "bg-red-400"}`} />;
 }
 
 export default function AdminHXAPage() {
@@ -151,6 +166,7 @@ export default function AdminHXAPage() {
                 <tr className="text-gray-500 border-b border-gray-800">
                   <th className="text-left py-2 pr-4">{t("adminHxa.instance")}</th>
                   <th className="text-left py-2 pr-4">{t("adminHxa.product")}</th>
+                  <th className="text-center py-2 pr-2" title="安装 / 配置">状态</th>
                   <th className="text-left py-2 pr-4">{t("adminHxa.agentName")}</th>
                   <th className="text-left py-2 pr-4">{t("adminHxa.token")}</th>
                   <th className="text-left py-2"></th>
@@ -161,6 +177,12 @@ export default function AdminHXAPage() {
                   <tr key={a.instance_id} className="border-b border-gray-800/50">
                     <td className="py-2 pr-4 text-gray-300">{a.instance_name}</td>
                     <td className="py-2 pr-4 text-gray-400 capitalize">{a.product}</td>
+                    <td className="py-2 pr-2 text-center">
+                      <span className="inline-flex items-center gap-1.5">
+                        <InstallDot state={a.install_state} />
+                        <ConfigDot configured={a.is_configured} />
+                      </span>
+                    </td>
                     <td className="py-2 pr-4 text-gray-300 font-mono">
                       {editingAgentId === a.instance_id ? (
                         <div className="flex items-center gap-1">

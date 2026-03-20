@@ -1,18 +1,33 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { StatusPill } from "../components/StatusPill";
 import { useT } from "../contexts/LanguageContext";
 import type { Instance } from "../types";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString([], {
-    month: "short",
+    month: "numeric",
     day: "numeric",
-    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** Colored dot for install state */
+function InstallDot({ state }: { state: string }) {
+  const color =
+    state === "running" ? "bg-green-400" :
+    state === "failed" ? "bg-red-400" :
+    ["pulling", "configuring", "starting"].includes(state) ? "bg-yellow-400 animate-pulse" :
+    "bg-gray-500";
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />;
+}
+
+/** Colored dot for config + org online state */
+function ConfigDot({ inst }: { inst: Instance }) {
+  if (!inst.agent_name) return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" title="未配置组织" />;
+  // has agent_name = configured, show green
+  return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" title="已配置" />;
 }
 
 export function InstancesPage() {
@@ -90,7 +105,7 @@ export function InstancesPage() {
                     <div className="text-white font-medium">{inst.name}</div>
                     <div className="text-[11px] text-gray-500 font-mono mt-1 break-all">{inst.id}</div>
                   </div>
-                  <StatusPill state={inst.install_state} />
+                  <InstallDot state={inst.install_state} />
                 </div>
 
                 <div className="mt-3 text-xs text-gray-400 space-y-1">
@@ -125,7 +140,7 @@ export function InstancesPage() {
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.name")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.product")}</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.installState")}</th>
+                  <th className="text-center px-3 py-3 text-xs text-gray-500 font-medium" title="安装状态">状态</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.configured")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.orgName")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.ports")}</th>
@@ -143,12 +158,15 @@ export function InstancesPage() {
                     <td className="px-5 py-3">
                       <span className="text-gray-300 capitalize">{inst.product}</span>
                     </td>
-                    <td className="px-5 py-3">
-                      <StatusPill state={inst.install_state} />
+                    <td className="px-3 py-3 text-center">
+                      <InstallDot state={inst.install_state} />
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs ${inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}`}>
-                        {configStatus(inst)}
+                      <span className="inline-flex items-center gap-2">
+                        <span className={`text-xs ${inst.is_telegram_configured && inst.agent_name ? "text-green-400" : "text-amber-400"}`}>
+                          {configStatus(inst)}
+                        </span>
+                        <ConfigDot inst={inst} />
                       </span>
                     </td>
                     <td className="px-5 py-3 text-gray-300 text-xs font-mono">{inst.agent_name || "-"}</td>
