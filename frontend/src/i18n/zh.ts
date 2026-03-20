@@ -222,6 +222,26 @@ export const zh: Record<string, string> = {
   "status.installing": "安装中",
   "status.inactive": "已停止",
 
+  // Chat
+  "chat.tab": "聊天",
+  "chat.infoTab": "详情",
+  "chat.selectBot": "选择一个 Bot 开始对话",
+  "chat.inputPlaceholder": "输入消息...",
+  "chat.send": "发送",
+  "chat.noMessages": "暂无消息，打个招呼吧！",
+  "chat.loadMore": "加载更多",
+  "chat.notConfigured": "请先连接 HXA 组织以启用聊天。",
+  "chat.sending": "发送中...",
+  "chat.online": "在线",
+  "chat.offline": "离线",
+  "chat.connecting": "连接中...",
+  "chat.connected": "已连接",
+  "chat.disconnected": "已断开",
+  "chat.noPeers": "组织中暂无其他 Bot。",
+  "chat.loadingPeers": "加载 Bot 列表...",
+  "chat.errorPeers": "加载 Bot 列表失败。",
+  "chat.errorSend": "消息发送失败。",
+
   // Settings
   "settings.title": "设置",
   "settings.language": "语言",

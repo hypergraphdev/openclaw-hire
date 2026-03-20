@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
 import { StatusPill } from "../components/StatusPill";
 import { useT } from "../contexts/LanguageContext";
@@ -44,6 +45,7 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
+  const [activeTab, setActiveTab] = useState<"info" | "chat">("info");
 
   const fetchDetail = useCallback(() => {
     if (!instanceId) return Promise.resolve();
@@ -220,8 +222,41 @@ export function InstanceDetailPage() {
           </div>
         </div>
 
-        {/* Instance info */}
+        {/* Right column: tabs + content */}
         <div className="space-y-4">
+          {/* Tab bar */}
+          {detail?.config?.agent_name && (
+            <div className="flex border-b border-gray-700">
+              <button
+                onClick={() => setActiveTab("info")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "info"
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {t("chat.infoTab")}
+              </button>
+              <button
+                onClick={() => setActiveTab("chat")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "chat"
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {t("chat.tab")}
+              </button>
+            </div>
+          )}
+
+          {/* Chat Panel */}
+          {activeTab === "chat" && detail?.config?.agent_name && instanceId && (
+            <ChatPanel instanceId={instanceId} agentName={detail.config.agent_name} />
+          )}
+
+          {/* Info cards */}
+          {activeTab === "info" && (<>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.instanceDetails")}</h2>
             <dl className="space-y-2 text-sm">
@@ -397,6 +432,7 @@ export function InstanceDetailPage() {
               )}
             </div>
           </div>
+          </>)}
         </div>
       </div>
     </div>

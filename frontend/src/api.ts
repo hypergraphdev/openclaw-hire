@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, Instance, InstanceDetail, InstanceLogs, ProductCatalog, TelegramConfigResponse, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -114,6 +114,25 @@ export const api = {
 
   adminUserInstances: (userId: string) =>
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
+
+  // Chat proxy
+  chatPeers: (id: string) =>
+    request<ChatPeer[]>(`/api/instances/${id}/chat/peers`),
+
+  chatSend: (id: string, to: string, content: string) =>
+    request<ChatSendResponse>(`/api/instances/${id}/chat/send`, {
+      method: "POST",
+      body: JSON.stringify({ to, content }),
+    }),
+
+  chatMessages: (id: string, channelId: string, before?: string) => {
+    const params = new URLSearchParams({ channel_id: channelId, limit: "50" });
+    if (before) params.set("before", before);
+    return request<ChatMessagesResponse>(`/api/instances/${id}/chat/messages?${params}`);
+  },
+
+  chatWsTicket: (id: string) =>
+    request<ChatWsTicketResponse>(`/api/instances/${id}/chat/ws-ticket`, { method: "POST" }),
 
   // Raw fetch helpers (return Response)
   get: (path: string) => {

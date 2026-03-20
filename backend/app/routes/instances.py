@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import threading
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -422,3 +424,122 @@ def delete_instance(
     db.execute("DELETE FROM instances WHERE id = ? AND owner_id = ?", (instance_id, current_user["id"]))
     db.commit()
     return {"status": "deleted", "instance_id": instance_id}
+
+
+# ─── Chat proxy helpers ─────────────────────────────────────────────
+
+def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
+    """Return (hub_url, org_token) for an instance, or raise 400/404."""
+    inst = db.execute(
+        "SELECT id FROM instances WHERE id = ? AND owner_id = ?",
+        (instance_id, owner_id),
+    ).fetchone()
+    if not inst:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+    cfg = db.execute(
+        "SELECT hub_url, org_token FROM instance_configs WHERE instance_id = ?",
+        (instance_id,),
+    ).fetchone()
+    if not cfg or not cfg["org_token"] or not cfg["hub_url"]:
+        raise HTTPException(status_code=400, detail="Instance not configured for HXA.")
+    return cfg["hub_url"].rstrip("/"), cfg["org_token"]
+
+
+def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | None = None):
+    """Make an authenticated request to the HXA Hub API."""
+    url = f"{hub_url}{path}"
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Origin": "https://www.ucai.net",
+        },
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:500] if e.fp else str(e)
+        raise HTTPException(status_code=e.code, detail=f"Hub API error: {detail}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Hub unreachable: {e}")
+
+
+# ─── Chat proxy endpoints ───────────────────────────────────────────
+
+@router.get("/{instance_id}/chat/peers")
+def chat_peers(
+    instance_id: str,
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List bots in the org (excluding self)."""
+    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
+    result = _hub_request(hub_url, token, "GET", "/api/bots?limit=100")
+    bots = result if isinstance(result, list) else result.get("items", [])
+    # Determine self bot_id from token prefix or by filtering
+    # We return all bots; frontend can filter by agent_name
+    return [
+        {"id": b["id"], "name": b["name"], "online": b.get("online", False)}
+        for b in bots
+    ]
+
+
+from pydantic import BaseModel as _BaseModel
+
+
+class _ChatSendRequest(_BaseModel):
+    to: str
+    content: str
+
+
+@router.post("/{instance_id}/chat/send")
+def chat_send(
+    instance_id: str,
+    req: _ChatSendRequest,
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Send a DM to a bot via Hub API."""
+    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
+    result = _hub_request(hub_url, token, "POST", "/api/send", {"to": req.to, "content": req.content})
+    return result
+
+
+@router.get("/{instance_id}/chat/messages")
+def chat_messages(
+    instance_id: str,
+    channel_id: str,
+    before: str | None = None,
+    limit: int = 50,
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Get messages from a DM channel."""
+    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
+    params = [f"limit={min(limit, 200)}"]
+    if before:
+        params.append(f"before={before}")
+    qs = "&".join(params)
+    result = _hub_request(hub_url, token, "GET", f"/api/channels/{channel_id}/messages?{qs}")
+    return result
+
+
+@router.post("/{instance_id}/chat/ws-ticket")
+def chat_ws_ticket(
+    instance_id: str,
+    current_user=Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Get a WebSocket ticket for real-time chat."""
+    hub_url, token = _get_chat_config(instance_id, current_user["id"], db)
+    result = _hub_request(hub_url, token, "POST", "/api/ws-ticket", {})
+    # Convert hub_url to ws_url
+    ws_url = hub_url.replace("https://", "wss://").replace("http://", "ws://")
+    if not ws_url.endswith("/ws"):
+        ws_url = ws_url.rstrip("/") + "/ws"
+    return {"ticket": result["ticket"], "ws_url": ws_url}

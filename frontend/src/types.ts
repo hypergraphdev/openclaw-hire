@@ -103,3 +103,37 @@ export type AdminUserInstances = {
   user: User;
   instances: Instance[];
 };
+
+// ─── Chat types ───
+
+export type ChatPeer = {
+  id: string;
+  name: string;
+  online: boolean;
+};
+
+export type ChatMessage = {
+  id: string;
+  channel_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  content_type?: string;
+  parts?: { type: string; content?: string; url?: string; alt?: string; name?: string }[];
+  created_at: number;
+};
+
+export type ChatMessagesResponse = {
+  messages: ChatMessage[];
+  has_more: boolean;
+};
+
+export type ChatSendResponse = {
+  channel_id: string;
+  message: ChatMessage;
+};
+
+export type ChatWsTicketResponse = {
+  ticket: string;
+  ws_url: string;
+};

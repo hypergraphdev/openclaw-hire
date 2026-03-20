@@ -222,6 +222,26 @@ export const en: Record<string, string> = {
   "status.installing": "Installing",
   "status.inactive": "Stopped",
 
+  // Chat
+  "chat.tab": "Chat",
+  "chat.infoTab": "Info",
+  "chat.selectBot": "Select a bot to chat",
+  "chat.inputPlaceholder": "Type a message...",
+  "chat.send": "Send",
+  "chat.noMessages": "No messages yet. Say hello!",
+  "chat.loadMore": "Load older messages",
+  "chat.notConfigured": "Connect to HXA organization first to enable chat.",
+  "chat.sending": "Sending...",
+  "chat.online": "online",
+  "chat.offline": "offline",
+  "chat.connecting": "Connecting...",
+  "chat.connected": "Connected",
+  "chat.disconnected": "Disconnected",
+  "chat.noPeers": "No other bots in the organization.",
+  "chat.loadingPeers": "Loading bots...",
+  "chat.errorPeers": "Failed to load bots.",
+  "chat.errorSend": "Failed to send message.",
+
   // Settings
   "settings.title": "Settings",
   "settings.language": "Language",
