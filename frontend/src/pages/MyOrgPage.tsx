@@ -159,7 +159,8 @@ export function MyOrgPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const myBotIdRef = useRef("");
+  const myBotIdRef = useRef("");        // admin bot id (for DM with own bot)
+  const myInstanceBotIdRef = useRef(""); // instance bot id (for thread + DM with others)
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const userScrolledUp = useRef(false);
   const currentTargetRef = useRef("");
@@ -227,6 +228,58 @@ export function MyOrgPage() {
     connect();
     return () => { mounted = false; wsRef.current?.close(); wsRef.current = null; };
   }, [target?.type === "dm" ? (target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id : null, chatInfo?.admin_bot_id]);
+
+  // WebSocket for Thread — uses instance bot token
+  useEffect(() => {
+    if (!target || target.type !== "thread") return;
+    let mounted = true;
+    async function connect() {
+      setWsStatus("connecting");
+      try {
+        // Use empty target to get instance bot ws ticket
+        const { ticket, ws_url } = await api.myOrgChatWsTicket("");
+        const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
+        wsRef.current = ws;
+        ws.onopen = () => {
+          if (!mounted) return;
+          setWsStatus("connected");
+          // Subscribe to thread
+          ws.send(JSON.stringify({ type: "subscribe", thread_id: (target as { type: "thread"; thread: OrgThread }).thread.id }));
+        };
+        ws.onclose = () => {
+          if (!mounted) return;
+          setWsStatus("disconnected");
+          wsRef.current = null;
+          setTimeout(() => mounted && connect(), 3000);
+        };
+        ws.onerror = () => ws.close();
+        ws.onmessage = (ev) => {
+          try {
+            const d = JSON.parse(ev.data);
+            if (d.type === "thread_message" && d.message) {
+              const msg = d.message;
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === msg.id)) return prev;
+                return sortMsgs([...prev, msg]);
+              });
+              // Sound for messages from others
+              const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+              const senderName = msg.sender_name || "";
+              if (!myNames.has(senderName)) {
+                playNotificationSound();
+              }
+              if (!userScrolledUp.current) {
+                requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+              }
+            }
+          } catch { /* */ }
+        };
+        // Thread WS doesn't need identity tracking - isSelf uses myNames
+      } catch { mounted && setWsStatus("disconnected"); }
+    }
+    connect();
+    return () => { mounted = false; wsRef.current?.close(); wsRef.current = null; };
+  }, [target?.type === "thread" ? (target as { type: "thread"; thread: OrgThread }).thread.id : null]);
 
   useEffect(() => { if (!userScrolledUp.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -653,7 +706,9 @@ export function MyOrgPage() {
                 {hasMore && <button onClick={loadMore} className="text-xs text-blue-400 hover:text-blue-300 block mx-auto mb-2">{t("chat.loadMore")}</button>}
                 {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? "无搜索结果" : t("chat.noMessages")}</div>}
                 {filteredMessages.map((msg) => {
-                  const isSelf = msg.sender_id === myBotId;
+                  const senderName = (msg as ChatMessage).sender_name || "";
+                  const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+                  const isSelf = msg.sender_id === myBotId || msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
                   return (
