@@ -429,7 +429,7 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
     bots = []
     if org_secret:
         try:
-            result = _hub_org_admin_request("GET", "/api/bots?limit=200", org_id, org_secret)
+            result = _hub_org_admin_request("GET", "/api/bots", org_id, org_secret)
             if isinstance(result, dict):
                 bots = result.get("bots", [])
             elif isinstance(result, list):
