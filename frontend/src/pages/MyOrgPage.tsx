@@ -373,7 +373,7 @@ export function MyOrgPage() {
   }
 
   function selectAllParticipants() {
-    const all = (data?.all_bots || []).filter((b) => !b.is_mine).map((b) => b.name);
+    const all = (data?.all_bots || []).map((b) => b.name);
     setThreadParticipants(all);
   }
 
@@ -578,10 +578,10 @@ export function MyOrgPage() {
                     <button onClick={selectAllParticipants} className="text-[10px] text-blue-400 hover:text-blue-300">全选</button>
                   </div>
                   <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
-                    {allBots.filter((b) => !b.is_mine).map((bot) => (
+                    {allBots.map((bot) => (
                       <label key={bot.bot_id} className="flex items-center gap-1 px-2 py-1 bg-gray-800 rounded text-xs text-gray-300 cursor-pointer hover:bg-gray-700">
                         <input type="checkbox" checked={threadParticipants.includes(bot.name)} onChange={(e) => { if (e.target.checked) setThreadParticipants((p) => [...p, bot.name]); else setThreadParticipants((p) => p.filter((n) => n !== bot.name)); }} className="rounded bg-gray-700 border-gray-600" />
-                        {bot.name}
+                        {bot.name}{bot.is_mine && <span className="text-[9px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
                       </label>
                     ))}
                   </div>
