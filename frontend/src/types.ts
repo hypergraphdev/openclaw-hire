@@ -208,6 +208,7 @@ export type OrgThread = {
   status: string;
   created_at: number;
   last_activity_at: number;
+  participant_count?: number;
 };
 
 export type ThreadMessage = {

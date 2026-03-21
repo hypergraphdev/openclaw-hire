@@ -6,6 +6,23 @@ import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, SearchResu
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
 
+function friendlyTime(ts: number | string | undefined): string {
+  if (!ts) return "";
+  const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  const now = Date.now();
+  const diff = Math.floor((now - d.getTime()) / 1000);
+  if (diff < 10) return "刚刚";
+  if (diff < 60) return `${diff}秒前`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${month}/${day} ${h}:${m}`;
+}
+
 // @ Mention popup — shows all org members, marks in-thread vs not-in-thread
 function MentionPopup({ members, filter, onSelect, onClose, threadMembers }: {
   members: { name: string; online: boolean }[];
@@ -161,6 +178,7 @@ export function MyOrgPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const myBotIdRef = useRef("");        // admin bot id (for DM with own bot)
+  const currentThreadIdRef = useRef(""); // track current thread for WS callback
   const myInstanceBotIdRef = useRef(""); // instance bot id (for thread + DM with others)
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const userScrolledUp = useRef(false);
@@ -223,6 +241,7 @@ export function MyOrgPage() {
   // WebSocket for DM
   useEffect(() => {
     if (!target || target.type !== "dm" || !chatInfo) return;
+    currentThreadIdRef.current = "";  // clear thread ref when in DM mode
     let mounted = true;
     async function connect() {
       setWsStatus("connecting");
@@ -253,6 +272,7 @@ export function MyOrgPage() {
   // WebSocket for Thread — uses instance bot token
   useEffect(() => {
     if (!target || target.type !== "thread") return;
+    currentThreadIdRef.current = (target as { type: "thread"; thread: OrgThread }).thread.id;
     let mounted = true;
     async function connect() {
       setWsStatus("connecting");
@@ -281,7 +301,7 @@ export function MyOrgPage() {
             if (d.type === "thread_message" && d.message) {
               const msg = d.message;
               const msgThreadId = d.thread_id || msg.thread_id || "";
-              const currentThreadId = (target as { type: "thread"; thread: OrgThread })?.thread?.id || "";
+              const currentThreadId = currentThreadIdRef.current;
               const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
               if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
               const senderName = msg.sender_name || "";
@@ -558,6 +578,7 @@ export function MyOrgPage() {
             {threads.map((thread) => (
               <button key={thread.id} onClick={() => selectThread(thread)} className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${selectedKey === `thread_${thread.id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"}`}>
                 <span className="text-gray-400">#</span><span className="text-sm text-gray-200 truncate flex-1">{thread.topic}</span>
+                {thread.participant_count != null && <span className="text-[10px] text-gray-500">({thread.participant_count})</span>}
                 <Badge count={unreadCounts[`thread_${thread.id}`] || 0} />
               </button>
             ))}
@@ -784,11 +805,15 @@ export function MyOrgPage() {
                   }
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
+                  const msgTime = friendlyTime(msg.created_at);
                   return (
                     <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
-                        {!isSelf && <div className="text-[10px] text-gray-400 mb-0.5">{senderName}</div>}
-                        {isSelf && (target?.type === "thread" || (data?.my_bots || []).length > 1) && <div className="text-[10px] text-blue-200/70 mb-0.5 text-right">{senderName}</div>}
+                        <div className={`flex items-center gap-2 mb-0.5 ${isSelf ? "justify-end" : "justify-start"}`}>
+                          {!isSelf && <span className="text-[10px] text-gray-400">{senderName}</span>}
+                          {isSelf && (target?.type === "thread" || (data?.my_bots || []).length > 1) && <span className="text-[10px] text-blue-200/70">{senderName}</span>}
+                          {msgTime && <span className={`text-[10px] ${isSelf ? "text-blue-200/50" : "text-gray-600"}`}>{msgTime}</span>}
+                        </div>
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
                         {textContent && <RenderContent content={textContent} threadMemberNames={target?.type === "thread" ? threadMemberNames : undefined} onMentionClick={handleMentionClick} />}
                       </div>
