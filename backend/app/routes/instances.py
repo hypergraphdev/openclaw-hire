@@ -464,6 +464,9 @@ def rename_agent(
     new_name = req.agent_name.strip()
     if not new_name or len(new_name) < 2:
         raise HTTPException(status_code=400, detail="名称不能为空且至少2个字符。")
+    # Auto-append _Bot suffix if missing
+    if not new_name.endswith("_Bot"):
+        new_name = new_name + "_Bot"
 
     from .admin_hxa import _get_agent_token, _update_agent_name_in_config
     from ..services.install_service import _get_hub_url

@@ -265,6 +265,7 @@ export function MyOrgPage() {
               });
               // Sound for messages from others
               const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+              if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
               const senderName = msg.sender_name || "";
               if (!myNames.has(senderName)) {
                 playNotificationSound();
@@ -709,6 +710,7 @@ export function MyOrgPage() {
                 {filteredMessages.map((msg) => {
                   const senderName = (msg as ChatMessage).sender_name || "";
                   const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+                  if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
                   const isSelf = msg.sender_id === myBotId || msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
