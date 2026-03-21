@@ -46,6 +46,12 @@ export function AdminPage() {
   const [diagLoading, setDiagLoading] = useState(false);
   const [controlLoading, setControlLoading] = useState("");
 
+  // Resource limits form
+  const [resMemory, setResMemory] = useState(8192);
+  const [resCpus, setResCpus] = useState(4);
+  const [resSaving, setResSaving] = useState(false);
+  const [resMsg, setResMsg] = useState("");
+
   // Close menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -126,10 +132,14 @@ export function AdminPage() {
     setDiagId(instId);
     setDiagLoading(true);
     setDiagData(null);
+    setResMsg("");
     setMenuId("");
     try {
       const data = await api.adminInstanceDiagnostics(instId);
       setDiagData(data);
+      // Pre-populate resource limits from current container config
+      if (data.container?.memory_limit_mb) setResMemory(data.container.memory_limit_mb);
+      if (data.container?.cpu_limit) setResCpus(data.container.cpu_limit);
     } catch (e: unknown) {
       alert((e as Error).message || "Failed to load diagnostics");
       setDiagId("");
@@ -401,6 +411,58 @@ export function AdminPage() {
                     <span className="text-gray-500">磁盘占用</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
                     <span className="text-gray-500">内存限制</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "无限制"}</span>
                     <span className="text-gray-500">CPU 限制</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit} 核` : "无限制"}</span>
+                  </div>
+                </div>
+
+                {/* Resource Usage */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">资源使用</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">CPU 使用率</span>
+                    <span className="text-gray-200">{diagData.resource_usage?.cpu_percent != null ? `${diagData.resource_usage.cpu_percent}%` : "-"}</span>
+                    <span className="text-gray-500">内存使用</span>
+                    <span className="text-gray-200">
+                      {diagData.resource_usage?.mem_used_mb != null
+                        ? `${diagData.resource_usage.mem_used_mb} MB / ${diagData.resource_usage.mem_total_mb ?? "?"} MB`
+                        : "-"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Resource Limits */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-2">
+                  <h4 className="text-gray-400 font-medium mb-2">资源限制</h4>
+                  <div className="flex items-center gap-3">
+                    <label className="text-gray-500 w-20">CPU 核数</label>
+                    <input type="number" min={0.5} max={32} step={0.5} value={resCpus}
+                      onChange={(e) => setResCpus(parseFloat(e.target.value) || 1)}
+                      className="w-24 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-gray-500 w-20">内存 MB</label>
+                    <input type="number" min={256} max={65536} step={256} value={resMemory}
+                      onChange={(e) => setResMemory(parseInt(e.target.value) || 1024)}
+                      className="w-24 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button onClick={async () => {
+                      setResSaving(true);
+                      setResMsg("");
+                      try {
+                        const res = await api.adminInstanceResources(diagId, resMemory, resCpus);
+                        setResMsg(res.ok ? "已应用" : (res.detail || "失败"));
+                        // Refresh diagnostics
+                        const data = await api.adminInstanceDiagnostics(diagId);
+                        setDiagData(data);
+                      } catch (e: unknown) {
+                        setResMsg((e as Error).message || "操作失败");
+                      }
+                      setResSaving(false);
+                    }} disabled={resSaving}
+                      className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
+                      {resSaving ? "..." : "应用"}
+                    </button>
+                    {resMsg && <span className={`text-xs ${resMsg === "已应用" ? "text-green-400" : "text-red-400"}`}>{resMsg}</span>}
                   </div>
                 </div>
 

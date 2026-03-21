@@ -133,6 +133,12 @@ export const api = {
       method: "POST", body: JSON.stringify({ action }),
     }),
 
+  adminInstanceResources: (instanceId: string, memoryMb: number, cpus: number) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    request<any>(`/api/admin/instances/${instanceId}/resources`, {
+      method: "POST", body: JSON.stringify({ memory_mb: memoryMb, cpus }),
+    }),
+
   // Chat proxy
   chatInfo: (id: string) =>
     request<ChatInfo>(`/api/instances/${id}/chat/info`),

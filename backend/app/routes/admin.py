@@ -305,6 +305,42 @@ def _get_container_info(container_name: str) -> dict:
     return result
 
 
+def _get_resource_usage(container_name: str) -> dict:
+    """Get live CPU and memory usage via docker stats."""
+    result: dict = {"cpu_percent": None, "mem_used_mb": None, "mem_total_mb": None}
+    rc, out = _docker_run([
+        "docker", "stats", "--no-stream", "--format",
+        "{{.CPUPerc}} {{.MemUsage}}", container_name,
+    ])
+    if rc != 0 or not out:
+        return result
+    # Example output: "12.34% 512MiB / 8GiB"
+    try:
+        parts = out.split()
+        # CPU percent – strip trailing '%'
+        cpu_str = parts[0].rstrip("%")
+        result["cpu_percent"] = float(cpu_str)
+
+        # Memory – parts[1] is used, parts[2] is '/', parts[3] is total
+        def _parse_mem(s: str) -> int:
+            """Convert a docker memory string like '512MiB' or '2GiB' to MB."""
+            s = s.strip()
+            if s.upper().endswith("GIB"):
+                return int(float(s[:-3]) * 1024)
+            if s.upper().endswith("MIB"):
+                return int(float(s[:-3]))
+            if s.upper().endswith("KIB"):
+                return max(1, int(float(s[:-3]) / 1024))
+            # Fallback: try plain number as bytes
+            return int(float(s) / (1024 * 1024))
+
+        result["mem_used_mb"] = _parse_mem(parts[1])
+        result["mem_total_mb"] = _parse_mem(parts[3])
+    except (IndexError, ValueError):
+        pass
+    return result
+
+
 @router.get("/instances/{instance_id}/diagnostics")
 def instance_diagnostics(
     instance_id: str,
@@ -357,12 +393,16 @@ def instance_diagnostics(
     # Container info
     container = _get_container_info(container_name)
 
+    # Resource usage (live CPU / memory)
+    resource_usage = _get_resource_usage(container_name)
+
     return {
         "basic_info": basic_info,
         "hxa_plugin": hxa_plugin,
         "telegram": telegram,
         "claude": claude,
         "container": container,
+        "resource_usage": resource_usage,
     }
 
 
@@ -472,3 +512,43 @@ def instance_control(
 
     # Should not reach here
     raise HTTPException(status_code=400, detail="Unknown action.")
+
+
+# ---------------------------------------------------------------------------
+#  Instance resource limits
+# ---------------------------------------------------------------------------
+
+class ResourceLimitRequest(BaseModel):
+    memory_mb: int
+    cpus: float
+
+
+@router.post("/instances/{instance_id}/resources")
+def instance_resources(
+    instance_id: str,
+    payload: ResourceLimitRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Update container resource limits (memory & CPU)."""
+    _require_admin(current_user)
+
+    row = db.execute(
+        "SELECT product FROM instances WHERE id = ?", (instance_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+
+    product = row["product"] or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+
+    rc, out = _docker_run([
+        "docker", "update",
+        f"--memory={payload.memory_mb}m",
+        f"--cpus={payload.cpus}",
+        container_name,
+    ], timeout=15)
+
+    if rc != 0:
+        return {"ok": False, "detail": out or "docker update failed"}
+    return {"ok": True, "detail": f"Resources updated: {payload.memory_mb}MB memory, {payload.cpus} CPUs"}
