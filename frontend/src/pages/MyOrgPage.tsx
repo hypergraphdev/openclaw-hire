@@ -382,7 +382,7 @@ export function MyOrgPage() {
     const oldest = messages[0];
     try {
       if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
-      else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, oldest.id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
+      else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, String(oldest.created_at || oldest.id)); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
     } catch { /* */ }
   }
 
