@@ -607,16 +607,40 @@ export function MyOrgPage() {
                     className="text-xs text-blue-400 hover:text-blue-300" title="邀请成员">+ 邀请</button>
                 </div>
                 <div className="max-h-60 overflow-auto space-y-1">
-                  {threadDetail.participants.map((p) => (
-                    <button key={p.bot_id} onClick={() => {
-                      const bot = allBots.find((b) => b.name === p.name);
-                      if (bot) { selectDM(bot); setShowMembers(false); }
-                    }} className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer">
-                      <OnlineDot online={p.online} /><span className="text-sm text-gray-200">{p.name || p.bot_id.substring(0, 8)}</span>
-                      {p.bot_id === threadDetail.initiator_id && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">创建者</span>}
-                      <span className="ml-auto text-[10px] text-gray-600">私聊 →</span>
-                    </button>
-                  ))}
+                  {threadDetail.participants.map((p) => {
+                    const isMine = (data?.my_bots || []).some((b: { agent_name: string }) => b.agent_name === p.name);
+                    const isCreator = p.bot_id === threadDetail.initiator_id;
+                    const myBotIsCreator = (data?.my_bots || []).some((b: { agent_name: string }) => {
+                      const found = threadDetail.participants.find((pp) => pp.name === b.agent_name);
+                      return found?.bot_id === threadDetail.initiator_id;
+                    });
+                    return (
+                    <div key={p.bot_id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 group">
+                      <button onClick={() => {
+                        const bot = allBots.find((b) => b.name === p.name);
+                        if (bot) { selectDM(bot); setShowMembers(false); }
+                      }} className="flex items-center gap-2 flex-1 text-left">
+                        <OnlineDot online={p.online} /><span className="text-sm text-gray-200">{p.name || p.bot_id.substring(0, 8)}</span>
+                        {isCreator && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">创建者</span>}
+                        {isMine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
+                      </button>
+                      <span className="text-[10px] text-gray-600 cursor-pointer" onClick={() => {
+                        const bot = allBots.find((b) => b.name === p.name);
+                        if (bot) { selectDM(bot); setShowMembers(false); }
+                      }}>私聊 →</span>
+                      {!isCreator && myBotIsCreator && (
+                        <button onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`确定将 ${p.name} 移出群聊？`)) return;
+                          try {
+                            await api.myOrgThreadKick(target!.type === "thread" ? (target as { type: "thread"; thread: OrgThread }).thread.id : "", p.bot_id);
+                            await loadThreadDetail((target as { type: "thread"; thread: OrgThread }).thread.id);
+                          } catch (err: unknown) { alert((err as Error).message || "Failed"); }
+                        }} className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-300">移除</button>
+                      )}
+                    </div>
+                    );
+                  })}
                 </div>
                 <button onClick={() => setShowMembers(false)} className="text-xs text-gray-500 hover:text-gray-300 w-full text-center pt-2">{t("common.close")}</button>
               </div>
@@ -760,19 +784,22 @@ export function MyOrgPage() {
               {/* Image preview */}
               {pendingImage && <div className="px-4 py-2 border-t border-gray-800 flex items-center gap-2"><img src={pendingImage.preview} alt="" className="h-16 rounded" /><button onClick={cancelImage} className="text-xs text-red-400">✕</button></div>}
 
-              {/* Bot identity selector for threads (when user has multiple bots) */}
-              {target?.type === "thread" && (data?.my_bots || []).length > 1 && (
-                <div className="px-4 py-1.5 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
-                  <span>发言身份:</span>
-                  <select value={threadBotId || (data?.my_bots?.[0]?.instance_id || "")}
-                    onChange={(e) => setThreadBotId(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200">
-                    {(data?.my_bots || []).map((b: { instance_id: string; agent_name: string }) => (
-                      <option key={b.instance_id} value={b.instance_id}>{b.agent_name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Bot identity selector for threads (only bots in this thread) */}
+              {target?.type === "thread" && (() => {
+                const myBotsInThread = (data?.my_bots || []).filter((b: { agent_name: string }) => threadMemberNames?.has(b.agent_name));
+                return myBotsInThread.length > 1 ? (
+                  <div className="px-4 py-1.5 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
+                    <span>发言身份:</span>
+                    <select value={threadBotId || myBotsInThread[0]?.instance_id || ""}
+                      onChange={(e) => setThreadBotId(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200">
+                      {myBotsInThread.map((b: { instance_id: string; agent_name: string }) => (
+                        <option key={b.instance_id} value={b.instance_id}>{b.agent_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null;
+              })()}
 
               {/* Input */}
               <div className="px-4 py-3 border-t border-gray-800">

@@ -202,6 +202,8 @@ export const api = {
     request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/leave`, { method: "POST" }),
   myOrgThreadInvite: (threadId: string, name: string) =>
     request<unknown>(`/api/my-org/threads/${threadId}/invite`, { method: "POST", body: JSON.stringify({ name }) }),
+  myOrgThreadKick: (threadId: string, botId: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/kick`, { method: "POST", body: JSON.stringify({ bot_id: botId }) }),
 
   // Search
   myOrgSearchSync: () => request<{ ok: boolean; new_messages: number }>("/api/my-org/search/sync", { method: "POST" }),

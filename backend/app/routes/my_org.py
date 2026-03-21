@@ -450,9 +450,11 @@ def create_thread(
         except Exception:
             name_to_id = {}
 
+        # The creator bot is auto-joined, skip only that one
+        creator_name = info["my_bots"][0]["agent_name"] if info["my_bots"] else ""
         for name in req.participant_names:
-            if name in my_agent_names:
-                continue  # Skip self
+            if name == creator_name:
+                continue  # Skip creator (already joined)
             bot_id = name_to_id.get(name, name)  # Fall back to name (resolveBot supports both)
             try:
                 _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"bot_id": bot_id})
@@ -699,6 +701,33 @@ def invite_to_thread(
         raise HTTPException(status_code=400, detail="No bot available.")
     # Hub requires bot_id, resolve name first
     return _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/participants", {"bot_id": req.name})
+
+
+class KickRequest(BaseModel):
+    bot_id: str
+
+
+@router.post("/threads/{thread_id}/kick")
+def kick_from_thread(
+    thread_id: str,
+    req: KickRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Remove a bot from thread (creator only)."""
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+    hub_url = _get_hub_url().rstrip("/")
+    token = _get_thread_token(user_id, info, hub_url, db)
+    if not token:
+        raise HTTPException(status_code=400, detail="No bot available.")
+    try:
+        _hub_request(hub_url, token, "DELETE", f"/api/threads/{thread_id}/participants/{req.bot_id}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
