@@ -123,6 +123,16 @@ export const api = {
   adminUserInstances: (userId: string) =>
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
 
+  adminInstanceDiagnostics: (instanceId: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    request<any>(`/api/admin/instances/${instanceId}/diagnostics`),
+
+  adminInstanceControl: (instanceId: string, action: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    request<any>(`/api/admin/instances/${instanceId}/control`, {
+      method: "POST", body: JSON.stringify({ action }),
+    }),
+
   // Chat proxy
   chatInfo: (id: string) =>
     request<ChatInfo>(`/api/instances/${id}/chat/info`),

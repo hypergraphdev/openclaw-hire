@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+import subprocess
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from ..deps import get_current_user, get_db
 from ..schemas import AdminUserInstancesResponse, InstanceResponse, UserResponse
+
+RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -122,3 +129,346 @@ def platform_stats(
         "running_bots": running_bots,
         "org_bots": org_bots,
     }
+
+
+# ---------------------------------------------------------------------------
+#  Instance diagnostics & control
+# ---------------------------------------------------------------------------
+
+def _docker_run(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
+    """Run a subprocess command with timeout, return (returncode, stdout)."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return proc.returncode, (proc.stdout or "").strip()
+    except subprocess.TimeoutExpired:
+        return -1, "timeout"
+    except Exception as e:
+        return -1, str(e)
+
+
+def _get_container_name(instance_id: str, product: str) -> str:
+    """Derive docker container name from instance_id and product type."""
+    if product == "zylos":
+        return f"zylos_{instance_id}"
+    # OpenClaw: hire_{instance_id_no_dashes}-openclaw-gateway-1
+    project_raw = f"hire_{instance_id.replace('-', '')}"
+    project = project_raw[:24]
+    return f"{project}-openclaw-gateway-1"
+
+
+def _get_compose_project(instance_id: str, product: str) -> str:
+    """Derive docker compose project name."""
+    if product == "zylos":
+        return f"zylos_{instance_id}"
+    project_raw = f"hire_{instance_id.replace('-', '')}"
+    return project_raw[:24]
+
+
+def _get_hxa_plugin_info(instance_id: str) -> dict:
+    """Read HXA plugin info from runtime config files."""
+    runtime_dir = RUNTIME_ROOT / instance_id
+    agent_token = ""
+    agent_name = ""
+    org_id = ""
+
+    # OpenClaw
+    oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
+    if oc_cfg.exists():
+        try:
+            cfg = json.loads(oc_cfg.read_text())
+            hxa = cfg.get("channels", {}).get("hxa-connect", {})
+            agent_token = hxa.get("agentToken", "")
+            agent_name = hxa.get("agentName", "")
+            org_id = hxa.get("orgId", "")
+        except Exception:
+            pass
+
+    # Zylos
+    if not agent_token:
+        zy_cfg = runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
+        if zy_cfg.exists():
+            try:
+                cfg = json.loads(zy_cfg.read_text())
+                org = cfg.get("orgs", {}).get("default", {})
+                agent_token = org.get("agent_token", "")
+                agent_name = org.get("agent_name", "")
+                org_id = org.get("org_id", "")
+            except Exception:
+                pass
+
+    installed = bool(agent_token or agent_name)
+    hxa_status = "not_configured"
+    if installed:
+        hxa_status = "offline"  # default when configured but can't verify online
+
+    return {
+        "installed": installed,
+        "status": hxa_status,
+        "agent_name": agent_name or None,
+        "org_id": org_id or None,
+    }
+
+
+def _get_claude_info(container_name: str) -> dict:
+    """Get Claude process info from inside the container."""
+    result: dict = {"running": False, "pid": None, "uptime_seconds": None, "memory_mb": None}
+    rc, out = _docker_run(["docker", "exec", container_name, "ps", "aux"])
+    if rc != 0 or not out:
+        return result
+
+    for line in out.splitlines():
+        if "claude" in line and "grep" not in line:
+            parts = line.split()
+            if len(parts) >= 6:
+                result["running"] = True
+                try:
+                    result["pid"] = int(parts[1])
+                except (ValueError, IndexError):
+                    pass
+                # RSS is column 5 in ps aux (in KB)
+                try:
+                    rss_kb = int(parts[5])
+                    result["memory_mb"] = round(rss_kb / 1024)
+                except (ValueError, IndexError):
+                    pass
+                # Uptime from column 9 (TIME = cpu time, not wall time)
+                # Use /proc/PID/stat for actual uptime
+                if result["pid"]:
+                    rc2, out2 = _docker_run([
+                        "docker", "exec", container_name,
+                        "sh", "-c",
+                        f"stat -c %Y /proc/{result['pid']} 2>/dev/null || echo ''"
+                    ])
+                    if rc2 == 0 and out2.strip().isdigit():
+                        start_time = int(out2.strip())
+                        result["uptime_seconds"] = int(time.time()) - start_time
+            break
+
+    return result
+
+
+def _get_container_info(container_name: str) -> dict:
+    """Get container running status, disk usage, and resource limits."""
+    result: dict = {
+        "running": False,
+        "disk_usage_mb": None,
+        "memory_limit_mb": None,
+        "cpu_limit": None,
+    }
+
+    # Check if container is running
+    rc, out = _docker_run([
+        "docker", "inspect", "--format", "{{.State.Running}}", container_name
+    ])
+    if rc != 0:
+        return result
+    result["running"] = out.strip().lower() == "true"
+
+    if not result["running"]:
+        return result
+
+    # Disk usage
+    rc, out = _docker_run([
+        "docker", "exec", container_name, "du", "-sm", "/home"
+    ])
+    if rc == 0 and out:
+        try:
+            result["disk_usage_mb"] = int(out.split()[0])
+        except (ValueError, IndexError):
+            pass
+
+    # Container memory/cpu limits
+    rc, out = _docker_run([
+        "docker", "inspect", "--format",
+        "{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}", container_name
+    ])
+    if rc == 0 and out:
+        parts = out.split()
+        try:
+            mem_bytes = int(parts[0])
+            if mem_bytes > 0:
+                result["memory_limit_mb"] = round(mem_bytes / (1024 * 1024))
+        except (ValueError, IndexError):
+            pass
+        try:
+            nano_cpus = int(parts[1])
+            if nano_cpus > 0:
+                result["cpu_limit"] = round(nano_cpus / 1e9, 2)
+        except (ValueError, IndexError):
+            pass
+
+    return result
+
+
+@router.get("/instances/{instance_id}/diagnostics")
+def instance_diagnostics(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Return comprehensive health diagnostics for an instance."""
+    _require_admin(current_user)
+
+    # Fetch instance + owner + config
+    row = db.execute(
+        """SELECT i.*, u.name AS owner_name, u.email AS owner_email,
+                  c.telegram_bot_token, c.org_id AS config_org_id
+           FROM instances i
+           JOIN users u ON i.owner_id = u.id
+           LEFT JOIN instance_configs c ON i.id = c.instance_id
+           WHERE i.id = ?""",
+        (instance_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+
+    product = row["product"] or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+
+    # Basic info
+    basic_info = {
+        "name": row["name"],
+        "product": product,
+        "instance_id": instance_id,
+        "owner_name": row["owner_name"],
+        "owner_email": row["owner_email"],
+        "install_state": row["install_state"],
+        "status": row["status"],
+    }
+
+    # HXA plugin
+    hxa_plugin = _get_hxa_plugin_info(instance_id)
+
+    # Telegram
+    tg_token = row["telegram_bot_token"] if "telegram_bot_token" in row.keys() else None
+    telegram = {
+        "configured": bool(tg_token),
+        "bot_token_set": bool(tg_token),
+    }
+
+    # Claude process
+    claude = _get_claude_info(container_name)
+
+    # Container info
+    container = _get_container_info(container_name)
+
+    return {
+        "basic_info": basic_info,
+        "hxa_plugin": hxa_plugin,
+        "telegram": telegram,
+        "claude": claude,
+        "container": container,
+    }
+
+
+# ---------------------------------------------------------------------------
+#  Instance control (start / stop / restart / kill_claude)
+# ---------------------------------------------------------------------------
+
+class InstanceControlRequest(BaseModel):
+    action: str
+
+
+def _find_compose_file(instance_id: str) -> Path | None:
+    """Find compose file in runtime directory."""
+    runtime_dir = RUNTIME_ROOT / instance_id
+    candidates = [
+        "docker-compose.yml",
+        "compose.yml",
+        "docker/docker-compose.yml",
+        "docker/compose.yml",
+    ]
+    for c in candidates:
+        p = runtime_dir / c
+        if p.exists():
+            return p
+    return None
+
+
+@router.post("/instances/{instance_id}/control")
+def instance_control(
+    instance_id: str,
+    payload: InstanceControlRequest,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Control an instance: stop, start, restart, or kill_claude."""
+    _require_admin(current_user)
+
+    row = db.execute(
+        "SELECT product, compose_file, compose_project, runtime_dir FROM instances WHERE id = ?",
+        (instance_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+
+    product = row["product"] or "openclaw"
+    action = payload.action.strip().lower()
+
+    if action not in ("stop", "start", "restart", "kill_claude"):
+        raise HTTPException(status_code=400, detail="Invalid action. Use: stop, start, restart, kill_claude")
+
+    container_name = _get_container_name(instance_id, product)
+
+    # For compose operations, resolve compose file and project
+    compose_file = row["compose_file"] or ""
+    runtime_dir = row["runtime_dir"] or str(RUNTIME_ROOT / instance_id)
+    project = row["compose_project"] or _get_compose_project(instance_id, product)
+
+    if not compose_file:
+        found = _find_compose_file(instance_id)
+        if found:
+            compose_file = str(found)
+
+    if action == "kill_claude":
+        if product == "zylos":
+            rc, out = _docker_run(["docker", "exec", container_name, "pkill", "-f", "claude --"])
+        else:
+            rc, out = _docker_run(["docker", "exec", container_name, "pkill", "-f", "claude"])
+        if rc == 0 or rc == 1:  # 1 means no process matched, which is fine
+            return {"ok": True, "action": action, "detail": "Claude process kill signal sent."}
+        return {"ok": False, "action": action, "detail": out}
+
+    if action == "restart":
+        rc, out = _docker_run(["docker", "restart", container_name])
+        return {"ok": rc == 0, "action": action, "detail": out}
+
+    if not compose_file:
+        raise HTTPException(status_code=400, detail="Compose file not found for this instance.")
+
+    env_args: list[str] = []
+    env_path = Path(runtime_dir) / ".env"
+    if env_path.exists():
+        env_args = ["--env-file", str(env_path)]
+
+    if action == "stop":
+        rc, out = _docker_run(
+            ["docker", "compose", "-f", compose_file, "-p", project] + env_args + ["down"],
+            timeout=30,
+        )
+        if rc != 0:
+            rc, out = _docker_run(
+                ["docker-compose", "-f", compose_file, "-p", project] + env_args + ["down"],
+                timeout=30,
+            )
+        return {"ok": rc == 0, "action": action, "detail": out}
+
+    if action == "start":
+        rc, out = _docker_run(
+            ["docker", "compose", "-f", compose_file, "-p", project] + env_args + ["up", "-d"],
+            timeout=60,
+        )
+        if rc != 0:
+            rc, out = _docker_run(
+                ["docker-compose", "-f", compose_file, "-p", project] + env_args + ["up", "-d"],
+                timeout=60,
+            )
+        return {"ok": rc == 0, "action": action, "detail": out}
+
+    # Should not reach here
+    raise HTTPException(status_code=400, detail="Unknown action.")

@@ -1,12 +1,21 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import type { AdminUserInstances, HxaOrg, Instance, User } from "../types";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DiagData = Record<string, any>;
+
+function StatusDot({ ok }: { ok: boolean | null }) {
+  if (ok === null) return <span className="inline-block w-2 h-2 rounded-full bg-gray-600" />;
+  return <span className={`inline-block w-2 h-2 rounded-full ${ok ? "bg-green-400" : "bg-red-500"}`} />;
+}
+
 export function AdminPage() {
   const t = useT();
   const [users, setUsers] = useState<User[]>([]);
+  const [userSearch, setUserSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [detail, setDetail] = useState<AdminUserInstances | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -22,10 +31,29 @@ export function AdminPage() {
   const [renameDraft, setRenameDraft] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
 
+  // Menu state (3-dot)
+  const [menuId, setMenuId] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+
   // Transfer state
   const [transferId, setTransferId] = useState("");
   const [transferTarget, setTransferTarget] = useState("");
   const [transferring, setTransferring] = useState(false);
+
+  // Diagnostics modal
+  const [diagId, setDiagId] = useState("");
+  const [diagData, setDiagData] = useState<DiagData | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [controlLoading, setControlLoading] = useState("");
+
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuId("");
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   useEffect(() => {
     api.adminUsers()
@@ -48,13 +76,18 @@ export function AdminPage() {
       .finally(() => setLoadingDetail(false));
   }, [selectedUserId, t]);
 
+  const filteredUsers = userSearch.trim()
+    ? users.filter((u) =>
+        u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.email.toLowerCase().includes(userSearch.toLowerCase()))
+    : users;
+
   async function handleRename(inst: Instance) {
     const name = renameDraft.trim();
     if (!name) return;
     setRenameSaving(true);
     try {
       const res = await api.put(`/api/admin/hxa/agents/${inst.id}/name`, { agent_name: name }).then(r => r.json());
-      // Update local state
       if (detail) {
         setDetail({
           ...detail,
@@ -77,7 +110,6 @@ export function AdminPage() {
     setTransferring(true);
     try {
       await api.hxaTransferBot(inst.id, transferTarget);
-      // Refresh
       if (selectedUserId) {
         const d = await api.adminUserInstances(selectedUserId);
         setDetail(d);
@@ -88,6 +120,45 @@ export function AdminPage() {
       alert((e as Error).message || "Failed");
     }
     setTransferring(false);
+  }
+
+  async function openDiagnostics(instId: string) {
+    setDiagId(instId);
+    setDiagLoading(true);
+    setDiagData(null);
+    setMenuId("");
+    try {
+      const data = await api.adminInstanceDiagnostics(instId);
+      setDiagData(data);
+    } catch (e: unknown) {
+      alert((e as Error).message || "Failed to load diagnostics");
+      setDiagId("");
+    }
+    setDiagLoading(false);
+  }
+
+  async function handleControl(instId: string, action: string) {
+    const labels: Record<string, string> = { stop: "停止", start: "启动", restart: "重启", kill_claude: "杀掉 Claude" };
+    if (!confirm(`确定要 ${labels[action] || action} 这个实例？`)) return;
+    setControlLoading(action);
+    try {
+      const res = await api.adminInstanceControl(instId, action);
+      alert(res.message || "操作完成");
+      // Refresh diagnostics
+      const data = await api.adminInstanceDiagnostics(instId);
+      setDiagData(data);
+    } catch (e: unknown) {
+      alert((e as Error).message || "操作失败");
+    }
+    setControlLoading("");
+  }
+
+  function formatUptime(seconds: number | null): string {
+    if (seconds === null || seconds === undefined) return "-";
+    if (seconds < 60) return `${seconds}秒`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时 ${Math.floor((seconds % 3600) / 60)}分`;
+    return `${Math.floor(seconds / 86400)}天 ${Math.floor((seconds % 86400) / 3600)}小时`;
   }
 
   return (
@@ -103,36 +174,44 @@ export function AdminPage() {
 
       {error && <div className="mb-4 p-3 text-sm rounded bg-red-900/40 border border-red-700 text-red-300">{error}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h2 className="text-sm font-medium text-gray-300 mb-3">{t("admin.users")}</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* User list - narrower */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <h2 className="text-sm font-medium text-gray-300 mb-2">{t("admin.users")}</h2>
+          <input
+            type="text"
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+            placeholder="搜索用户..."
+            className="w-full mb-2 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+          />
           {loadingUsers ? (
             <div className="text-sm text-gray-500">{t("admin.loadingUsers")}</div>
-          ) : users.length === 0 ? (
-            <div className="text-sm text-gray-500">{t("admin.noUsers")}</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-sm text-gray-500">{userSearch ? "无匹配用户" : t("admin.noUsers")}</div>
           ) : (
-            <div className="space-y-2 max-h-[520px] overflow-auto pr-1">
-              {users.map((u) => (
+            <div className="space-y-1 max-h-[520px] overflow-auto pr-1">
+              {filteredUsers.map((u) => (
                 <button
                   key={u.id}
                   onClick={() => setSelectedUserId(u.id)}
-                  className={`w-full text-left rounded-md border px-3 py-2 transition-colors ${
+                  className={`w-full text-left rounded border px-2 py-1.5 transition-colors ${
                     selectedUserId === u.id ? "border-blue-600 bg-blue-600/10" : "border-gray-800 hover:border-gray-700"
                   }`}
                 >
-                  <div className="text-sm text-white flex items-center gap-2">
-                    <span className="truncate">{u.name}</span>
-                    {u.is_admin ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-700/50 text-amber-200">admin</span> : null}
+                  <div className="text-xs text-white flex items-center gap-1">
+                    <span className="truncate">{u.name || u.email.split("@")[0]}</span>
+                    {u.is_admin ? <span className="text-[9px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">admin</span> : null}
                   </div>
-                  <div className="text-xs text-gray-500 truncate">{u.email}</div>
-                  <div className="text-[11px] text-gray-600 font-mono truncate">{u.id}</div>
+                  <div className="text-[10px] text-gray-500 truncate">{u.email}</div>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-4">
+        {/* Instance table - wider */}
+        <div className="lg:col-span-3 bg-gray-900 border border-gray-800 rounded-lg p-4">
           <h2 className="text-sm font-medium text-gray-300 mb-3">{t("admin.userInstances")}</h2>
           {loadingDetail ? (
             <div className="text-sm text-gray-500">{t("common.loading")}</div>
@@ -158,7 +237,7 @@ export function AdminPage() {
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">组内名称</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.telegramBound")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.created")}</th>
-                        <th className="text-right py-2 text-xs text-gray-500">操作</th>
+                        <th className="text-right py-2 text-xs text-gray-500"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -206,28 +285,40 @@ export function AdminPage() {
                               : <span className="text-gray-600 text-xs">-</span>}
                           </td>
                           <td className="py-2 pr-3 text-gray-500 text-xs">{new Date(i.created_at).toLocaleString()}</td>
-                          <td className="py-2 text-right">
-                            {i.agent_name && orgs.length > 1 && (
-                              transferId === i.id ? (
-                                <div className="inline-flex items-center gap-1">
-                                  <select value={transferTarget} onChange={(e) => setTransferTarget(e.target.value)}
-                                    className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
-                                    <option value="">选择组织</option>
-                                    {orgs.filter((o) => o.id !== i.org_id).map((o) => (
-                                      <option key={o.id} value={o.id}>{o.name}</option>
-                                    ))}
-                                  </select>
-                                  <button onClick={() => handleTransfer(i)} disabled={transferring || !transferTarget}
-                                    className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">
-                                    {transferring ? "..." : t("common.ok")}
-                                  </button>
-                                  <button onClick={() => { setTransferId(""); setTransferTarget(""); }}
-                                    className="text-xs text-gray-500">X</button>
-                                </div>
-                              ) : (
-                                <button onClick={() => setTransferId(i.id)}
-                                  className="text-xs text-yellow-500 hover:text-yellow-400">转移</button>
-                              )
+                          <td className="py-2 text-right relative">
+                            {/* Transfer mode */}
+                            {transferId === i.id ? (
+                              <div className="inline-flex items-center gap-1">
+                                <select value={transferTarget} onChange={(e) => setTransferTarget(e.target.value)}
+                                  className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
+                                  <option value="">选择组织</option>
+                                  {orgs.filter((o) => o.id !== i.org_id).map((o) => (
+                                    <option key={o.id} value={o.id}>{o.name}</option>
+                                  ))}
+                                </select>
+                                <button onClick={() => handleTransfer(i)} disabled={transferring || !transferTarget}
+                                  className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50">
+                                  {transferring ? "..." : t("common.ok")}
+                                </button>
+                                <button onClick={() => { setTransferId(""); setTransferTarget(""); }}
+                                  className="text-xs text-gray-500">X</button>
+                              </div>
+                            ) : (
+                              /* 3-dot menu */
+                              <div className="relative inline-block" ref={menuId === i.id ? menuRef : undefined}>
+                                <button onClick={() => setMenuId(menuId === i.id ? "" : i.id)}
+                                  className="text-gray-500 hover:text-gray-300 px-1 py-0.5 text-sm">⋮</button>
+                                {menuId === i.id && (
+                                  <div className="absolute right-0 top-6 z-20 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
+                                    <button onClick={() => openDiagnostics(i.id)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">详情</button>
+                                    {i.agent_name && orgs.length > 1 && (
+                                      <button onClick={() => { setTransferId(i.id); setMenuId(""); }}
+                                        className="w-full text-left px-3 py-1.5 text-xs text-yellow-400 hover:bg-gray-700">转移</button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -240,6 +331,112 @@ export function AdminPage() {
           )}
         </div>
       </div>
+
+      {/* Diagnostics Modal */}
+      {diagId && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setDiagId("")}>
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[560px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-white">实例诊断</h3>
+              <button onClick={() => setDiagId("")} className="text-gray-500 hover:text-gray-300">✕</button>
+            </div>
+
+            {diagLoading ? (
+              <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+            ) : diagData ? (
+              <div className="space-y-4 text-xs">
+                {/* Basic Info */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">基本信息</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">实例名</span><span className="text-gray-200">{diagData.basic_info?.name}</span>
+                    <span className="text-gray-500">产品</span><span className="text-gray-200 capitalize">{diagData.basic_info?.product}</span>
+                    <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono">{diagData.basic_info?.instance_id}</span>
+                    <span className="text-gray-500">所有者</span><span className="text-gray-200">{diagData.basic_info?.owner_name} ({diagData.basic_info?.owner_email})</span>
+                    <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
+                  </div>
+                </div>
+
+                {/* HXA Plugin */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">HXA 插件</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">安装状态</span>
+                    <span className="flex items-center gap-1"><StatusDot ok={diagData.hxa_plugin?.installed} /> {diagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span>
+                    <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.hxa_plugin?.status || "-"}</span>
+                    <span className="text-gray-500">Agent 名称</span><span className="text-green-400">{diagData.hxa_plugin?.agent_name || "-"}</span>
+                    <span className="text-gray-500">组织 ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.hxa_plugin?.org_id || "-"}</span>
+                  </div>
+                </div>
+
+                {/* Telegram */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">Telegram</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">已配置</span>
+                    <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.configured} /> {diagData.telegram?.configured ? "是" : "否"}</span>
+                    <span className="text-gray-500">Token 已设置</span>
+                    <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.bot_token_set} /> {diagData.telegram?.bot_token_set ? "是" : "否"}</span>
+                  </div>
+                </div>
+
+                {/* Claude */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">Claude</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">运行状态</span>
+                    <span className="flex items-center gap-1"><StatusDot ok={diagData.claude?.running} /> {diagData.claude?.running ? "运行中" : "未运行"}</span>
+                    <span className="text-gray-500">PID</span><span className="text-gray-200">{diagData.claude?.pid ?? "-"}</span>
+                    <span className="text-gray-500">运行时间</span><span className="text-gray-200">{formatUptime(diagData.claude?.uptime_seconds)}</span>
+                    <span className="text-gray-500">内存占用</span><span className="text-gray-200">{diagData.claude?.memory_mb ? `${diagData.claude.memory_mb} MB` : "-"}</span>
+                  </div>
+                </div>
+
+                {/* Container */}
+                <div className="bg-gray-800/50 rounded p-3 space-y-1">
+                  <h4 className="text-gray-400 font-medium mb-2">容器</h4>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span className="text-gray-500">运行状态</span>
+                    <span className="flex items-center gap-1"><StatusDot ok={diagData.container?.running} /> {diagData.container?.running ? "运行中" : "已停止"}</span>
+                    <span className="text-gray-500">磁盘占用</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
+                    <span className="text-gray-500">内存限制</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "无限制"}</span>
+                    <span className="text-gray-500">CPU 限制</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit} 核` : "无限制"}</span>
+                  </div>
+                </div>
+
+                {/* Control buttons */}
+                <div className="flex gap-2 pt-2 border-t border-gray-800">
+                  <button onClick={() => handleControl(diagId, "restart")} disabled={!!controlLoading}
+                    className="px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
+                    {controlLoading === "restart" ? "..." : "重启"}
+                  </button>
+                  <button onClick={() => handleControl(diagId, "stop")} disabled={!!controlLoading}
+                    className="px-3 py-1.5 text-xs rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50">
+                    {controlLoading === "stop" ? "..." : "停止"}
+                  </button>
+                  <button onClick={() => handleControl(diagId, "start")} disabled={!!controlLoading}
+                    className="px-3 py-1.5 text-xs rounded bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
+                    {controlLoading === "start" ? "..." : "启动"}
+                  </button>
+                  <button onClick={() => handleControl(diagId, "kill_claude")} disabled={!!controlLoading}
+                    className="px-3 py-1.5 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50">
+                    {controlLoading === "kill_claude" ? "..." : "杀掉 Claude"}
+                  </button>
+                  <button onClick={async () => {
+                    setDiagLoading(true);
+                    try { setDiagData(await api.adminInstanceDiagnostics(diagId)); } catch {}
+                    setDiagLoading(false);
+                  }} className="ml-auto px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-800">
+                    刷新
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 text-center py-8">无数据</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
