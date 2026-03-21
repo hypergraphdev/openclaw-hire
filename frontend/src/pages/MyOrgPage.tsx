@@ -816,8 +816,10 @@ export function MyOrgPage() {
                     {showMention && <MentionPopup members={allBots.map((b) => ({ name: b.name, online: b.online }))} filter={mentionFilter}
                       onSelect={handleMentionSelect} onClose={() => setShowMention(false)}
                       threadMembers={target?.type === "thread" ? threadMemberNames : undefined} />}
-                    <input type="text" value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                      placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" disabled={sending} />
+                    <textarea value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
+                      rows={1}
+                      placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none overflow-y-auto" style={{ maxHeight: 120 }} disabled={sending} />
                   </div>
                   <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || sending} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
                     {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
