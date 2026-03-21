@@ -169,21 +169,7 @@ export function MyOrgPage() {
   useEffect(() => { api.myOrg(activeOrgId || undefined).then(setData).finally(() => setLoading(false)); }, [activeOrgId]);
   useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
-  // Restore from URL hash on load (e.g. #dm/HTX_Bill or #thread/Fourth)
   const hashRestoredRef = useRef(false);
-  useEffect(() => {
-    if (hashRestoredRef.current || !data?.status || data.status !== "ok") return;
-    const hash = window.location.hash.replace(/^#/, "");
-    if (!hash) return;
-    const [kind, name] = hash.split("/").map(decodeURIComponent);
-    if (kind === "dm" && name) {
-      const bot = (data.bots || []).find((b: MyOrgPeer) => b.name === name);
-      if (bot) { hashRestoredRef.current = true; selectDM(bot); }
-    } else if (kind === "thread" && name && threads.length > 0) {
-      const thread = threads.find((t) => t.topic === name);
-      if (thread) { hashRestoredRef.current = true; selectThread(thread); }
-    }
-  }, [data?.status, data?.bots, threads, selectDM, selectThread]);
 
   function sortMsgs(msgs: (ChatMessage | ThreadMessage)[]) { return [...msgs].sort((a, b) => (a.created_at || 0) - (b.created_at || 0)); }
 
@@ -217,6 +203,21 @@ export function MyOrgPage() {
     await loadThreadDetail(thread.id);
     try { const h = await api.myOrgThreadMessages(thread.id); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); } catch { /* */ }
   }, []);
+
+  // Restore from URL hash on load (e.g. #dm/HTX_Bill or #thread/Fourth)
+  useEffect(() => {
+    if (hashRestoredRef.current || !data?.status || data.status !== "ok") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const [kind, name] = hash.split("/").map(decodeURIComponent);
+    if (kind === "dm" && name) {
+      const bot = (data.all_bots || []).find((b: MyOrgPeer) => b.name === name);
+      if (bot) { hashRestoredRef.current = true; selectDM(bot); }
+    } else if (kind === "thread" && name && threads.length > 0) {
+      const thread = threads.find((t: OrgThread) => t.topic === name);
+      if (thread) { hashRestoredRef.current = true; selectThread(thread); }
+    }
+  }, [data?.status, threads, selectDM, selectThread]);
 
   // WebSocket for DM
   useEffect(() => {
