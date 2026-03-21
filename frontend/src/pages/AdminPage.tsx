@@ -394,12 +394,8 @@ export function AdminPage() {
                     <h4 className="text-gray-400 font-medium mb-2 flex items-center gap-1">
                       Claude
                       {diagData.claude?.command_line && (
-                        <span className="relative group cursor-help">
-                          <span className="text-gray-600 hover:text-gray-400 text-[10px]">ℹ️</span>
-                          <span className="absolute left-0 bottom-full mb-1 hidden group-hover:block z-50 bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-[10px] text-gray-300 font-mono whitespace-pre-wrap max-w-[400px] shadow-lg">
-                            {diagData.claude.command_line}
-                          </span>
-                        </span>
+                        <button onClick={() => alert(diagData.claude.command_line)}
+                          className="text-gray-600 hover:text-gray-400 text-[10px]" title="查看完整命令">ℹ️</button>
                       )}
                     </h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
