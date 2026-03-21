@@ -542,13 +542,33 @@ def instance_resources(
     product = row["product"] or "openclaw"
     container_name = _get_container_name(instance_id, product)
 
-    rc, out = _docker_run([
-        "docker", "update",
-        f"--memory={payload.memory_mb}m",
-        f"--cpus={payload.cpus}",
-        container_name,
-    ], timeout=15)
+    # Must set --memory-swap equal to --memory (or -1 for unlimited swap)
+    # to avoid "Memory limit should be smaller than memoryswap limit" error
+    # Also update all containers for this instance (OpenClaw has gateway + cli)
+    all_containers = []
+    rc_ls, out_ls = _docker_run(["docker", "ps", "-a", "--format", "{{.Names}}", "--filter", f"name=hire_{instance_id}"], timeout=5)
+    if rc_ls == 0 and out_ls.strip():
+        all_containers = [c.strip() for c in out_ls.strip().splitlines() if c.strip()]
+    if not all_containers:
+        # Zylos or fallback
+        rc_ls2, out_ls2 = _docker_run(["docker", "ps", "-a", "--format", "{{.Names}}", "--filter", f"name=zylos_{instance_id}"], timeout=5)
+        if rc_ls2 == 0 and out_ls2.strip():
+            all_containers = [c.strip() for c in out_ls2.strip().splitlines() if c.strip()]
+    if not all_containers:
+        all_containers = [container_name]
 
-    if rc != 0:
-        return {"ok": False, "detail": out or "docker update failed"}
-    return {"ok": True, "detail": f"Resources updated: {payload.memory_mb}MB memory, {payload.cpus} CPUs"}
+    errors = []
+    for cname in all_containers:
+        rc, out = _docker_run([
+            "docker", "update",
+            f"--memory={payload.memory_mb}m",
+            f"--memory-swap={payload.memory_mb}m",
+            f"--cpus={payload.cpus}",
+            cname,
+        ], timeout=15)
+        if rc != 0:
+            errors.append(f"{cname}: {out}")
+
+    if errors:
+        return {"ok": False, "detail": "; ".join(errors)}
+    return {"ok": True, "detail": f"Resources updated on {len(all_containers)} container(s): {payload.memory_mb}MB, {payload.cpus} CPUs"}
