@@ -379,7 +379,7 @@ export function MyOrgPage() {
   }
 
   // @ mention handling in chat input
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const val = e.target.value;
     setInput(val);
     // Check for @ trigger
