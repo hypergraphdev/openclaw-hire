@@ -376,8 +376,10 @@ def org_chat_ws_ticket(
 
 
 _UPLOAD_DIR = Path("/home/wwwroot/openclaw-hire/frontend/dist/uploads")
-_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_ALLOWED_FILE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".csv", ".zip", ".tar", ".gz", ".json", ".xml", ".mp3", ".mp4", ".wav"}
 _MAX_IMAGE_SIZE = 10 * 1024 * 1024
+_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB for general files
 
 
 @router.post("/chat/upload")
@@ -387,7 +389,7 @@ async def org_chat_upload(
 ):
     """Upload an image and return a public URL."""
     ext = Path(file.filename or "img.png").suffix.lower()
-    if ext not in _ALLOWED_EXTS:
+    if ext not in _ALLOWED_IMAGE_EXTS:
         raise HTTPException(status_code=400, detail=f"Unsupported image format: {ext}")
     data = await file.read()
     if len(data) > _MAX_IMAGE_SIZE:
@@ -396,6 +398,30 @@ async def org_chat_upload(
     filename = f"{uuid4().hex[:16]}{ext}"
     (_UPLOAD_DIR / filename).write_bytes(data)
     return {"url": f"https://www.ucai.net/openclaw/uploads/{filename}", "filename": filename}
+
+
+@router.post("/file/upload")
+async def org_file_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload any file and return a public URL + metadata."""
+    original_name = file.filename or "file"
+    ext = Path(original_name).suffix.lower()
+    if ext not in _ALLOWED_FILE_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+    data = await file.read()
+    if len(data) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large (max 50MB)")
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{uuid4().hex[:12]}_{Path(original_name).stem[:30]}{ext}"
+    (_UPLOAD_DIR / safe_name).write_bytes(data)
+    size_kb = round(len(data) / 1024, 1)
+    return {
+        "url": f"https://www.ucai.net/openclaw/uploads/{safe_name}",
+        "filename": original_name,
+        "size_kb": size_kb,
+    }
 
 
 # ---------------------------------------------------------------------------
