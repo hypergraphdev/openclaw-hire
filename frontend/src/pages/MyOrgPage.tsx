@@ -192,6 +192,7 @@ export function MyOrgPage() {
 
   const selectThread = useCallback(async (thread: OrgThread) => {
     setTarget({ type: "thread", thread }); currentTargetRef.current = `thread_${thread.id}`;
+    setUnreadCounts((prev) => { const next = { ...prev }; delete next[`thread_${thread.id}`]; return next; });
     setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false);
     setUnreadCounts((p) => ({ ...p, [`thread_${thread.id}`]: 0 }));
@@ -259,19 +260,27 @@ export function MyOrgPage() {
             const d = JSON.parse(ev.data);
             if (d.type === "thread_message" && d.message) {
               const msg = d.message;
-              setMessages((prev) => {
-                if (prev.some((m) => m.id === msg.id)) return prev;
-                return sortMsgs([...prev, msg]);
-              });
-              // Sound for messages from others
-              const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+              const msgThreadId = d.thread_id || msg.thread_id || "";
+              const currentThreadId = (target as { type: "thread"; thread: OrgThread })?.thread?.id || "";
+              const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
               if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
               const senderName = msg.sender_name || "";
-              if (!myNames.has(senderName)) {
+              const isFromOther = !myNames.has(senderName);
+
+              if (msgThreadId === currentThreadId) {
+                // Message belongs to current thread — show in chat
+                setMessages((prev) => {
+                  if (prev.some((m) => m.id === msg.id)) return prev;
+                  return sortMsgs([...prev, msg]);
+                });
+                if (isFromOther) playNotificationSound();
+                if (!userScrolledUp.current) {
+                  requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+                }
+              } else if (isFromOther && msgThreadId) {
+                // Message for another thread — update unread count
+                setUnreadCounts((prev) => ({ ...prev, [`thread_${msgThreadId}`]: (prev[`thread_${msgThreadId}`] || 0) + 1 }));
                 playNotificationSound();
-              }
-              if (!userScrolledUp.current) {
-                requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
               }
             }
           } catch { /* */ }
