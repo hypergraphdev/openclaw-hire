@@ -770,7 +770,8 @@ export function MyOrgPage() {
                   return (
                     <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
-                        {!isSelf && <div className="text-[10px] text-gray-400 mb-0.5">{(msg as ChatMessage).sender_name || msg.sender_id}</div>}
+                        {!isSelf && <div className="text-[10px] text-gray-400 mb-0.5">{senderName}</div>}
+                        {isSelf && (target?.type === "thread" || (data?.my_bots || []).length > 1) && <div className="text-[10px] text-blue-200/70 mb-0.5 text-right">{senderName}</div>}
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
                         {textContent && <RenderContent content={textContent} threadMemberNames={target?.type === "thread" ? threadMemberNames : undefined} onMentionClick={handleMentionClick} />}
                       </div>
