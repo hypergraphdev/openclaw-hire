@@ -50,7 +50,7 @@ export default function AdminHXAPage() {
   const [transferring, setTransferring] = useState(false);
 
   // Filter
-  const [onlyWithInstance, setOnlyWithInstance] = useState(false);
+  const [onlyWithInstance, setOnlyWithInstance] = useState(true);
 
   // Secret display
   const [showOrgSecret, setShowOrgSecret] = useState<string | null>(null);
@@ -365,11 +365,24 @@ export default function AdminHXAPage() {
               <>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs text-gray-400">{t("adminHxa.agents")} ({filtered.length}{onlyWithInstance ? ` / ${orgAgents.length}` : ""})</h3>
-                  <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={onlyWithInstance} onChange={(e) => setOnlyWithInstance(e.target.checked)}
-                      className="rounded bg-gray-800 border-gray-600" />
-                    只看有实例的
-                  </label>
+                  <div className="flex items-center gap-3">
+                    {orgAgents.length > filtered.length && (
+                      <button onClick={async () => {
+                        const orphans = orgAgents.filter((a) => !a.instance_name);
+                        if (orphans.length === 0) return;
+                        if (!confirm(`确定清理 ${orphans.length} 个无实例的 Bot？`)) return;
+                        for (const a of orphans) {
+                          try { await api.adminDeleteOrgBot(selectedOrg!.id, a.bot_id); } catch { /* */ }
+                        }
+                        loadOrgAgents(selectedOrg!.id);
+                      }} className="text-xs text-red-400 hover:text-red-300">清理无实例 Bot ({orgAgents.length - filtered.length})</button>
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                      <input type="checkbox" checked={onlyWithInstance} onChange={(e) => setOnlyWithInstance(e.target.checked)}
+                        className="rounded bg-gray-800 border-gray-600" />
+                      只看有实例的
+                    </label>
+                  </div>
                 </div>
                 {loadingAgents ? (
                   <p className="text-gray-500 text-xs">{t("common.loading")}</p>

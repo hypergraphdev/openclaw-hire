@@ -258,6 +258,9 @@ export const api = {
       method: "POST", body: JSON.stringify({ target_org_id: targetOrgId }),
     }),
 
+  adminDeleteOrgBot: (orgId: string, botId: string) =>
+    request<{ ok: boolean }>(`/api/admin/hxa/orgs/${orgId}/bots/${botId}`, { method: "DELETE" }),
+
   // Raw fetch helpers (return Response)
   get: (path: string) => {
     const token = getStoredToken();

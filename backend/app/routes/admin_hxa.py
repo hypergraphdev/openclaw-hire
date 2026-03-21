@@ -473,6 +473,54 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
 
 
 # ---------------------------------------------------------------------------
+#  Delete bot from org
+# ---------------------------------------------------------------------------
+
+@router.delete("/orgs/{org_id}/bots/{bot_id}")
+def delete_org_bot(org_id: str, bot_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a bot from an org (admin only, for orphan cleanup)."""
+    _require_admin(current_user)
+    hub = get_setting("hxa_hub_url", "https://www.ucai.net/connect").rstrip("/")
+    org_secret = _get_org_secret_for(org_id)
+    if not org_secret:
+        raise HTTPException(status_code=400, detail="Org secret not found.")
+
+    # Login as org admin
+    origin = "https://www.ucai.net"
+    login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+    try:
+        login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
+            headers={"Content-Type": "application/json", "Origin": origin}, method="POST")
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Admin login failed: {e}")
+
+    # Delete bot
+    try:
+        del_req = urllib.request.Request(f"{hub}/api/bots/{bot_id}",
+            headers={"Cookie": cookie, "Origin": origin}, method="DELETE")
+        urllib.request.urlopen(del_req, timeout=10)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        raise HTTPException(status_code=e.code, detail=f"Hub error: {body}")
+
+    return {"ok": True}
+
+
+def _get_org_secret_for(org_id: str) -> str:
+    """Get org secret for a specific org."""
+    db = get_connection()
+    # Check if it's the default org
+    default_id = get_setting("hxa_org_id", "")
+    if org_id == default_id:
+        return get_setting("hxa_org_secret", "")
+    # Check local orgs table
+    row = db.execute("SELECT org_secret FROM hxa_orgs WHERE org_id = ?", (org_id,)).fetchone()
+    return row["org_secret"] if row else ""
+
+
+# ---------------------------------------------------------------------------
 #  Bot Transfer
 # ---------------------------------------------------------------------------
 
