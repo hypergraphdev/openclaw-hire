@@ -175,6 +175,7 @@ export function MyOrgPage() {
   // Global search
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [highlightMsgId, setHighlightMsgId] = useState("");
   const [searching, setSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -553,15 +554,47 @@ export function MyOrgPage() {
             {searchResults.length === 0 ? (
               <div className="text-xs text-gray-500 text-center py-2">无结果</div>
             ) : searchResults.map((r) => (
-              <div key={r.id} className="px-2 py-1.5 hover:bg-gray-700 rounded text-xs cursor-pointer" onClick={() => {
-                // Jump to conversation
-                const bot = allBots.find((b) => b.name === r.channel_name);
-                if (bot && r.channel_type === "dm") selectDM(bot);
-                else if (r.channel_type === "thread") {
+              <div key={r.id} className="px-2 py-1.5 hover:bg-gray-700 rounded text-xs cursor-pointer" onClick={async () => {
+                // Jump to conversation and scroll to message
+                setHighlightMsgId(r.id);
+                if (r.channel_type === "dm") {
+                  const bot = allBots.find((b) => b.name === r.channel_name);
+                  if (bot) selectDM(bot);
+                } else if (r.channel_type === "thread") {
                   const thread = threads.find((t) => t.topic === r.channel_name);
-                  if (thread) selectThread(thread);
+                  if (thread) {
+                    selectThread(thread);
+                    // Load messages around the target — keep loading older until we find it
+                    try {
+                      const firstPage = await api.myOrgThreadMessages(thread.id);
+                      let allMsgs = firstPage.messages || [];
+                      let found = allMsgs.some((m) => m.id === r.id);
+                      let attempts = 0;
+                      while (!found && allMsgs.length > 0 && attempts < 10) {
+                        const oldest = allMsgs[allMsgs.length - 1];
+                        const more = await api.myOrgThreadMessages(thread.id, String(oldest.created_at || oldest.id));
+                        if (!more.messages?.length) break;
+                        allMsgs = [...allMsgs, ...more.messages];
+                        found = more.messages.some((m: { id: string }) => m.id === r.id);
+                        attempts++;
+                      }
+                      if (found) {
+                        setMessages(sortMsgs(allMsgs));
+                        setHasMore(true);
+                      }
+                    } catch { /* best effort */ }
+                  }
                 }
                 setShowSearchResults(false);
+                // Scroll to target after render
+                setTimeout(() => {
+                  const el = document.getElementById(`msg-${r.id}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    el.classList.add("ring-2", "ring-yellow-400");
+                    setTimeout(() => { el.classList.remove("ring-2", "ring-yellow-400"); setHighlightMsgId(""); }, 3000);
+                  }
+                }, 500);
               }}>
                 <div className="flex items-center gap-2 text-gray-500">
                   <span>{r.channel_type === "thread" ? "#" : "@"}{r.channel_name}</span>
@@ -826,7 +859,7 @@ export function MyOrgPage() {
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
                   const msgTime = friendlyTime(msg.created_at);
                   return (
-                    <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
+                    <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isSelf ? "justify-end" : "justify-start"} transition-all duration-300 ${highlightMsgId === msg.id ? "ring-2 ring-yellow-400 rounded-lg" : ""}`}>
                       <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         <div className={`flex items-center gap-2 mb-0.5 ${isSelf ? "justify-end" : "justify-start"}`}>
                           {!isSelf && <span className="text-[10px] text-gray-400">{senderName}</span>}
