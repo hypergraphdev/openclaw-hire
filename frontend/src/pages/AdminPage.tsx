@@ -226,7 +226,7 @@ export function AdminPage() {
               {detail.instances.length === 0 ? (
                 <div className="text-sm text-gray-500">{t("admin.noInstances")}</div>
               ) : (
-                <div className="overflow-auto">
+                <div className="overflow-visible">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-800">
@@ -309,7 +309,7 @@ export function AdminPage() {
                                 <button onClick={() => setMenuId(menuId === i.id ? "" : i.id)}
                                   className="text-gray-500 hover:text-gray-300 px-1 py-0.5 text-sm">⋮</button>
                                 {menuId === i.id && (
-                                  <div className="absolute right-0 top-6 z-20 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
+                                  <div className="absolute right-0 top-6 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
                                     <button onClick={() => openDiagnostics(i.id)}
                                       className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">详情</button>
                                     {i.agent_name && orgs.length > 1 && (
