@@ -762,9 +762,26 @@ export function MyOrgPage() {
                 {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? "无搜索结果" : t("chat.noMessages")}</div>}
                 {filteredMessages.map((msg) => {
                   const senderName = (msg as ChatMessage).sender_name || "";
-                  const myNames = new Set((data?.my_bots || []).map((b) => b.agent_name));
+                  const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
                   if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
-                  const isSelf = msg.sender_id === myBotId || msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
+
+                  // DM with own bot: only admin bot messages are "self" (right side)
+                  // DM with others' bot: own instance bot messages are "self"
+                  // Thread: all own bot messages are "self"
+                  let isSelf: boolean;
+                  if (target?.type === "dm") {
+                    const targetIsMyBot = myNames.has(target.bot.name);
+                    if (targetIsMyBot) {
+                      // DM own bot: right = admin bot only, left = own instance bot
+                      isSelf = msg.sender_id === myBotId || senderName === chatInfo?.admin_bot_name;
+                    } else {
+                      // DM others' bot: right = my instance bot, left = their bot
+                      isSelf = msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
+                    }
+                  } else {
+                    // Thread: right = all my bots + admin bot
+                    isSelf = msg.sender_id === myBotId || msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
+                  }
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
                   return (
