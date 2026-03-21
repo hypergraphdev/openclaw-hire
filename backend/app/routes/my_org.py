@@ -534,34 +534,22 @@ def thread_send(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Send a message to a thread using admin bot identity.
-
-    Uses admin bot (not instance bot) so that instance bots can detect
-    the message as "from someone else" and respond to @mentions.
-    Admin bot is auto-joined to the thread if not already a participant.
-    """
+    """Send a message to a thread using instance bot identity."""
     user_id = current_user["id"]
     info = _get_user_org_info(user_id, db)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    org_id = info.get("org_id", "")
 
-    # Use admin bot to send (so instance bots see it as "from others" and can reply)
-    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
-    display_name = user_row["name"] if user_row else ""
-    token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
+    # Use instance bot to send in threads (own identity)
+    if info["my_bots"]:
+        token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    else:
+        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
     if not token:
-        raise HTTPException(status_code=400, detail="No admin bot available.")
-
-    # Auto-join admin bot to thread (best effort, ignore if already joined)
-    try:
-        me = _hub_request(hub_url, token, "GET", "/api/me")
-        my_bot_id = me.get("id", "")
-        _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/join")
-    except Exception:
-        pass  # May already be joined or join not required
+        raise HTTPException(status_code=400, detail="No bot available.")
 
     content = req.content
     if req.image_url:
