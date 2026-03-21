@@ -169,6 +169,22 @@ export function MyOrgPage() {
   useEffect(() => { api.myOrg(activeOrgId || undefined).then(setData).finally(() => setLoading(false)); }, [activeOrgId]);
   useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
+  // Restore from URL hash on load (e.g. #dm/HTX_Bill or #thread/Fourth)
+  const hashRestoredRef = useRef(false);
+  useEffect(() => {
+    if (hashRestoredRef.current || !data?.status || data.status !== "ok") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const [kind, name] = hash.split("/").map(decodeURIComponent);
+    if (kind === "dm" && name) {
+      const bot = (data.bots || []).find((b: MyOrgPeer) => b.name === name);
+      if (bot) { hashRestoredRef.current = true; selectDM(bot); }
+    } else if (kind === "thread" && name && threads.length > 0) {
+      const thread = threads.find((t) => t.topic === name);
+      if (thread) { hashRestoredRef.current = true; selectThread(thread); }
+    }
+  }, [data?.status, data?.bots, threads, selectDM, selectThread]);
+
   function sortMsgs(msgs: (ChatMessage | ThreadMessage)[]) { return [...msgs].sort((a, b) => (a.created_at || 0) - (b.created_at || 0)); }
 
   // Load thread detail when selecting a thread
@@ -181,6 +197,7 @@ export function MyOrgPage() {
 
   const selectDM = useCallback(async (bot: MyOrgPeer) => {
     setTarget({ type: "dm", bot }); currentTargetRef.current = `dm_${bot.bot_id}`;
+    window.location.hash = `dm/${encodeURIComponent(bot.name)}`;
     setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false); setThreadDetail(null);
     setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
@@ -192,6 +209,7 @@ export function MyOrgPage() {
 
   const selectThread = useCallback(async (thread: OrgThread) => {
     setTarget({ type: "thread", thread }); currentTargetRef.current = `thread_${thread.id}`;
+    window.location.hash = `thread/${encodeURIComponent(thread.topic)}`;
     setUnreadCounts((prev) => { const next = { ...prev }; delete next[`thread_${thread.id}`]; return next; });
     setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false);
