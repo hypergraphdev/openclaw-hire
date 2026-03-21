@@ -112,6 +112,7 @@ export function MyOrgPage() {
   const [threadTopic, setThreadTopic] = useState("");
   const [threadParticipants, setThreadParticipants] = useState<string[]>([]);
   const [creatingThread, setCreatingThread] = useState(false);
+  const [threadBotId, setThreadBotId] = useState("");  // which bot to send as in threads
 
   // Target + chat state
   const [target, setTarget] = useState<ChatTarget | null>(null);
@@ -328,7 +329,7 @@ export function MyOrgPage() {
         if (r.channel_id && !channelId) setChannelId(r.channel_id);
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
       } else {
-        const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl);
+        const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined);
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
         setBotTyping(false);
       }
@@ -758,6 +759,20 @@ export function MyOrgPage() {
 
               {/* Image preview */}
               {pendingImage && <div className="px-4 py-2 border-t border-gray-800 flex items-center gap-2"><img src={pendingImage.preview} alt="" className="h-16 rounded" /><button onClick={cancelImage} className="text-xs text-red-400">✕</button></div>}
+
+              {/* Bot identity selector for threads (when user has multiple bots) */}
+              {target?.type === "thread" && (data?.my_bots || []).length > 1 && (
+                <div className="px-4 py-1.5 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
+                  <span>发言身份:</span>
+                  <select value={threadBotId || (data?.my_bots?.[0]?.instance_id || "")}
+                    onChange={(e) => setThreadBotId(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200">
+                    {(data?.my_bots || []).map((b: { instance_id: string; agent_name: string }) => (
+                      <option key={b.instance_id} value={b.instance_id}>{b.agent_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Input */}
               <div className="px-4 py-3 border-t border-gray-800">

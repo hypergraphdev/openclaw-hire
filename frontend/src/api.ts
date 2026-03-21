@@ -190,9 +190,9 @@ export const api = {
     if (before) params.set("before", before);
     return request<{ messages: ThreadMessage[]; has_more: boolean }>(`/api/my-org/threads/${threadId}/messages?${params}`);
   },
-  myOrgThreadSend: (threadId: string, content: string, imageUrl?: string) =>
+  myOrgThreadSend: (threadId: string, content: string, imageUrl?: string, botInstanceId?: string) =>
     request<ThreadMessage>(`/api/my-org/threads/${threadId}/messages`, {
-      method: "POST", body: JSON.stringify({ content, image_url: imageUrl || null }),
+      method: "POST", body: JSON.stringify({ content, image_url: imageUrl || null, bot_instance_id: botInstanceId || null }),
     }),
   myOrgThreadDetail: (threadId: string) =>
     request<{ id: string; topic: string; initiator_id: string; context: string | null; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[] }>(`/api/my-org/threads/${threadId}`),

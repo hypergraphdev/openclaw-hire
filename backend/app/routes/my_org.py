@@ -185,7 +185,9 @@ def get_my_org(
     # Filter to instance bots only
     with get_connection() as conn:
         inst_rows = conn.execute(
-            "SELECT DISTINCT agent_name FROM instance_configs WHERE org_id = ? AND agent_name IS NOT NULL AND agent_name != ''",
+            """SELECT DISTINCT c.agent_name FROM instance_configs c
+               JOIN instances i ON c.instance_id = i.id
+               WHERE c.org_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''""",
             (active_org_id,),
         ).fetchall()
     instance_agent_names = {r["agent_name"] for r in inst_rows}
@@ -525,6 +527,7 @@ def thread_messages(
 class ThreadSendRequest(BaseModel):
     content: str
     image_url: str | None = None
+    bot_instance_id: str | None = None  # which bot to send as (for multi-bot users)
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -542,8 +545,11 @@ def thread_send(
 
     hub_url = _get_hub_url().rstrip("/")
 
-    # Use instance bot to send in threads (own identity)
-    if info["my_bots"]:
+    # Use specified bot or first instance bot to send in threads
+    chosen_id = req.bot_instance_id
+    if chosen_id and any(b["instance_id"] == chosen_id for b in info["my_bots"]):
+        token = _get_agent_token(chosen_id)
+    elif info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
     else:
         user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
