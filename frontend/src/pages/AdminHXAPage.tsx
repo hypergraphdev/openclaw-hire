@@ -374,7 +374,7 @@ export default function AdminHXAPage() {
                         for (const a of orphans) {
                           try { await api.adminDeleteOrgBot(selectedOrg!.id, a.bot_id); } catch { /* */ }
                         }
-                        loadOrgAgents(selectedOrg!.id);
+                        viewOrgDetail(selectedOrg!.id);
                       }} className="text-xs text-red-400 hover:text-red-300">清理无实例 Bot ({orgAgents.length - filtered.length})</button>
                     )}
                     <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
