@@ -216,16 +216,18 @@ def _get_hxa_plugin_info(instance_id: str) -> dict:
 
 def _get_claude_info(container_name: str) -> dict:
     """Get Claude process info from inside the container."""
-    result: dict = {"running": False, "pid": None, "uptime_seconds": None, "memory_mb": None}
+    result: dict = {"running": False, "pid": None, "uptime_seconds": None, "memory_mb": None, "command_line": None}
     rc, out = _docker_run(["docker", "exec", container_name, "ps", "aux"])
     if rc != 0 or not out:
         return result
 
     for line in out.splitlines():
-        if "claude" in line and "grep" not in line:
+        if "claude" in line and "grep" not in line and "--dangerously" in line:
             parts = line.split()
-            if len(parts) >= 6:
+            if len(parts) >= 11:
                 result["running"] = True
+                # Full command is everything from column 10 onwards
+                result["command_line"] = " ".join(parts[10:])
                 try:
                     result["pid"] = int(parts[1])
                 except (ValueError, IndexError):
@@ -236,8 +238,6 @@ def _get_claude_info(container_name: str) -> dict:
                     result["memory_mb"] = round(rss_kb / 1024)
                 except (ValueError, IndexError):
                     pass
-                # Uptime from column 9 (TIME = cpu time, not wall time)
-                # Use /proc/PID/stat for actual uptime
                 if result["pid"]:
                     rc2, out2 = _docker_run([
                         "docker", "exec", container_name,

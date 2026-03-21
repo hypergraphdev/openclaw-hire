@@ -345,7 +345,7 @@ export function AdminPage() {
       {/* Diagnostics Modal */}
       {diagId && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setDiagId("")}>
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[560px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[720px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-white">实例诊断</h3>
               <button onClick={() => setDiagId("")} className="text-gray-500 hover:text-gray-300">✕</button>
@@ -354,109 +354,117 @@ export function AdminPage() {
             {diagLoading ? (
               <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
             ) : diagData ? (
-              <div className="space-y-4 text-xs">
-                {/* Basic Info */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">基本信息</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">实例名</span><span className="text-gray-200">{diagData.basic_info?.name}</span>
-                    <span className="text-gray-500">产品</span><span className="text-gray-200 capitalize">{diagData.basic_info?.product}</span>
-                    <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono">{diagData.basic_info?.instance_id}</span>
-                    <span className="text-gray-500">所有者</span><span className="text-gray-200">{diagData.basic_info?.owner_name} ({diagData.basic_info?.owner_email})</span>
-                    <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
+              <div className="space-y-3 text-xs">
+                {/* Row 1: Basic Info + HXA */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2">基本信息</h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">实例名</span><span className="text-gray-200">{diagData.basic_info?.name}</span>
+                      <span className="text-gray-500">产品</span><span className="text-gray-200 capitalize">{diagData.basic_info?.product}</span>
+                      <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.basic_info?.instance_id}</span>
+                      <span className="text-gray-500">所有者</span><span className="text-gray-200 truncate">{diagData.basic_info?.owner_name}</span>
+                      <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2">HXA 插件</h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">安装</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.hxa_plugin?.installed} /> {diagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span>
+                      <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.hxa_plugin?.status || "-"}</span>
+                      <span className="text-gray-500">Agent</span><span className="text-green-400 truncate">{diagData.hxa_plugin?.agent_name || "-"}</span>
+                      <span className="text-gray-500">组织</span><span className="text-gray-200 font-mono text-[10px] truncate">{diagData.hxa_plugin?.org_id ? diagData.hxa_plugin.org_id.substring(0, 12) + "..." : "-"}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* HXA Plugin */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">HXA 插件</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">安装状态</span>
-                    <span className="flex items-center gap-1"><StatusDot ok={diagData.hxa_plugin?.installed} /> {diagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span>
-                    <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.hxa_plugin?.status || "-"}</span>
-                    <span className="text-gray-500">Agent 名称</span><span className="text-green-400">{diagData.hxa_plugin?.agent_name || "-"}</span>
-                    <span className="text-gray-500">组织 ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.hxa_plugin?.org_id || "-"}</span>
+                {/* Row 2: Telegram + Claude */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2">Telegram</h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">已配置</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.configured} /> {diagData.telegram?.configured ? "是" : "否"}</span>
+                      <span className="text-gray-500">Token</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.bot_token_set} /> {diagData.telegram?.bot_token_set ? "已设置" : "未设置"}</span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2 flex items-center gap-1">
+                      Claude
+                      {diagData.claude?.command_line && (
+                        <span className="relative group cursor-help">
+                          <span className="text-gray-600 hover:text-gray-400 text-[10px]">ℹ️</span>
+                          <span className="absolute left-0 bottom-full mb-1 hidden group-hover:block z-50 bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-[10px] text-gray-300 font-mono whitespace-pre-wrap max-w-[400px] shadow-lg">
+                            {diagData.claude.command_line}
+                          </span>
+                        </span>
+                      )}
+                    </h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">状态</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.claude?.running} /> {diagData.claude?.running ? "运行中" : "未运行"}</span>
+                      <span className="text-gray-500">PID</span><span className="text-gray-200">{diagData.claude?.pid ?? "-"}</span>
+                      <span className="text-gray-500">运行</span><span className="text-gray-200">{formatUptime(diagData.claude?.uptime_seconds)}</span>
+                      <span className="text-gray-500">内存</span><span className="text-gray-200">{diagData.claude?.memory_mb ? `${diagData.claude.memory_mb} MB` : "-"}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Telegram */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">Telegram</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">已配置</span>
-                    <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.configured} /> {diagData.telegram?.configured ? "是" : "否"}</span>
-                    <span className="text-gray-500">Token 已设置</span>
-                    <span className="flex items-center gap-1"><StatusDot ok={diagData.telegram?.bot_token_set} /> {diagData.telegram?.bot_token_set ? "是" : "否"}</span>
+                {/* Row 3: Container + Resource Usage */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2">容器</h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">状态</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.container?.running} /> {diagData.container?.running ? "运行中" : "已停止"}</span>
+                      <span className="text-gray-500">磁盘</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
+                      <span className="text-gray-500">内存限制</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "无限制"}</span>
+                      <span className="text-gray-500">CPU 限制</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit} 核` : "无限制"}</span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2">资源使用</h4>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                      <span className="text-gray-500">CPU</span>
+                      <span className="text-gray-200">{diagData.resource_usage?.cpu_percent != null ? `${diagData.resource_usage.cpu_percent}%` : "-"}</span>
+                      <span className="text-gray-500">内存</span>
+                      <span className="text-gray-200">
+                        {diagData.resource_usage?.mem_used_mb != null
+                          ? `${diagData.resource_usage.mem_used_mb} MB / ${diagData.resource_usage.mem_total_mb ?? "?"} MB`
+                          : "-"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Claude */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">Claude</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">运行状态</span>
-                    <span className="flex items-center gap-1"><StatusDot ok={diagData.claude?.running} /> {diagData.claude?.running ? "运行中" : "未运行"}</span>
-                    <span className="text-gray-500">PID</span><span className="text-gray-200">{diagData.claude?.pid ?? "-"}</span>
-                    <span className="text-gray-500">运行时间</span><span className="text-gray-200">{formatUptime(diagData.claude?.uptime_seconds)}</span>
-                    <span className="text-gray-500">内存占用</span><span className="text-gray-200">{diagData.claude?.memory_mb ? `${diagData.claude.memory_mb} MB` : "-"}</span>
-                  </div>
-                </div>
-
-                {/* Container */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">容器</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">运行状态</span>
-                    <span className="flex items-center gap-1"><StatusDot ok={diagData.container?.running} /> {diagData.container?.running ? "运行中" : "已停止"}</span>
-                    <span className="text-gray-500">磁盘占用</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
-                    <span className="text-gray-500">内存限制</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "无限制"}</span>
-                    <span className="text-gray-500">CPU 限制</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit} 核` : "无限制"}</span>
-                  </div>
-                </div>
-
-                {/* Resource Usage */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-1">
-                  <h4 className="text-gray-400 font-medium mb-2">资源使用</h4>
-                  <div className="grid grid-cols-2 gap-y-1">
-                    <span className="text-gray-500">CPU 使用率</span>
-                    <span className="text-gray-200">{diagData.resource_usage?.cpu_percent != null ? `${diagData.resource_usage.cpu_percent}%` : "-"}</span>
-                    <span className="text-gray-500">内存使用</span>
-                    <span className="text-gray-200">
-                      {diagData.resource_usage?.mem_used_mb != null
-                        ? `${diagData.resource_usage.mem_used_mb} MB / ${diagData.resource_usage.mem_total_mb ?? "?"} MB`
-                        : "-"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Resource Limits */}
-                <div className="bg-gray-800/50 rounded p-3 space-y-2">
-                  <h4 className="text-gray-400 font-medium mb-2">资源限制</h4>
-                  <div className="flex items-center gap-3">
-                    <label className="text-gray-500 w-20">CPU 核数</label>
-                    <input type="number" min={0.5} max={32} step={0.5} value={resCpus}
-                      onChange={(e) => setResCpus(parseFloat(e.target.value) || 1)}
-                      className="w-24 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-gray-500 w-20">内存 MB</label>
-                    <input type="number" min={256} max={65536} step={256} value={resMemory}
-                      onChange={(e) => setResMemory(parseInt(e.target.value) || 1024)}
-                      className="w-24 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
+                {/* Row 4: Resource Limits */}
+                <div className="bg-gray-800/50 rounded p-3">
+                  <h4 className="text-gray-400 font-medium mb-2">资源限制设置</h4>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <label className="text-gray-500">CPU</label>
+                      <input type="number" min={0.5} max={32} step={0.5} value={resCpus}
+                        onChange={(e) => setResCpus(parseFloat(e.target.value) || 1)}
+                        className="w-20 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
+                      <span className="text-gray-600">核</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-gray-500">内存</label>
+                      <input type="number" min={256} max={65536} step={256} value={resMemory}
+                        onChange={(e) => setResMemory(parseInt(e.target.value) || 1024)}
+                        className="w-24 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
+                      <span className="text-gray-600">MB</span>
+                    </div>
                     <button onClick={async () => {
-                      setResSaving(true);
-                      setResMsg("");
+                      setResSaving(true); setResMsg("");
                       try {
                         const res = await api.adminInstanceResources(diagId, resMemory, resCpus);
                         setResMsg(res.ok ? "已应用" : (res.detail || "失败"));
-                        // Refresh diagnostics
                         const data = await api.adminInstanceDiagnostics(diagId);
                         setDiagData(data);
-                      } catch (e: unknown) {
-                        setResMsg((e as Error).message || "操作失败");
-                      }
+                      } catch (e: unknown) { setResMsg((e as Error).message || "操作失败"); }
                       setResSaving(false);
                     }} disabled={resSaving}
                       className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
