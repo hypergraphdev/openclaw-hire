@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { AlertBell } from "./AlertBell";
 import { useAuth } from "../contexts/AuthContext";
 import { useT } from "../contexts/LanguageContext";
 
@@ -30,12 +31,15 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="md:hidden sticky top-0 z-40 bg-gray-900/95 border-b border-gray-800 backdrop-blur">
         <div className="h-14 px-4 flex items-center justify-between">
           <div className="text-blue-400 text-base font-bold tracking-tight">{t("layout.brand")} <span className="text-xs text-gray-500">{t("layout.brandSuffix")}</span></div>
-          <button
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            className="text-sm px-3 py-1.5 rounded-md bg-gray-800 text-gray-200"
-          >
-            {mobileMenuOpen ? t("layout.close") : t("layout.menu")}
-          </button>
+          <div className="flex items-center gap-2">
+            <AlertBell />
+            <button
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="text-sm px-3 py-1.5 rounded-md bg-gray-800 text-gray-200"
+            >
+              {mobileMenuOpen ? t("layout.close") : t("layout.menu")}
+            </button>
+          </div>
         </div>
 
         {mobileMenuOpen && (
@@ -133,6 +137,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* Main content */}
         <main className="flex-1 overflow-auto">
+          <div className="hidden md:flex items-center justify-end px-8 py-2 border-b border-gray-800/50">
+            <AlertBell />
+          </div>
           <div className="px-4 md:px-8 py-4 md:py-8">{children}</div>
         </main>
       </div>

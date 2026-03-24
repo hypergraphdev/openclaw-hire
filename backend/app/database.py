@@ -234,6 +234,29 @@ def _migrate_existing_db() -> None:
                 ON instance_metrics (instance_id, collected_at)
             """)
 
+        # alerts table for notification system
+        if "alerts" not in tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id TEXT PRIMARY KEY,
+                    instance_id TEXT,
+                    alert_type TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'warning',
+                    message TEXT NOT NULL,
+                    is_read INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_created
+                ON alerts (created_at DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_instance
+                ON alerts (instance_id, alert_type, created_at)
+            """)
+
         # org_secrets table for multi-org support
         if "org_secrets" not in tables:
             conn.execute("""

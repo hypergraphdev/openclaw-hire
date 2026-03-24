@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -301,6 +301,16 @@ export const api = {
 
   adminDeleteOrgBot: (orgId: string, botId: string) =>
     request<{ ok: boolean }>(`/api/admin/hxa/orgs/${orgId}/bots/${botId}`, { method: "DELETE" }),
+
+  // Alerts
+  listAlerts: (unread?: boolean) =>
+    request<AlertsResponse>(`/api/alerts${unread ? "?unread=true" : ""}`),
+
+  markAlertRead: (id: string) =>
+    request<{ ok: boolean }>(`/api/alerts/${id}/read`, { method: "POST" }),
+
+  markAllAlertsRead: () =>
+    request<{ ok: boolean }>("/api/alerts/read-all", { method: "POST" }),
 
   // Raw fetch helpers (return Response)
   get: (path: string) => {

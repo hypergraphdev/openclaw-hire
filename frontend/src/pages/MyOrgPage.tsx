@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
+import { PixelOffice } from "../components/PixelOffice";
 import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, SearchResult, ThreadMessage } from "../types";
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
@@ -181,6 +182,9 @@ export function MyOrgPage() {
   const [syncing, setSyncing] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+
+  // Pixel Office
+  const [showOffice, setShowOffice] = useState(false);
 
   // @ mention
   const [mentionFilter, setMentionFilter] = useState("");
@@ -490,6 +494,7 @@ export function MyOrgPage() {
   }
 
   const allBots = data?.all_bots || [];
+  const myBotNames = useMemo(() => new Set((data?.my_bots || []).map((b) => b.agent_name)), [data?.my_bots]);
 
   if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
   if (!data || data.status === "no_instances") return (<div className="flex flex-col items-center justify-center h-[60vh] text-center"><div className="text-4xl mb-4">📦</div><h2 className="text-lg text-white font-medium mb-2">{t("myOrg.noInstances")}</h2><p className="text-gray-500 text-sm mb-4">{t("myOrg.noInstancesDesc")}</p><Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm">{t("myOrg.goToCatalog")}</Link></div>);
@@ -527,6 +532,12 @@ export function MyOrgPage() {
             )}
           </div>
           <div className="flex-1" />
+          <button
+            onClick={() => setShowOffice((v) => !v)}
+            className={`shrink-0 text-xs px-2.5 py-1.5 rounded-md border transition-colors ${showOffice ? "bg-blue-600/20 border-blue-600 text-blue-400" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600"}`}
+          >
+            {showOffice ? "🏢 关闭办公室" : "🏢 办公室视图"}
+          </button>
           <div className="relative w-80">
             <input type="text" value={globalSearchQuery}
               onChange={(e) => handleSearchInputChange(e.target.value)}
@@ -610,6 +621,19 @@ export function MyOrgPage() {
         )}
         {data.is_default_org && <div className="mt-2 px-3 py-2 bg-yellow-900/30 border border-yellow-700 rounded text-yellow-300 text-xs">⚠ {t("myOrg.defaultOrgWarning")}</div>}
       </div>
+
+      {showOffice && (
+        <div className="px-4 py-2 border-b border-gray-800 max-h-[40vh] overflow-auto">
+          <PixelOffice
+            bots={allBots.map((b) => ({ name: b.name, online: b.online, bot_id: b.bot_id }))}
+            myBotNames={myBotNames}
+            onBotClick={(name) => {
+              const bot = allBots.find((b) => b.name === name);
+              if (bot) selectDM(bot);
+            }}
+          />
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}

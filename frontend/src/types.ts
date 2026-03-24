@@ -275,6 +275,24 @@ export type SparklineResponse = {
   labels: string[];
 };
 
+// ─── Alert types ───
+
+export type Alert = {
+  id: string;
+  instance_id: string | null;
+  alert_type: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  is_read: number;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+export type AlertsResponse = {
+  alerts: Alert[];
+  unread_count: number;
+};
+
 export type ConnectivityResult = {
   ok: boolean;
   elapsed_ms: number;
