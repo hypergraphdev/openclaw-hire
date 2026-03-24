@@ -5,3 +5,6 @@ backend/data/
 frontend/dist/
 frontend/node_modules/
 runtime
+.env
+backend/.env
+*.env.local

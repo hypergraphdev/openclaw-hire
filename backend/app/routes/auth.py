@@ -19,9 +19,6 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-ADMIN_EMAIL = "web8stars@gmail.com"
-
-
 def _row_to_user(row) -> UserResponse:
     return UserResponse(**{k: row[k] for k in ("id", "name", "email", "company_name", "is_admin", "created_at")})
 
@@ -31,7 +28,6 @@ def register(payload: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
     user_id = f"user_{uuid4().hex[:12]}"
     now = _utc_now()
     pw_hash = hash_password(payload.password)
-    is_admin = 1 if payload.email.lower() == ADMIN_EMAIL else 0
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="用户名不能为空。")
@@ -47,11 +43,12 @@ def register(payload: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
             detail="该用户名已被使用，请换一个。建议使用企业邮箱用户名。",
         )
 
+    # New users are always regular (is_admin=0). Admin role assigned via admin panel.
     try:
         cursor = db.cursor(dictionary=True)
         cursor.execute(
             "INSERT INTO users (id, name, email, company_name, password_hash, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (user_id, name, payload.email.lower(), payload.company_name, pw_hash, is_admin, now),
+            (user_id, name, payload.email.lower(), payload.company_name, pw_hash, 0, now),
         )
         cursor.close()
     except mysql.connector.IntegrityError:
@@ -77,16 +74,6 @@ def login(payload: LoginRequest, db=Depends(get_db)) -> TokenResponse:
     pw_hash = row["password_hash"]
     if not pw_hash or not verify_password(payload.password, pw_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
-
-    # Keep admin flag in sync for designated admin email
-    if payload.email.lower() == ADMIN_EMAIL and not row["is_admin"]:
-        cursor = db.cursor()
-        cursor.execute("UPDATE users SET is_admin = 1 WHERE id = %s", (row["id"],))
-        cursor.close()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE id = %s", (row["id"],))
-        row = cursor.fetchone()
-        cursor.close()
 
     token = create_access_token(row["id"])
     return TokenResponse(access_token=token, user=_row_to_user(row))
