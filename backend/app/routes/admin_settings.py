@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ..database import get_connection, get_setting, set_setting
+from ..database import get_setting, set_setting
 from ..deps import get_current_user
 from .admin import _require_admin
 

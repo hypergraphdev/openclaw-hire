@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sqlite3
 from datetime import datetime, timezone, timedelta
+
+import mysql.connector
 
 from .docker_utils import get_container_name, get_resource_usage, get_claude_info
 
@@ -14,16 +15,15 @@ COLLECT_INTERVAL = 60  # seconds
 RETENTION_DAYS = 7
 
 
-def _collect_once(db_path: str) -> int:
+def _collect_once(db_config: dict) -> int:
     """Collect metrics for all running instances. Returns count collected."""
-    conn = sqlite3.connect(db_path, timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
+    conn = mysql.connector.connect(**db_config)
     try:
-        rows = conn.execute(
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
             "SELECT id, product FROM instances WHERE install_state = 'running'"
-        ).fetchall()
+        )
+        rows = cursor.fetchall()
 
         now = datetime.now(timezone.utc).isoformat()
         count = 0
@@ -39,11 +39,11 @@ def _collect_once(db_path: str) -> int:
             if usage["cpu_percent"] is None and not claude["running"]:
                 continue  # container probably not running
 
-            conn.execute(
+            cursor.execute(
                 """INSERT INTO instance_metrics
                    (instance_id, cpu_percent, mem_used_mb, mem_total_mb,
                     claude_running, claude_mem_mb, collected_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     instance_id,
                     usage.get("cpu_percent"),
@@ -58,9 +58,9 @@ def _collect_once(db_path: str) -> int:
 
         # Cleanup old data
         cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat()
-        conn.execute("DELETE FROM instance_metrics WHERE collected_at < ?", (cutoff,))
+        cursor.execute("DELETE FROM instance_metrics WHERE collected_at < %s", (cutoff,))
 
-        conn.commit()
+        cursor.close()
         return count
     except Exception as e:
         logger.error("Metrics collection failed: %s", e)
@@ -69,12 +69,12 @@ def _collect_once(db_path: str) -> int:
         conn.close()
 
 
-async def collect_loop(db_path: str) -> None:
+async def collect_loop(db_config: dict) -> None:
     """Main collection loop, runs forever."""
     logger.info("Metrics collector started (interval=%ds, retention=%dd)", COLLECT_INTERVAL, RETENTION_DAYS)
     while True:
         try:
-            count = await asyncio.to_thread(_collect_once, db_path)
+            count = await asyncio.to_thread(_collect_once, db_config)
             if count > 0:
                 logger.debug("Collected metrics for %d instances", count)
         except Exception as e:

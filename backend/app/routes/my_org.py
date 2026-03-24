@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -24,18 +23,21 @@ router = APIRouter(prefix="/api/my-org", tags=["my-org"])
 #  Helpers
 # ---------------------------------------------------------------------------
 
-def _get_user_org_info(user_id: str, db: sqlite3.Connection, target_org_id: str = "") -> dict:
+def _get_user_org_info(user_id: str, db, target_org_id: str = "") -> dict:
     """Return user's org context: instances, org_id, etc.
     If target_org_id given, scope to that org. Otherwise pick first."""
-    rows = db.execute(
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
         """SELECT i.id, i.name, i.product, i.agent_name, i.install_state,
                   c.org_id, c.agent_name AS cfg_agent_name
            FROM instances i
            LEFT JOIN instance_configs c ON i.id = c.instance_id
-           WHERE i.owner_id = ?
+           WHERE i.owner_id = %s
            ORDER BY i.created_at DESC""",
         (user_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
+    cursor.close()
 
     if not rows:
         return {"status": "no_instances"}
@@ -81,8 +83,14 @@ def _resolve_org_secret(org_id: str) -> str:
     default_org_id = get_setting("hxa_org_id", "")
     if org_id == default_org_id:
         return get_setting("hxa_org_secret", "")
-    with get_connection() as conn:
-        row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (org_id,)).fetchone()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (org_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     return row["org_secret"] if row else ""
 
 
@@ -107,12 +115,18 @@ def _get_org_name(org_id: str) -> str:
     except Exception:
         pass
     # Fallback to local
-    with get_connection() as conn:
-        row = conn.execute("SELECT org_name FROM org_secrets WHERE org_id = ?", (org_id,)).fetchone()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT org_name FROM org_secrets WHERE org_id = %s", (org_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     return row["org_name"] if row else org_id[:12]
 
 
-def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str], hub_url: str, db: sqlite3.Connection, org_id: str = "") -> tuple[str, str]:
+def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str], hub_url: str, db, org_id: str = "") -> tuple[str, str]:
     """Pick the right token for chatting.
     Returns (token, identity_type) where identity_type is 'admin' or instance_id.
 
@@ -121,7 +135,10 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
     """
     if target_bot_name in my_bot_names:
         # Chat with own bot → use admin bot in the SAME org
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = cursor.fetchone()
+        cursor.close()
         display_name = user_row["name"] if user_row else ""
         token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
         if not token:
@@ -130,25 +147,29 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
     else:
         # Chat with other's bot → use my instance bot in the SAME org
         # First try to find instance in the same org, then fallback to any
+        cursor = db.cursor(dictionary=True)
         if org_id:
-            rows = db.execute(
+            cursor.execute(
                 """SELECT i.id FROM instances i
                    JOIN instance_configs c ON i.id = c.instance_id
-                   WHERE i.owner_id = ? AND c.org_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''
+                   WHERE i.owner_id = %s AND c.org_id = %s AND c.agent_name IS NOT NULL AND c.agent_name != ''
                    ORDER BY i.created_at ASC LIMIT 1""",
                 (user_id, org_id),
-            ).fetchall()
+            )
+            rows = cursor.fetchall()
         else:
             rows = []
         if not rows:
             # Fallback: any instance with a configured agent
-            rows = db.execute(
+            cursor.execute(
                 """SELECT i.id FROM instances i
                    JOIN instance_configs c ON i.id = c.instance_id
-                   WHERE i.owner_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''
+                   WHERE i.owner_id = %s AND c.agent_name IS NOT NULL AND c.agent_name != ''
                    ORDER BY i.created_at ASC LIMIT 1""",
                 (user_id,),
-            ).fetchall()
+            )
+            rows = cursor.fetchall()
+        cursor.close()
         if not rows:
             raise HTTPException(status_code=400, detail="You have no configured bot to chat with.")
         instance_id = rows[0]["id"]
@@ -166,7 +187,7 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
 def get_my_org(
     org_id: str = Query("", alias="org"),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get user's organization info and bot list. Supports multi-org via ?org=id."""
     user_id = current_user["id"]
@@ -197,12 +218,18 @@ def get_my_org(
     my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
 
     # Filter to instance bots only — include ALL orgs since bots may have been transferred
-    with get_connection() as conn:
-        inst_rows = conn.execute(
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
             """SELECT DISTINCT c.agent_name FROM instance_configs c
                JOIN instances i ON c.instance_id = i.id
                WHERE c.agent_name IS NOT NULL AND c.agent_name != ''""",
-        ).fetchall()
+        )
+        inst_rows = cursor.fetchall()
+        cursor.close()
+    finally:
+        conn.close()
     instance_agent_names = {r["agent_name"] for r in inst_rows}
 
     all_bots = []
@@ -225,14 +252,18 @@ def get_my_org(
         my_bots_in_hub = hub_bot_names_in_org & my_agent_names
         if my_bots_in_hub:
             try:
-                with get_connection() as conn:
+                conn = get_connection()
+                try:
+                    cursor = conn.cursor()
                     for name in my_bots_in_hub:
-                        conn.execute(
-                            """UPDATE instance_configs SET org_id = ?
-                               WHERE agent_name = ? AND (org_id IS NULL OR org_id != ?)""",
+                        cursor.execute(
+                            """UPDATE instance_configs SET org_id = %s
+                               WHERE agent_name = %s AND (org_id IS NULL OR org_id != %s)""",
                             (active_org_id, name, active_org_id),
                         )
-                    conn.commit()
+                    cursor.close()
+                finally:
+                    conn.close()
             except Exception:
                 pass  # Best effort sync
 
@@ -257,7 +288,7 @@ class OrgChatSendRequest(BaseModel):
 def org_chat_send(
     req: OrgChatSendRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Send a message to a bot in the org. Identity depends on target."""
     user_id = current_user["id"]
@@ -284,7 +315,7 @@ def org_chat_send(
 def org_chat_info(
     target: str = Query(...),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get chat info for a target bot.
 
@@ -315,7 +346,10 @@ def org_chat_info(
     is_own_bot = target in my_agent_names
     if is_own_bot:
         org_id = info.get("org_id", "")
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
         display_name = user_row["name"] if user_row else ""
         admin_token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
         if admin_token:
@@ -377,7 +411,7 @@ def org_chat_messages(
     before: str = Query(""),
     limit: int = Query(50),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get messages for a DM channel."""
     user_id = current_user["id"]
@@ -402,7 +436,7 @@ def org_chat_ws_ticket(
     target: str = Query(""),
     mode: str = Query("dm"),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get WebSocket ticket. mode=dm uses chat identity, mode=thread uses instance bot."""
     user_id = current_user["id"]
@@ -424,7 +458,10 @@ def org_chat_ws_ticket(
     elif target:
         token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
     else:
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
         display_name = user_row["name"] if user_row else ""
         token = _ensure_user_bot(hub_url, user_id, display_name)
         if not token:
@@ -497,7 +534,7 @@ class CreateThreadRequest(BaseModel):
 def create_thread(
     req: CreateThreadRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Create a new thread and invite participants."""
     user_id = current_user["id"]
@@ -507,7 +544,10 @@ def create_thread(
 
     hub_url = _get_hub_url().rstrip("/")
     # Use admin bot to create thread (as the user's identity)
-    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    _cur = db.cursor(dictionary=True)
+    _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+    user_row = _cur.fetchone()
+    _cur.close()
     display_name = user_row["name"] if user_row else ""
 
     # Determine which token to use - prefer first instance bot
@@ -553,7 +593,7 @@ def create_thread(
 @router.get("/threads")
 def list_threads(
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """List threads the user's bot participates in."""
     user_id = current_user["id"]
@@ -567,7 +607,10 @@ def list_threads(
     if info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
     else:
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
         token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
     if not token:
         return {"threads": []}
@@ -587,7 +630,7 @@ def thread_messages(
     before: str = Query(""),
     limit: int = Query(50),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get messages in a thread."""
     user_id = current_user["id"]
@@ -599,7 +642,10 @@ def thread_messages(
     if info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
     else:
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
         token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
@@ -623,7 +669,7 @@ def thread_send(
     thread_id: str,
     req: ThreadSendRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Send a message to a thread using instance bot identity."""
     user_id = current_user["id"]
@@ -640,7 +686,10 @@ def thread_send(
     elif info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
     else:
-        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
         token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
@@ -655,13 +704,16 @@ def thread_send(
     return result
 
 
-def _get_thread_token(user_id: str, info: dict, hub_url: str, db: sqlite3.Connection) -> str:
+def _get_thread_token(user_id: str, info: dict, hub_url: str, db) -> str:
     """Get bot token for thread operations."""
     if info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
         if token:
             return token
-    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    _cur = db.cursor(dictionary=True)
+    _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+    user_row = _cur.fetchone()
+    _cur.close()
     return _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "", target_org_id=info.get("org_id") or None)
 
 
@@ -669,7 +721,7 @@ def _get_thread_token(user_id: str, info: dict, hub_url: str, db: sqlite3.Connec
 def get_thread_detail(
     thread_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get thread detail with participants."""
     user_id = current_user["id"]
@@ -693,7 +745,7 @@ def update_thread(
     thread_id: str,
     req: UpdateThreadRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Update thread topic or context (announcement)."""
     user_id = current_user["id"]
@@ -719,7 +771,7 @@ def update_thread(
 def leave_thread(
     thread_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Leave a thread. Sends DM to initiator notifying departure."""
     user_id = current_user["id"]
@@ -774,7 +826,7 @@ def invite_to_thread(
     thread_id: str,
     req: InviteRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Invite a bot to thread by name."""
     user_id = current_user["id"]
@@ -798,7 +850,7 @@ def kick_from_thread(
     thread_id: str,
     req: KickRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Remove a bot from thread (creator only)."""
     user_id = current_user["id"]
@@ -823,7 +875,7 @@ def kick_from_thread(
 @router.post("/search/sync")
 def search_sync(
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Trigger message sync for search index."""
     from ..message_index import sync_messages
@@ -844,7 +896,10 @@ def search_sync(
             tokens.append((t, bot["agent_name"]))
 
     # Also add admin bot
-    user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    _cur = db.cursor(dictionary=True)
+    _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+    user_row = _cur.fetchone()
+    _cur.close()
     display_name = user_row["name"] if user_row else ""
     admin_token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
     if admin_token:
@@ -863,7 +918,7 @@ def search_messages_endpoint(
     to_name: str = Query("", alias="to"),
     limit: int = Query(50),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Search indexed messages."""
     from ..message_index import search_messages

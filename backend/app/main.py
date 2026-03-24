@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import asyncio
 
-from .database import init_db, DB_PATH
+from .database import init_db, DB_CONFIG
 from .routes.auth import router as auth_router
 from .routes.catalog import router as catalog_router
 from .routes.instances import router as instances_router
@@ -28,10 +28,10 @@ def on_startup() -> None:
     init_db()
     # Start background metrics collector
     from .services.metrics_collector import collect_loop
-    asyncio.get_event_loop().create_task(collect_loop(str(DB_PATH)))
+    asyncio.get_event_loop().create_task(collect_loop(DB_CONFIG))
     # Start background alert checker
     from .services.alert_checker import alert_check_loop
-    asyncio.get_event_loop().create_task(alert_check_loop(str(DB_PATH)))
+    asyncio.get_event_loop().create_task(alert_check_loop(DB_CONFIG))
 
 
 @app.get("/api/health")

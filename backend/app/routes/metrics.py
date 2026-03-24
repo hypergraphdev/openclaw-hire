@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import urllib.request
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -15,15 +14,21 @@ from ..services.docker_utils import docker_run, get_container_name, get_resource
 router = APIRouter(prefix="/api/instances", tags=["metrics"])
 
 
-def _check_owner(instance_id: str, user_id: str, db: sqlite3.Connection, is_admin: bool = False):
+def _check_owner(instance_id: str, user_id: str, db, is_admin: bool = False):
     """Verify user owns the instance or is admin."""
     if is_admin:
-        row = db.execute("SELECT id FROM instances WHERE id = ?", (instance_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT id FROM instances WHERE id = %s", (instance_id,))
+        row = _cur.fetchone()
+        _cur.close()
     else:
-        row = db.execute(
-            "SELECT id FROM instances WHERE id = ? AND owner_id = ?",
+        _cur = db.cursor(dictionary=True)
+        _cur.execute(
+            "SELECT id FROM instances WHERE id = %s AND owner_id = %s",
             (instance_id, user_id),
-        ).fetchone()
+        )
+        row = _cur.fetchone()
+        _cur.close()
     if not row:
         raise HTTPException(status_code=404, detail="Instance not found.")
 
@@ -33,20 +38,23 @@ def get_metrics(
     instance_id: str,
     hours: int = Query(24, ge=1, le=168),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get historical metrics for an instance."""
     _check_owner(instance_id, current_user["id"], db, current_user.get("is_admin", False))
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    rows = db.execute(
+    _cur = db.cursor(dictionary=True)
+    _cur.execute(
         """SELECT cpu_percent, mem_used_mb, mem_total_mb, disk_usage_mb,
                   claude_running, claude_mem_mb, collected_at
            FROM instance_metrics
-           WHERE instance_id = ? AND collected_at >= ?
+           WHERE instance_id = %s AND collected_at >= %s
            ORDER BY collected_at ASC""",
         (instance_id, cutoff),
-    ).fetchall()
+    )
+    rows = _cur.fetchall()
+    _cur.close()
 
     metrics = [dict(r) for r in rows]
 
@@ -70,7 +78,7 @@ def get_sparkline(
     instance_id: str,
     field: str = Query("cpu_percent"),
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get sparkline data (7 evenly-spaced points) for an instance metric."""
     _check_owner(instance_id, current_user["id"], db, current_user.get("is_admin", False))
@@ -79,13 +87,16 @@ def get_sparkline(
         raise HTTPException(status_code=400, detail="field must be cpu_percent or mem_used_mb")
 
     # Get last 7 data points
-    rows = db.execute(
+    _cur = db.cursor(dictionary=True)
+    _cur.execute(
         f"""SELECT {field} as val, collected_at
             FROM instance_metrics
-            WHERE instance_id = ? AND {field} IS NOT NULL
+            WHERE instance_id = %s AND {field} IS NOT NULL
             ORDER BY collected_at DESC LIMIT 7""",
         (instance_id,),
-    ).fetchall()
+    )
+    rows = _cur.fetchall()
+    _cur.close()
 
     values = [r["val"] for r in reversed(rows)]
     labels = [r["collected_at"][-8:-3] for r in reversed(rows)]  # HH:MM
@@ -102,14 +113,15 @@ def get_sparkline(
 def connectivity_test(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Run connectivity tests for HXA, Telegram, and Claude."""
     _check_owner(instance_id, current_user["id"], db, current_user.get("is_admin", False))
 
-    inst = db.execute(
-        "SELECT product FROM instances WHERE id = ?", (instance_id,)
-    ).fetchone()
+    _cur = db.cursor(dictionary=True)
+    _cur.execute("SELECT product FROM instances WHERE id = %s", (instance_id,))
+    inst = _cur.fetchone()
+    _cur.close()
     if not inst:
         raise HTTPException(status_code=404, detail="Instance not found.")
 
@@ -157,14 +169,20 @@ def connectivity_test(
         results["hxa"] = {"ok": False, "elapsed_ms": 0, "error": "No agent token configured"}
 
     # Test Telegram
-    cfg = db.execute(
-        "SELECT telegram_bot_token FROM instance_configs WHERE instance_id = ?",
+    _cur = db.cursor(dictionary=True)
+    _cur.execute(
+        "SELECT telegram_bot_token FROM instance_configs WHERE instance_id = %s",
         (instance_id,),
-    ).fetchone()
+    )
+    cfg = _cur.fetchone()
+    _cur.close()
     tg_token = cfg["telegram_bot_token"] if cfg else None
     if not tg_token:
         # Check instances table fallback
-        inst2 = db.execute("SELECT telegram_bot_token FROM instances WHERE id = ?", (instance_id,)).fetchone()
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT telegram_bot_token FROM instances WHERE id = %s", (instance_id,))
+        inst2 = _cur.fetchone()
+        _cur.close()
         tg_token = inst2["telegram_bot_token"] if inst2 and inst2["telegram_bot_token"] else None
 
     if tg_token:
@@ -253,14 +271,15 @@ def _determine_state(claude_running: bool, services: list[dict], activity_state:
 def agent_activity(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get real-time agent activity: Claude process, pm2 services, overall state."""
     _check_owner(instance_id, current_user["id"], db, current_user.get("is_admin", False))
 
-    inst = db.execute(
-        "SELECT product FROM instances WHERE id = ?", (instance_id,)
-    ).fetchone()
+    _cur = db.cursor(dictionary=True)
+    _cur.execute("SELECT product FROM instances WHERE id = %s", (instance_id,))
+    inst = _cur.fetchone()
+    _cur.close()
     if not inst:
         raise HTTPException(status_code=404, detail="Instance not found.")
 

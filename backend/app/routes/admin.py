@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -29,12 +28,13 @@ def _row_to_user(row) -> UserResponse:
 @router.get("/users", response_model=list[UserResponse])
 def list_users(
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ) -> list[UserResponse]:
     _require_admin(current_user)
-    rows = db.execute(
-        "SELECT * FROM users ORDER BY created_at DESC",
-    ).fetchall()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    cursor.close()
     return [_row_to_user(row) for row in rows]
 
 
@@ -42,20 +42,26 @@ def list_users(
 def list_user_instances(
     user_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ) -> AdminUserInstancesResponse:
     _require_admin(current_user)
 
-    urow = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    urow = cursor.fetchone()
+    cursor.close()
     if not urow:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    irows = db.execute(
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
         """SELECT i.*, c.org_id FROM instances i
            LEFT JOIN instance_configs c ON i.id = c.instance_id
-           WHERE i.owner_id = ? ORDER BY i.created_at DESC""",
+           WHERE i.owner_id = %s ORDER BY i.created_at DESC""",
         (user_id,),
-    ).fetchall()
+    )
+    irows = cursor.fetchall()
+    cursor.close()
 
     return AdminUserInstancesResponse(
         user=_row_to_user(urow),
@@ -66,62 +72,71 @@ def list_user_instances(
 @router.get("/stats")
 def platform_stats(
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ):
     """Platform statistics. Admin sees global; regular user sees own org scope."""
     is_admin = bool(current_user.get("is_admin", 0))
 
     if is_admin:
-        total_users = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        total_bots = db.execute(
-            "SELECT COUNT(*) FROM instances WHERE install_state = 'running'"
-        ).fetchone()[0]
-        running_bots = db.execute(
-            "SELECT COUNT(*) FROM instances WHERE install_state = 'running' AND status = 'active'"
-        ).fetchone()[0]
-        org_bots = db.execute(
-            "SELECT COUNT(*) FROM instance_configs WHERE agent_name IS NOT NULL AND agent_name != ''"
-        ).fetchone()[0]
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT COUNT(*) AS c FROM users")
+        total_users = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM instances WHERE install_state = 'running'")
+        total_bots = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM instances WHERE install_state = 'running' AND status = 'active'")
+        running_bots = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM instance_configs WHERE agent_name IS NOT NULL AND agent_name != ''")
+        org_bots = cursor.fetchone()["c"]
+        cursor.close()
     else:
         # Get org_ids that this user's bots belong to
         user_id = current_user["id"]
-        user_org_ids = db.execute(
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(
             """SELECT DISTINCT c.org_id FROM instance_configs c
                JOIN instances i ON c.instance_id = i.id
-               WHERE i.owner_id = ? AND c.org_id IS NOT NULL AND c.org_id != ''""",
+               WHERE i.owner_id = %s AND c.org_id IS NOT NULL AND c.org_id != ''""",
             (user_id,),
-        ).fetchall()
-        org_ids = [r[0] for r in user_org_ids]
+        )
+        user_org_ids = cursor.fetchall()
+        cursor.close()
+        org_ids = [r["org_id"] for r in user_org_ids]
 
         if not org_ids:
             return {"total_users": 0, "total_bots": 0, "running_bots": 0, "org_bots": 0}
 
-        placeholders = ",".join("?" for _ in org_ids)
+        placeholders = ",".join("%s" for _ in org_ids)
+        cursor = db.cursor(dictionary=True)
         # Count users who have bots in these orgs
-        total_users = db.execute(
-            f"""SELECT COUNT(DISTINCT i.owner_id) FROM instances i
+        cursor.execute(
+            f"""SELECT COUNT(DISTINCT i.owner_id) AS c FROM instances i
                 JOIN instance_configs c ON i.id = c.instance_id
                 WHERE c.org_id IN ({placeholders})""",
             org_ids,
-        ).fetchone()[0]
+        )
+        total_users = cursor.fetchone()["c"]
         # Count running bots in these orgs
-        total_bots = db.execute(
-            f"""SELECT COUNT(*) FROM instances i
+        cursor.execute(
+            f"""SELECT COUNT(*) AS c FROM instances i
                 JOIN instance_configs c ON i.id = c.instance_id
                 WHERE i.install_state = 'running' AND c.org_id IN ({placeholders})""",
             org_ids,
-        ).fetchone()[0]
-        running_bots = db.execute(
-            f"""SELECT COUNT(*) FROM instances i
+        )
+        total_bots = cursor.fetchone()["c"]
+        cursor.execute(
+            f"""SELECT COUNT(*) AS c FROM instances i
                 JOIN instance_configs c ON i.id = c.instance_id
                 WHERE i.install_state = 'running' AND i.status = 'active' AND c.org_id IN ({placeholders})""",
             org_ids,
-        ).fetchone()[0]
-        org_bots = db.execute(
-            f"""SELECT COUNT(*) FROM instance_configs c
+        )
+        running_bots = cursor.fetchone()["c"]
+        cursor.execute(
+            f"""SELECT COUNT(*) AS c FROM instance_configs c
                 WHERE c.agent_name IS NOT NULL AND c.agent_name != '' AND c.org_id IN ({placeholders})""",
             org_ids,
-        ).fetchone()[0]
+        )
+        org_bots = cursor.fetchone()["c"]
+        cursor.close()
 
     return {
         "total_users": total_users,
@@ -194,21 +209,24 @@ def _get_hxa_plugin_info(instance_id: str) -> dict:
 def instance_diagnostics(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ):
     """Return comprehensive health diagnostics for an instance."""
     _require_admin(current_user)
 
     # Fetch instance + owner + config
-    row = db.execute(
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
         """SELECT i.*, u.name AS owner_name, u.email AS owner_email,
                   c.telegram_bot_token, c.org_id AS config_org_id
            FROM instances i
            JOIN users u ON i.owner_id = u.id
            LEFT JOIN instance_configs c ON i.id = c.instance_id
-           WHERE i.id = ?""",
+           WHERE i.id = %s""",
         (instance_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
+    cursor.close()
     if not row:
         raise HTTPException(status_code=404, detail="Instance not found.")
 
@@ -230,7 +248,7 @@ def instance_diagnostics(
     hxa_plugin = _get_hxa_plugin_info(instance_id)
 
     # Telegram
-    tg_token = row["telegram_bot_token"] if "telegram_bot_token" in row.keys() else None
+    tg_token = row.get("telegram_bot_token")
     telegram = {
         "configured": bool(tg_token),
         "bot_token_set": bool(tg_token),
@@ -284,15 +302,18 @@ def instance_control(
     instance_id: str,
     payload: InstanceControlRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ):
     """Control an instance: stop, start, restart, or kill_claude."""
     _require_admin(current_user)
 
-    row = db.execute(
-        "SELECT product, compose_file, compose_project, runtime_dir FROM instances WHERE id = ?",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT product, compose_file, compose_project, runtime_dir FROM instances WHERE id = %s",
         (instance_id,),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
+    cursor.close()
     if not row:
         raise HTTPException(status_code=404, detail="Instance not found.")
 
@@ -377,14 +398,17 @@ def instance_resources(
     instance_id: str,
     payload: ResourceLimitRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db=Depends(get_db),
 ):
     """Update container resource limits (memory & CPU)."""
     _require_admin(current_user)
 
-    row = db.execute(
-        "SELECT product FROM instances WHERE id = ?", (instance_id,)
-    ).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT product FROM instances WHERE id = %s", (instance_id,)
+    )
+    row = cursor.fetchone()
+    cursor.close()
     if not row:
         raise HTTPException(status_code=404, detail="Instance not found.")
 

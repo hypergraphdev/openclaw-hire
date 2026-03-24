@@ -10,9 +10,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..database import get_setting, set_setting
+from ..database import get_setting, set_setting, get_connection
 from ..deps import get_current_user
-from ..database import get_connection
 from ..services.install_service import _get_hub_url
 from .admin import _require_admin
 
@@ -86,14 +85,20 @@ def _get_agents() -> list[dict]:
         return agents
 
     # Get instance names + status from DB
-    with get_connection() as conn:
-        rows = conn.execute("SELECT id, name, product, install_state, agent_name, status FROM instances").fetchall()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, name, product, install_state, agent_name, status FROM instances")
+        rows = cursor.fetchall()
+        cursor.close()
         instance_map = {r["id"]: {
             "name": r["name"], "product": r["product"],
             "install_state": r["install_state"] or "idle",
             "agent_name_db": r["agent_name"] or "",
             "status": r["status"] or "",
         } for r in rows}
+    finally:
+        conn.close()
 
     for runtime_dir in sorted(RUNTIME_ROOT.iterdir()):
         instance_id = runtime_dir.name
@@ -214,10 +219,14 @@ def update_agent_name(instance_id: str, payload: UpdateAgentNameRequest, current
         raise HTTPException(status_code=500, detail=f"HXA rename request failed: {e}")
 
     # Update local DB
-    with get_connection() as conn:
-        conn.execute("UPDATE instances SET agent_name = ? WHERE id = ?", (new_name, instance_id))
-        conn.execute("UPDATE instance_configs SET agent_name = ? WHERE instance_id = ?", (new_name, instance_id))
-        conn.commit()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE instances SET agent_name = %s WHERE id = %s", (new_name, instance_id))
+        cursor.execute("UPDATE instance_configs SET agent_name = %s WHERE instance_id = %s", (new_name, instance_id))
+        cursor.close()
+    finally:
+        conn.close()
 
     # Update runtime config files
     _update_agent_name_in_config(instance_id, new_name)
@@ -340,12 +349,16 @@ def create_org(payload: CreateOrgRequest, current_user: dict = Depends(get_curre
     if result and result.get("org_secret") and result.get("id"):
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        with get_connection() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO org_secrets (org_id, org_secret, org_name, created_at) VALUES (?, ?, ?, ?)",
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "REPLACE INTO org_secrets (org_id, org_secret, org_name, created_at) VALUES (%s, %s, %s, %s)",
                 (result["id"], result["org_secret"], name, now),
             )
-            conn.commit()
+            cursor.close()
+        finally:
+            conn.close()
     return result
 
 
@@ -421,8 +434,14 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
     if org_id == default_org_id:
         org_secret = get_setting("hxa_org_secret", "")
     else:
-        with get_connection() as conn:
-            row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (org_id,)).fetchone()
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (org_id,))
+            row = cursor.fetchone()
+            cursor.close()
+        finally:
+            conn.close()
         if row:
             org_secret = row["org_secret"]
 
@@ -438,11 +457,17 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
             pass
 
     # Build instance owner map for enrichment
-    with get_connection() as conn:
-        owner_rows = conn.execute("""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
             SELECT i.id, i.name AS inst_name, i.product, u.name AS owner_name, u.email AS owner_email
             FROM instances i JOIN users u ON i.owner_id = u.id
-        """).fetchall()
+        """)
+        owner_rows = cursor.fetchall()
+        cursor.close()
+    finally:
+        conn.close()
     owner_map = {}
     for r in owner_rows:
         owner_map[r["id"]] = {
@@ -472,13 +497,17 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
     # Auto-sync DB org_id with Hub reality (Hub is source of truth)
     try:
         hub_bot_names = {bot.get("name", "") for bot in bots}
-        with get_connection() as conn:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
             for name in hub_bot_names:
-                conn.execute(
-                    "UPDATE instance_configs SET org_id = ? WHERE agent_name = ? AND (org_id IS NULL OR org_id != ?)",
+                cursor.execute(
+                    "UPDATE instance_configs SET org_id = %s WHERE agent_name = %s AND (org_id IS NULL OR org_id != %s)",
                     (org_id, name, org_id),
                 )
-            conn.commit()
+            cursor.close()
+        finally:
+            conn.close()
     except Exception:
         pass  # Best effort
 
@@ -523,13 +552,19 @@ def delete_org_bot(org_id: str, bot_id: str, current_user: dict = Depends(get_cu
 
 def _get_org_secret_for(org_id: str) -> str:
     """Get org secret for a specific org."""
-    db = get_connection()
     # Check if it's the default org
     default_id = get_setting("hxa_org_id", "")
     if org_id == default_id:
         return get_setting("hxa_org_secret", "")
-    # Check local orgs table
-    row = db.execute("SELECT org_secret FROM hxa_orgs WHERE org_id = ?", (org_id,)).fetchone()
+    # Check local org_secrets table
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (org_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     return row["org_secret"] if row else ""
 
 
@@ -573,12 +608,19 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
 
     # Fall back to DB if token didn't work
     if not agent_name:
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT agent_name, org_id FROM instance_configs WHERE instance_id = ?",
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT agent_name, org_id FROM instance_configs WHERE instance_id = %s",
                 (instance_id,),
-            ).fetchone()
-            inst_row = conn.execute("SELECT agent_name FROM instances WHERE id = ?", (instance_id,)).fetchone()
+            )
+            row = cursor.fetchone()
+            cursor.execute("SELECT agent_name FROM instances WHERE id = %s", (instance_id,))
+            inst_row = cursor.fetchone()
+            cursor.close()
+        finally:
+            conn.close()
         agent_name = (row["agent_name"] if row and row["agent_name"] else None) or \
                      (inst_row["agent_name"] if inst_row and inst_row["agent_name"] else "")
         current_org_id = row["org_id"] if row and row["org_id"] else ""
@@ -594,8 +636,14 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
         default_oid = get_setting("hxa_org_id", "")
         if oid == default_oid:
             return get_setting("hxa_org_secret", "")
-        with get_connection() as conn:
-            row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (oid,)).fetchone()
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (oid,))
+            row = cursor.fetchone()
+            cursor.close()
+        finally:
+            conn.close()
         return row["org_secret"] if row else ""
 
     # 2. Try to delete bot from old org (best effort - skip on failure)
@@ -652,12 +700,16 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
     _restart_hxa_connect(instance_id)
 
     # 7. Update local DB
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE instance_configs SET org_id = ?, org_token = ? WHERE instance_id = ?",
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE instance_configs SET org_id = %s, org_token = %s WHERE instance_id = %s",
             (target_org_id, new_token, instance_id),
         )
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
     return {"ok": True, "new_org_id": target_org_id, "agent_name": agent_name}
 

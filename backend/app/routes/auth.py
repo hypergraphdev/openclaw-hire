@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from uuid import uuid4
+
+import mysql.connector
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -26,7 +27,7 @@ def _row_to_user(row) -> UserResponse:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: sqlite3.Connection = Depends(get_db)) -> TokenResponse:
+def register(payload: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
     user_id = f"user_{uuid4().hex[:12]}"
     now = _utc_now()
     pw_hash = hash_password(payload.password)
@@ -36,7 +37,10 @@ def register(payload: RegisterRequest, db: sqlite3.Connection = Depends(get_db))
         raise HTTPException(status_code=400, detail="用户名不能为空。")
 
     # Check name uniqueness
-    existing = db.execute("SELECT id FROM users WHERE name = ?", (name,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM users WHERE name = %s", (name,))
+    existing = cursor.fetchone()
+    cursor.close()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -44,22 +48,29 @@ def register(payload: RegisterRequest, db: sqlite3.Connection = Depends(get_db))
         )
 
     try:
-        db.execute(
-            "INSERT INTO users (id, name, email, company_name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO users (id, name, email, company_name, password_hash, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (user_id, name, payload.email.lower(), payload.company_name, pw_hash, is_admin, now),
         )
-        db.commit()
-    except sqlite3.IntegrityError:
+        cursor.close()
+    except mysql.connector.IntegrityError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
 
-    row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    row = cursor.fetchone()
+    cursor.close()
     token = create_access_token(user_id)
     return TokenResponse(access_token=token, user=_row_to_user(row))
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)) -> TokenResponse:
-    row = db.execute("SELECT * FROM users WHERE email = ?", (payload.email.lower(),)).fetchone()
+def login(payload: LoginRequest, db=Depends(get_db)) -> TokenResponse:
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE email = %s", (payload.email.lower(),))
+    row = cursor.fetchone()
+    cursor.close()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
 
@@ -69,9 +80,13 @@ def login(payload: LoginRequest, db: sqlite3.Connection = Depends(get_db)) -> To
 
     # Keep admin flag in sync for designated admin email
     if payload.email.lower() == ADMIN_EMAIL and not row["is_admin"]:
-        db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (row["id"],))
-        db.commit()
-        row = db.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+        cursor = db.cursor()
+        cursor.execute("UPDATE users SET is_admin = 1 WHERE id = %s", (row["id"],))
+        cursor.close()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users WHERE id = %s", (row["id"],))
+        row = cursor.fetchone()
+        cursor.close()
 
     token = create_access_token(row["id"])
     return TokenResponse(access_token=token, user=_row_to_user(row))

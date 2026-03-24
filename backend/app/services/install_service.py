@@ -102,27 +102,35 @@ def _ensure_auth_env() -> None:
 
 
 def _set_instance_state(instance_id: str, state: str, status: str | None = None) -> None:
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
         if status is None:
-            conn.execute(
-                "UPDATE instances SET install_state = ?, updated_at = ? WHERE id = ?",
+            cursor.execute(
+                "UPDATE instances SET install_state = %s, updated_at = %s WHERE id = %s",
                 (state, _utc_now(), instance_id),
             )
         else:
-            conn.execute(
-                "UPDATE instances SET install_state = ?, status = ?, updated_at = ? WHERE id = ?",
+            cursor.execute(
+                "UPDATE instances SET install_state = %s, status = %s, updated_at = %s WHERE id = %s",
                 (state, status, _utc_now(), instance_id),
             )
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
 
 def _add_install_event(instance_id: str, state: str, message: str) -> None:
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO install_events (instance_id, state, message, created_at) VALUES (?, ?, ?, ?)",
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO install_events (instance_id, state, message, created_at) VALUES (%s, %s, %s, %s)",
             (instance_id, state, message, _utc_now()),
         )
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
 
 _PORT_SHADOW_KEYS = frozenset({
@@ -281,8 +289,14 @@ def _find_compose_file(repo_dir: Path) -> Path | None:
 
 
 def _sync_runtime_status(instance_id: str, project: str) -> None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT install_state FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT install_state FROM instances WHERE id = %s", (instance_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     current_state = row["install_state"] if row else None
 
     rc, out = _run([
@@ -325,8 +339,14 @@ def _sync_runtime_status(instance_id: str, project: str) -> None:
 
 
 def _run_install(instance_id: str) -> None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT id, product, repo_url FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, product, repo_url FROM instances WHERE id = %s", (instance_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     if row is None:
         return
 
@@ -379,9 +399,11 @@ def _run_install(instance_id: str) -> None:
         if not project or not compose_file or not runtime_dir:
             raise RuntimeError(f"Installer output missing metadata: {out[:500]}")
 
-        with get_connection() as conn:
-            conn.execute(
-                "UPDATE instances SET compose_project = ?, compose_file = ?, runtime_dir = ?, web_console_port = ?, web_console_url = ?, http_port = ?, updated_at = ? WHERE id = ?",
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE instances SET compose_project = %s, compose_file = %s, runtime_dir = %s, web_console_port = %s, web_console_url = %s, http_port = %s, updated_at = %s WHERE id = %s",
                 (
                     project,
                     compose_file,
@@ -393,7 +415,9 @@ def _run_install(instance_id: str) -> None:
                     instance_id,
                 ),
             )
-            conn.commit()
+            cursor.close()
+        finally:
+            conn.close()
 
         _add_install_event(instance_id, "starting", f"Installer finished, verifying containers for project {project}...")
         _sync_runtime_status(instance_id, project)
@@ -404,8 +428,14 @@ def _run_install(instance_id: str) -> None:
 
 
 def sync_instance_status(instance_id: str) -> None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT compose_project FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT compose_project FROM instances WHERE id = %s", (instance_id,))
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     if row and row["compose_project"]:
         _sync_runtime_status(instance_id, row["compose_project"])
 
@@ -472,18 +502,24 @@ def _safe_agent_name(instance_id: str) -> str:
 
 
 def _telegram_token_in_use(instance_id: str, telegram_bot_token: str) -> str | None:
-    with get_connection() as conn:
-        row = conn.execute(
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
             """
             SELECT id FROM instances
-            WHERE id <> ? AND telegram_bot_token = ?
+            WHERE id <> %s AND telegram_bot_token = %s
               AND COALESCE(status, 'active') <> 'inactive'
               AND COALESCE(install_state, 'idle') <> 'failed'
             ORDER BY updated_at DESC
             LIMIT 1
             """,
             (instance_id, telegram_bot_token),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
+        cursor.close()
+    finally:
+        conn.close()
     return row["id"] if row else None
 
 
@@ -946,30 +982,34 @@ def configure_instance_telegram(
         )
 
     now = _utc_now()
-    with get_connection() as conn:
-        conn.execute(
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
             """
             INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
-            ON CONFLICT(instance_id) DO UPDATE SET
-              telegram_bot_token=excluded.telegram_bot_token,
-              plugin_name=excluded.plugin_name,
-              hub_url=excluded.hub_url,
-              org_id=excluded.org_id,
-              org_token=excluded.org_token,
-              agent_name=excluded.agent_name,
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 1, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              telegram_bot_token=VALUES(telegram_bot_token),
+              plugin_name=VALUES(plugin_name),
+              hub_url=VALUES(hub_url),
+              org_id=VALUES(org_id),
+              org_token=VALUES(org_token),
+              agent_name=VALUES(agent_name),
               allow_group=1,
               allow_dm=1,
-              configured_at=excluded.configured_at,
-              updated_at=excluded.updated_at
+              configured_at=VALUES(configured_at),
+              updated_at=VALUES(updated_at)
             """,
             (instance_id, telegram_bot_token, plugin, _get_hub_url(), _ORG_ID_LIVE, org_token_display, agent_name, now, now),
         )
-        conn.execute(
-            "UPDATE instances SET telegram_bot_token = ?, org_token = ?, agent_name = ?, updated_at = ? WHERE id = ?",
+        cursor.execute(
+            "UPDATE instances SET telegram_bot_token = %s, org_token = %s, agent_name = %s, updated_at = %s WHERE id = %s",
             (telegram_bot_token, org_token_display, agent_name, now, instance_id),
         )
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
     plugin_installed = (
         (Path(runtime_dir) / "zylos-data" / "components" / plugin).exists()

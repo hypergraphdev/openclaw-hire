@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import time
 import urllib.request
 import urllib.error
@@ -13,38 +12,28 @@ from .database import get_connection, get_setting, set_setting
 
 
 def _ensure_tables() -> None:
-    """Create message_index and FTS tables if they don't exist."""
-    with get_connection() as conn:
-        conn.execute("""
+    """Create message_index table with FULLTEXT index if it doesn't exist."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS message_index (
-                id TEXT PRIMARY KEY,
-                org_id TEXT NOT NULL,
-                channel_type TEXT NOT NULL,
-                channel_id TEXT NOT NULL,
-                channel_name TEXT,
-                sender_id TEXT,
-                sender_name TEXT,
+                id VARCHAR(255) PRIMARY KEY,
+                org_id VARCHAR(255) NOT NULL,
+                channel_type VARCHAR(50) NOT NULL,
+                channel_id VARCHAR(255) NOT NULL,
+                channel_name VARCHAR(255),
+                sender_id VARCHAR(255),
+                sender_name VARCHAR(255),
                 content TEXT,
                 mentions TEXT,
-                created_at INTEGER
-            )
+                created_at BIGINT,
+                FULLTEXT idx_msg_ft (content, sender_name, channel_name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        # Check if FTS table exists
-        fts_exists = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='message_fts'"
-        ).fetchone()
-        if not fts_exists:
-            conn.execute("""
-                CREATE VIRTUAL TABLE message_fts USING fts5(
-                    content, sender_name, channel_name, mentions,
-                    content='message_index', content_rowid='rowid'
-                )
-            """)
-            # Populate FTS from existing data (if any)
-            conn.execute("""
-                INSERT INTO message_fts(message_fts) VALUES('rebuild')
-            """)
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
 
 def _hub_get(hub_url: str, token: str, path: str) -> dict | list:
@@ -81,7 +70,9 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
     now = int(time.time() * 1000)
     new_count = 0
 
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
         for token, bot_name in tokens:
             try:
                 # Use inbox API for incremental sync
@@ -95,7 +86,8 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
                     if not msg_id:
                         continue
                     # Check if already indexed
-                    if conn.execute("SELECT 1 FROM message_index WHERE id = ?", (msg_id,)).fetchone():
+                    cursor.execute("SELECT 1 FROM message_index WHERE id = %s", (msg_id,))
+                    if cursor.fetchone():
                         continue
 
                     content = msg.get("content", "")
@@ -113,10 +105,10 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
                         # Try to get recipient from message
                         channel_name = msg.get("recipient_name", bot_name)
 
-                    conn.execute("""
-                        INSERT OR IGNORE INTO message_index
+                    cursor.execute("""
+                        INSERT IGNORE INTO message_index
                         (id, org_id, channel_type, channel_id, channel_name, sender_id, sender_name, content, mentions, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (msg_id, org_id, "dm", channel_id, channel_name, sender_id, sender_name, content, mentions, created_at))
                     new_count += 1
 
@@ -142,7 +134,8 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
                             msg_id = msg.get("id", "")
                             if not msg_id:
                                 continue
-                            if conn.execute("SELECT 1 FROM message_index WHERE id = ?", (msg_id,)).fetchone():
+                            cursor.execute("SELECT 1 FROM message_index WHERE id = %s", (msg_id,))
+                            if cursor.fetchone():
                                 continue
 
                             content = msg.get("content", "")
@@ -151,10 +144,10 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
                             created_at = msg.get("created_at", 0)
                             mentions = json.dumps(_extract_mentions(content))
 
-                            conn.execute("""
-                                INSERT OR IGNORE INTO message_index
+                            cursor.execute("""
+                                INSERT IGNORE INTO message_index
                                 (id, org_id, channel_type, channel_id, channel_name, sender_id, sender_name, content, mentions, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (msg_id, org_id, "thread", thread_id, topic, sender_id, sender_name, content, mentions, created_at))
                             new_count += 1
                     except Exception:
@@ -162,14 +155,9 @@ def sync_messages(user_id: str, org_id: str, tokens: list[tuple[str, str]], hub_
             except Exception:
                 continue
 
-        # Rebuild FTS index
-        if new_count > 0:
-            try:
-                conn.execute("INSERT INTO message_fts(message_fts) VALUES('rebuild')")
-            except Exception:
-                pass
-
-        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
     # Update sync timestamp
     set_setting(setting_key, str(now))
@@ -184,7 +172,7 @@ def search_messages(
     to_name: str = "",
     limit: int = 50,
 ) -> list[dict]:
-    """Search indexed messages using FTS5.
+    """Search indexed messages using MySQL FULLTEXT or LIKE.
 
     Args:
         org_id: Organization ID
@@ -198,52 +186,44 @@ def search_messages(
     """
     _ensure_tables()
 
-    conditions = ["m.org_id = ?"]
+    conditions = ["m.org_id = %s"]
     params: list = [org_id]
 
-    # Build FTS match expression
-    fts_parts = []
     if query:
-        # Escape special FTS characters
-        safe_q = query.replace('"', '""')
-        fts_parts.append(f'content: "{safe_q}"')
+        # Use FULLTEXT MATCH for content search
+        conditions.append("MATCH(m.content, m.sender_name, m.channel_name) AGAINST(%s IN BOOLEAN MODE)")
+        params.append(query)
 
     if in_channel:
-        conditions.append("m.channel_name = ?")
+        conditions.append("m.channel_name = %s")
         params.append(in_channel)
 
     if from_sender:
-        conditions.append("m.sender_name = ?")
+        conditions.append("m.sender_name = %s")
         params.append(from_sender)
 
     if to_name:
         # Search in channel_name (DM recipient) or mentions
-        conditions.append("(m.channel_name = ? OR m.mentions LIKE ?)")
+        conditions.append("(m.channel_name = %s OR m.mentions LIKE %s)")
         params.append(to_name)
         params.append(f'%"{to_name}"%')
 
     where = " AND ".join(conditions)
 
-    with get_connection() as conn:
-        if fts_parts:
-            fts_match = " AND ".join(fts_parts)
-            sql = f"""
-                SELECT m.* FROM message_index m
-                JOIN message_fts f ON m.rowid = f.rowid
-                WHERE {where} AND message_fts MATCH ?
-                ORDER BY m.created_at DESC
-                LIMIT ?
-            """
-            params.append(fts_match)
-            params.append(limit)
-        else:
-            sql = f"""
-                SELECT m.* FROM message_index m
-                WHERE {where}
-                ORDER BY m.created_at DESC
-                LIMIT ?
-            """
-            params.append(limit)
+    sql = f"""
+        SELECT m.* FROM message_index m
+        WHERE {where}
+        ORDER BY m.created_at DESC
+        LIMIT %s
+    """
+    params.append(limit)
 
-        rows = conn.execute(sql, params).fetchall()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        cursor.close()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()

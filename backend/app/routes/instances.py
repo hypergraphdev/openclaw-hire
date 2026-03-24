@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
 import threading
 import urllib.request
 from datetime import datetime, timezone
@@ -53,14 +52,18 @@ def _row_to_instance(row) -> InstanceResponse:
     return InstanceResponse(**d)
 
 
-def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection, *, is_admin: bool = False) -> dict:
+def _get_instance_or_404(instance_id: str, owner_id: str, db, *, is_admin: bool = False) -> dict:
     # Admin can view any instance; also try admin fallback if owner check fails
-    row = db.execute(
-        "SELECT * FROM instances WHERE id = ? AND owner_id = ?",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM instances WHERE id = %s AND owner_id = %s",
         (instance_id, owner_id),
-    ).fetchone()
+    )
+    row = cursor.fetchone()
     if row is None and is_admin:
-        row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+        cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+        row = cursor.fetchone()
+    cursor.close()
     if row is None:
         raise HTTPException(status_code=404, detail="Instance not found.")
     return dict(row)
@@ -93,20 +96,29 @@ def _resolve_org_names(org_ids: set[str]) -> dict[str, str]:
     missing = org_ids - set(result.keys())
     if missing:
         from ..database import get_connection
-        with get_connection() as conn:
-            placeholders = ",".join("?" for _ in missing)
-            rows = conn.execute(f"SELECT org_id, org_name FROM org_secrets WHERE org_id IN ({placeholders})", list(missing)).fetchall()
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            placeholders = ",".join("%s" for _ in missing)
+            cursor.execute(f"SELECT org_id, org_name FROM org_secrets WHERE org_id IN ({placeholders})", list(missing))
+            rows = cursor.fetchall()
+            cursor.close()
             for r in rows:
                 result[r["org_id"]] = r["org_name"]
+        finally:
+            conn.close()
     return result
 
 
-def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
+def _merge_instance_config_fields(inst: dict, db) -> dict:
     """Backfill list/detail fields from instance_configs when legacy rows are partially empty."""
-    cfg = db.execute(
-        "SELECT telegram_bot_token, org_token, agent_name, org_id FROM instance_configs WHERE instance_id = ?",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT telegram_bot_token, org_token, agent_name, org_id FROM instance_configs WHERE instance_id = %s",
         (inst["id"],),
-    ).fetchone()
+    )
+    cfg = cursor.fetchone()
+    cursor.close()
     if cfg:
         c = dict(cfg)
         if not inst.get("telegram_bot_token") and c.get("telegram_bot_token"):
@@ -124,11 +136,14 @@ def _merge_instance_config_fields(inst: dict, db: sqlite3.Connection) -> dict:
 def create_instance(
     payload: CreateInstanceRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceResponse:
     product = PRODUCT_MAP[payload.product]
     if not bool(current_user.get("is_admin", 0)):
-        cnt = db.execute("SELECT COUNT(*) AS c FROM instances WHERE owner_id = ?", (current_user["id"],)).fetchone()["c"]
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT COUNT(*) AS c FROM instances WHERE owner_id = %s", (current_user["id"],))
+        cnt = cursor.fetchone()["c"]
+        cursor.close()
         if cnt >= 1:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -138,28 +153,32 @@ def create_instance(
     instance_id = f"inst_{uuid4().hex[:12]}"
     now = _utc_now()
 
-    db.execute(
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
         """
         INSERT INTO instances (id, owner_id, name, product, repo_url, status, install_state, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'active', 'idle', ?, ?)
+        VALUES (%s, %s, %s, %s, %s, 'active', 'idle', %s, %s)
         """,
         (instance_id, current_user["id"], payload.name, payload.product, product.repo_url, now, now),
     )
-    db.commit()
-
-    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
     return _row_to_instance(row)
 
 
 @router.get("", response_model=list[InstanceResponse])
 def list_instances(
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> list[InstanceResponse]:
-    rows = db.execute(
-        "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM instances WHERE owner_id = %s ORDER BY created_at DESC",
         (current_user["id"],),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
+    cursor.close()
 
     # Sync at most one stale instance per request to avoid DB lock contention
     import time
@@ -182,10 +201,13 @@ def list_instances(
                 pass  # Don't let sync errors break listing
             break  # Only sync one per request
 
-    rows = db.execute(
-        "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM instances WHERE owner_id = %s ORDER BY created_at DESC",
         (current_user["id"],),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
+    cursor.close()
     merged = [_merge_instance_config_fields(dict(row), db) for row in rows]
 
     # Resolve org_id → org_name for all instances
@@ -207,7 +229,7 @@ def list_instances(
 def get_instance(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceDetailResponse:
     is_admin = bool(current_user.get("is_admin"))
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
@@ -220,14 +242,18 @@ def get_instance(
 
     inst = _merge_instance_config_fields(inst, db)
 
-    events = db.execute(
-        "SELECT * FROM install_events WHERE instance_id = ? ORDER BY id ASC",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM install_events WHERE instance_id = %s ORDER BY id ASC",
         (instance_id,),
-    ).fetchall()
-    cfg = db.execute(
-        "SELECT plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at FROM instance_configs WHERE instance_id = ?",
+    )
+    events = cursor.fetchall()
+    cursor.execute(
+        "SELECT plugin_name, hub_url, org_id, org_token, agent_name, allow_group, allow_dm, configured_at FROM instance_configs WHERE instance_id = %s",
         (instance_id,),
-    ).fetchone()
+    )
+    cfg = cursor.fetchone()
+    cursor.close()
     config = None
     if cfg:
         c = dict(cfg)
@@ -258,7 +284,7 @@ def get_instance(
 def start_install(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
 
@@ -269,15 +295,17 @@ def start_install(
         )
 
     now = _utc_now()
-    db.execute(
-        "UPDATE instances SET install_state = 'pulling', updated_at = ?, status='installing' WHERE id = ?",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "UPDATE instances SET install_state = 'pulling', updated_at = %s, status='installing' WHERE id = %s",
         (now, instance_id),
     )
-    db.commit()
 
     trigger_install(instance_id)
 
-    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
     return _row_to_instance(row)
 
 
@@ -285,14 +313,17 @@ def start_install(
 def stop_instance_api(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = stop_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
         raise HTTPException(status_code=500, detail=out[:500])
-    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
     return _row_to_instance(row)
 
 
@@ -300,14 +331,17 @@ def stop_instance_api(
 def restart_instance_api(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = restart_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
         raise HTTPException(status_code=500, detail=out[:500])
-    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
     return _row_to_instance(row)
 
 
@@ -315,14 +349,17 @@ def restart_instance_api(
 def uninstall_instance_api(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = uninstall_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
         raise HTTPException(status_code=500, detail=out[:500])
-    row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
     return _row_to_instance(row)
 
 
@@ -331,7 +368,7 @@ def instance_logs(
     instance_id: str,
     lines: int = 200,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> InstanceLogsResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
@@ -346,7 +383,7 @@ def configure_instance(
     instance_id: str,
     payload: ConfigureTelegramRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> ConfigureTelegramResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
@@ -380,7 +417,7 @@ async def configure_telegram_endpoint(
     instance_id: str,
     payload: ConfigureTelegramRequest,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
@@ -400,24 +437,25 @@ async def configure_telegram_endpoint(
 
     now = _utc_now()
     plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
-    db.execute(
-        "UPDATE instances SET telegram_bot_token=?, updated_at=? WHERE id=?",
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE instances SET telegram_bot_token=%s, updated_at=%s WHERE id=%s",
         (payload.telegram_bot_token, now, instance_id),
     )
-    db.execute(
+    cursor.execute(
         """
         INSERT INTO instance_configs (instance_id, telegram_bot_token, plugin_name, allow_group, allow_dm, configured_at, updated_at)
-        VALUES (?, ?, ?, 1, 1, ?, ?)
-        ON CONFLICT(instance_id) DO UPDATE SET
-          telegram_bot_token=excluded.telegram_bot_token,
-          plugin_name=excluded.plugin_name,
+        VALUES (%s, %s, %s, 1, 1, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          telegram_bot_token=VALUES(telegram_bot_token),
+          plugin_name=VALUES(plugin_name),
           allow_group=1, allow_dm=1,
-          configured_at=excluded.configured_at,
-          updated_at=excluded.updated_at
+          configured_at=VALUES(configured_at),
+          updated_at=VALUES(updated_at)
         """,
         (instance_id, payload.telegram_bot_token, plugin_name, now, now),
     )
-    db.commit()
+    cursor.close()
     return {"ok": True, "message": message, "is_telegram_configured": True}
 
 
@@ -425,7 +463,7 @@ async def configure_telegram_endpoint(
 async def configure_hxa_endpoint(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> dict:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
@@ -446,25 +484,26 @@ async def configure_hxa_endpoint(
     now = _utc_now()
     agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
     plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
-    db.execute(
-        "UPDATE instances SET agent_name=?, updated_at=? WHERE id=?",
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE instances SET agent_name=%s, updated_at=%s WHERE id=%s",
         (agent_name, now, instance_id),
     )
-    db.execute(
+    cursor.execute(
         """
         INSERT INTO instance_configs (instance_id, agent_name, plugin_name, hub_url, org_id, org_token, configured_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(instance_id) DO UPDATE SET
-          agent_name=excluded.agent_name,
-          plugin_name=excluded.plugin_name,
-          hub_url=excluded.hub_url,
-          org_id=excluded.org_id,
-          org_token=COALESCE(excluded.org_token, instance_configs.org_token),
-          updated_at=excluded.updated_at
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          agent_name=VALUES(agent_name),
+          plugin_name=VALUES(plugin_name),
+          hub_url=VALUES(hub_url),
+          org_id=VALUES(org_id),
+          org_token=COALESCE(VALUES(org_token), org_token),
+          updated_at=VALUES(updated_at)
         """,
         (instance_id, agent_name, plugin_name, _get_hub_url(), _ORG_ID, None, now, now),
     )
-    db.commit()
+    cursor.close()
     return {"ok": True, "message": message, "agent_name": agent_name}
 
 
@@ -477,7 +516,7 @@ def rename_agent(
     instance_id: str,
     req: _RenameAgentRequest,
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Rename instance's agent in HXA org (only if current name starts with hire_inst_)."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
@@ -516,9 +555,10 @@ def rename_agent(
         raise HTTPException(status_code=e.code, detail=f"改名失败: {body}")
 
     # Update local DB
-    db.execute("UPDATE instances SET agent_name = ? WHERE id = ?", (new_name, instance_id))
-    db.execute("UPDATE instance_configs SET agent_name = ? WHERE instance_id = ?", (new_name, instance_id))
-    db.commit()
+    cursor = db.cursor()
+    cursor.execute("UPDATE instances SET agent_name = %s WHERE id = %s", (new_name, instance_id))
+    cursor.execute("UPDATE instance_configs SET agent_name = %s WHERE instance_id = %s", (new_name, instance_id))
+    cursor.close()
     _update_agent_name_in_config(instance_id, new_name)
 
     return {"ok": True, "agent_name": new_name}
@@ -528,7 +568,7 @@ def rename_agent(
 def delete_instance(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ) -> dict[str, str]:
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
 
@@ -542,9 +582,10 @@ def delete_instance(
     if runtime_dir:
         shutil.rmtree(Path(runtime_dir), ignore_errors=True)
 
-    db.execute("DELETE FROM install_events WHERE instance_id = ?", (instance_id,))
-    db.execute("DELETE FROM instances WHERE id = ? AND owner_id = ?", (instance_id, current_user["id"]))
-    db.commit()
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM install_events WHERE instance_id = %s", (instance_id,))
+    cursor.execute("DELETE FROM instances WHERE id = %s AND owner_id = %s", (instance_id, current_user["id"]))
+    cursor.close()
     return {"status": "deleted", "instance_id": instance_id}
 
 
@@ -582,23 +623,28 @@ def _read_runtime_agent_name(instance_id: str) -> str:
     return ""
 
 
-def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
+def _get_chat_config(instance_id: str, owner_id: str, db):
     """Return (hub_url, admin_bot_token, target_agent_name) for chatting WITH an instance bot.
 
     Uses a dedicated admin bot identity so the user chats with (not as) the instance bot.
     Reads agent_name from runtime config (source of truth) rather than DB which may be stale.
     """
-    inst = db.execute(
-        "SELECT id, agent_name FROM instances WHERE id = ? AND owner_id = ?",
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, agent_name FROM instances WHERE id = %s AND owner_id = %s",
         (instance_id, owner_id),
-    ).fetchone()
+    )
+    inst = cursor.fetchone()
     if not inst:
+        cursor.close()
         raise HTTPException(status_code=404, detail="Instance not found.")
-    cfg = db.execute(
-        "SELECT hub_url, agent_name FROM instance_configs WHERE instance_id = ?",
+    cursor.execute(
+        "SELECT hub_url, agent_name FROM instance_configs WHERE instance_id = %s",
         (instance_id,),
-    ).fetchone()
+    )
+    cfg = cursor.fetchone()
     if not cfg or not cfg["hub_url"]:
+        cursor.close()
         raise HTTPException(status_code=400, detail="Instance not configured for HXA.")
 
     hub_url = cfg["hub_url"].rstrip("/")
@@ -609,14 +655,18 @@ def _get_chat_config(instance_id: str, owner_id: str, db: sqlite3.Connection):
     if not target_agent_name:
         target_agent_name = cfg["agent_name"] or inst["agent_name"] or ""
     if not target_agent_name:
+        cursor.close()
         raise HTTPException(status_code=400, detail="Instance has no agent name.")
 
     # Get instance's org_id for admin bot registration
-    cfg2 = db.execute("SELECT org_id FROM instance_configs WHERE instance_id = ?", (instance_id,)).fetchone()
+    cursor.execute("SELECT org_id FROM instance_configs WHERE instance_id = %s", (instance_id,))
+    cfg2 = cursor.fetchone()
     instance_org_id = cfg2["org_id"] if cfg2 and cfg2["org_id"] else None
 
     # Get user display name for bot registration
-    user_row = db.execute("SELECT name, email FROM users WHERE id = ?", (owner_id,)).fetchone()
+    cursor.execute("SELECT name, email FROM users WHERE id = %s", (owner_id,))
+    user_row = cursor.fetchone()
+    cursor.close()
     display_name = (user_row["name"] if user_row else "") or ""
 
     # Get or register per-user admin bot in the SAME org as the instance
@@ -693,8 +743,14 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "", target_
         if target_org_id == default_oid:
             org_secret = _get_org_secret()
         else:
-            with _gc() as conn:
-                row = conn.execute("SELECT org_secret FROM org_secrets WHERE org_id = ?", (target_org_id,)).fetchone()
+            conn = _gc()
+            try:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (target_org_id,))
+                row = cursor.fetchone()
+                cursor.close()
+            finally:
+                conn.close()
             org_secret = row["org_secret"] if row else ""
         org_id = target_org_id
     else:
@@ -798,7 +854,7 @@ def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | 
 def chat_info(
     instance_id: str,
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Return chat info: target bot status and admin bot name."""
     hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
@@ -855,7 +911,7 @@ async def chat_upload(
     instance_id: str,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Upload an image and return a public URL."""
     # Verify instance access
@@ -883,7 +939,7 @@ def chat_send(
     instance_id: str,
     req: _ChatSendRequest,
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Send a DM to the instance bot via admin bot."""
     hub_url, admin_token, target_name = _get_chat_config(instance_id, current_user["id"], db)
@@ -902,7 +958,7 @@ def chat_messages(
     before: str | None = None,
     limit: int = 50,
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get messages from a DM channel."""
     hub_url, admin_token, _ = _get_chat_config(instance_id, current_user["id"], db)
@@ -923,7 +979,7 @@ def chat_messages(
 def chat_ws_ticket(
     instance_id: str,
     current_user=Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Get a WebSocket ticket for real-time chat (using admin bot identity)."""
     hub_url, admin_token, _ = _get_chat_config(instance_id, current_user["id"], db)
@@ -986,7 +1042,7 @@ def _parse_sessions_json(raw: str) -> list[dict]:
 def list_sessions(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """List Claude sessions for an instance."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
@@ -1121,7 +1177,7 @@ def _get_skill_base_path(product: str, skill_id: str) -> str:
 def list_instance_skills(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """List installed skills/plugins for an instance."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
@@ -1136,7 +1192,7 @@ def get_skill_content(
     instance_id: str,
     skill_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Read main source file of a skill."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
@@ -1168,7 +1224,7 @@ def get_skill_content(
 def clear_sessions(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db = Depends(get_db),
 ):
     """Clear all Claude sessions for an instance. Helps recover stuck instances."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
