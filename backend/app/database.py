@@ -210,6 +210,27 @@ def _migrate_existing_db() -> None:
                     (_k, _v, _now)
                 )
 
+        # instance_metrics table for monitoring
+        if "instance_metrics" not in tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS instance_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    instance_id TEXT NOT NULL,
+                    cpu_percent REAL,
+                    mem_used_mb INTEGER,
+                    mem_total_mb INTEGER,
+                    disk_usage_mb INTEGER,
+                    claude_running INTEGER DEFAULT 0,
+                    claude_mem_mb INTEGER,
+                    collected_at TEXT NOT NULL,
+                    FOREIGN KEY (instance_id) REFERENCES instances (id)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_metrics_instance_time
+                ON instance_metrics (instance_id, collected_at)
+            """)
+
         # org_secrets table for multi-org support
         if "org_secrets" not in tables:
             conn.execute("""

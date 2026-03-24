@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MyOrgData, OrgThread, ProductCatalog, SearchResult, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -138,6 +138,14 @@ export const api = {
     request<any>(`/api/admin/instances/${instanceId}/resources`, {
       method: "POST", body: JSON.stringify({ memory_mb: memoryMb, cpus }),
     }),
+
+  // Metrics & Monitoring
+  instanceMetrics: (id: string, hours?: number) =>
+    request<MetricsResponse>(`/api/instances/${id}/metrics?hours=${hours ?? 24}`),
+  instanceSparkline: (id: string, field?: string) =>
+    request<SparklineResponse>(`/api/instances/${id}/metrics/sparkline?field=${field ?? "cpu_percent"}`),
+  instanceConnectivityTest: (id: string) =>
+    request<ConnectivityTestResponse>(`/api/instances/${id}/connectivity-test`, { method: "POST" }),
 
   // Chat proxy
   chatInfo: (id: string) =>

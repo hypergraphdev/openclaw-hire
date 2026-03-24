@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
+import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
 import { useT } from "../contexts/LanguageContext";
 import type { InstanceDetail, TelegramConfigResponse } from "../types";
@@ -50,7 +51,7 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
-  const [activeTab, setActiveTab] = useState<"info" | "chat">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "chat" | "monitor">("info");
   const [chatExpanded, setChatExpanded] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
     if (!instanceId) return false;
@@ -281,6 +282,16 @@ export function InstanceDetailPage() {
               >
                 {t("chat.tab")}
               </button>
+              <button
+                onClick={() => setActiveTab("monitor")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "monitor"
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                监控
+              </button>
             </div>
           )}
 
@@ -292,6 +303,11 @@ export function InstanceDetailPage() {
               expanded={chatExpanded}
               onToggleExpand={() => setChatExpanded((v) => !v)}
             />
+          )}
+
+          {/* Monitor Tab */}
+          {activeTab === "monitor" && instanceId && (
+            <MonitorTab instanceId={instanceId} />
           )}
 
           {/* Info cards */}

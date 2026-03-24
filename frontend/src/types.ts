@@ -247,3 +247,39 @@ export type HxaOrgAgent = {
   owner_name?: string | null;
   owner_email?: string | null;
 };
+
+// Metrics types
+export type InstanceMetric = {
+  collected_at: string;
+  cpu_percent: number | null;
+  mem_used_mb: number | null;
+  mem_total_mb: number | null;
+  disk_usage_mb: number | null;
+  claude_running: boolean;
+  claude_mem_mb: number | null;
+};
+
+export type MetricsResponse = {
+  metrics: InstanceMetric[];
+  summary: {
+    avg_cpu: number;
+    max_cpu: number;
+    avg_mem: number;
+    max_mem: number;
+    data_points: number;
+  };
+};
+
+export type SparklineResponse = {
+  values: number[];
+  labels: string[];
+};
+
+export type ConnectivityResult = {
+  ok: boolean;
+  elapsed_ms: number;
+  detail?: string;
+  error?: string;
+};
+
+export type ConnectivityTestResponse = Record<string, ConnectivityResult>;
