@@ -54,13 +54,13 @@ def _row_to_instance(row) -> InstanceResponse:
 
 
 def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection, *, is_admin: bool = False) -> dict:
-    if is_admin:
+    # Admin can view any instance; also try admin fallback if owner check fails
+    row = db.execute(
+        "SELECT * FROM instances WHERE id = ? AND owner_id = ?",
+        (instance_id, owner_id),
+    ).fetchone()
+    if row is None and is_admin:
         row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
-    else:
-        row = db.execute(
-            "SELECT * FROM instances WHERE id = ? AND owner_id = ?",
-            (instance_id, owner_id),
-        ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Instance not found.")
     return dict(row)
@@ -260,7 +260,7 @@ def start_install(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
 
     if inst["install_state"] not in ("idle", "failed"):
         raise HTTPException(
@@ -287,7 +287,7 @@ def stop_instance_api(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = stop_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
@@ -302,7 +302,7 @@ def restart_instance_api(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = restart_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
@@ -317,7 +317,7 @@ def uninstall_instance_api(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     ok, out = uninstall_instance(instance_id, compose_file, project, runtime_dir)
     if not ok:
@@ -333,7 +333,7 @@ def instance_logs(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceLogsResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
     rc, out = compose_logs(compose_file, project, runtime_dir, lines=max(20, min(lines, 2000)))
     if rc != 0:
@@ -348,7 +348,7 @@ def configure_instance(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> ConfigureTelegramResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
 
     ok, message, org_token, plugin, agent_name = configure_instance_telegram(
@@ -382,7 +382,7 @@ async def configure_telegram_endpoint(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
 
     # Run blocking docker/pm2 ops in thread pool so other requests aren't blocked
@@ -427,7 +427,7 @@ async def configure_hxa_endpoint(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
 
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
@@ -480,7 +480,7 @@ def rename_agent(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Rename instance's agent in HXA org (only if current name starts with hire_inst_)."""
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     current_name = inst["agent_name"] or ""
     if not current_name.startswith("hire_inst_"):
         raise HTTPException(status_code=400, detail="已改名的实例不允许再次修改。")
@@ -530,7 +530,7 @@ def delete_instance(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict[str, str]:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
 
     # best effort teardown of runtime containers/data
     compose_file = inst.get("compose_file")
@@ -989,7 +989,7 @@ def list_sessions(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """List Claude sessions for an instance."""
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product") or "openclaw"
     container_name = _get_container_name(instance_id, product)
 
@@ -1124,7 +1124,7 @@ def list_instance_skills(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """List installed skills/plugins for an instance."""
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product") or "openclaw"
     container_name = _get_container_name(instance_id, product)
     skills = _list_skills(container_name, product)
@@ -1139,7 +1139,7 @@ def get_skill_content(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Read main source file of a skill."""
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product") or "openclaw"
     container_name = _get_container_name(instance_id, product)
     base_path = _get_skill_base_path(product, skill_id)
@@ -1171,7 +1171,7 @@ def clear_sessions(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Clear all Claude sessions for an instance. Helps recover stuck instances."""
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product") or "openclaw"
     container_name = _get_container_name(instance_id, product)
 
