@@ -328,21 +328,20 @@ export function InstanceDetailPage() {
 
           {/* Monitor Tab */}
           {activeTab === "monitor" && instanceId && (
-            <div className={monitorExpanded ? "fixed inset-0 z-40 bg-gray-950 overflow-auto p-4 pt-14" : ""}>
-              {monitorExpanded && (
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg text-white font-medium">监控 - {detail?.instance?.name || instanceId}</h2>
-                  <button onClick={() => { setMonitorExpanded(false); localStorage.setItem("monitor_expanded", "0"); }} className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded bg-gray-800">退出全屏</button>
-                </div>
-              )}
-              {!monitorExpanded && (
+            <div className={`bg-gray-900 border border-gray-800 rounded-lg overflow-hidden ${monitorExpanded ? "h-[calc(100vh-120px)]" : "h-[600px]"}`}>
+              <div className="h-full overflow-auto p-4">
                 <div className="flex justify-end mb-2">
-                  <button onClick={() => { setMonitorExpanded(true); localStorage.setItem("monitor_expanded", "1"); }} className="text-gray-500 hover:text-gray-300 text-xs" title="全屏">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9m11.25-5.25v4.5m0-4.5h-4.5m4.5 0L15 9m-11.25 11.25v-4.5m0 4.5h4.5m-4.5 0L9 15m11.25 5.25v-4.5m0 4.5h-4.5m4.5 0L15 15" /></svg>
+                  <button onClick={() => { setMonitorExpanded((v) => { const n = !v; localStorage.setItem("monitor_expanded", n ? "1" : "0"); return n; }); }}
+                    className="text-gray-500 hover:text-gray-300 p-1" title={monitorExpanded ? "收起" : "展开"}>
+                    {monitorExpanded ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" /></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+                    )}
                   </button>
                 </div>
-              )}
-              <MonitorTab instanceId={instanceId} />
+                <MonitorTab instanceId={instanceId} />
+              </div>
             </div>
           )}
 

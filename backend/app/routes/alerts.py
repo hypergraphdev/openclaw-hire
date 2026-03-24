@@ -17,20 +17,23 @@ def list_alerts(
     current_user=Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """List recent alerts. Optional ?unread=true to filter unread only."""
+    """List recent alerts scoped to user's instances. Admin sees all."""
     limit = min(limit, 200)
-    if unread:
-        rows = db.execute(
-            "SELECT * FROM alerts WHERE is_read = 0 ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    is_admin = bool(current_user.get("is_admin"))
+    user_id = current_user["id"]
 
-    unread_count = db.execute("SELECT COUNT(*) as c FROM alerts WHERE is_read = 0").fetchone()["c"]
+    if is_admin:
+        # Admin sees all alerts
+        where = "WHERE is_read = 0" if unread else ""
+        rows = db.execute(f"SELECT * FROM alerts {where} ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        unread_count = db.execute("SELECT COUNT(*) as c FROM alerts WHERE is_read = 0").fetchone()["c"]
+    else:
+        # Regular user: only alerts for their own instances
+        base = """FROM alerts a JOIN instances i ON a.instance_id = i.id WHERE i.owner_id = ?"""
+        if unread:
+            base += " AND a.is_read = 0"
+        rows = db.execute(f"SELECT a.* {base} ORDER BY a.created_at DESC LIMIT ?", (user_id, limit)).fetchall()
+        unread_count = db.execute(f"SELECT COUNT(*) as c {base} AND a.is_read = 0", (user_id,)).fetchone()["c"]
 
     return {
         "alerts": [dict(r) for r in rows],
