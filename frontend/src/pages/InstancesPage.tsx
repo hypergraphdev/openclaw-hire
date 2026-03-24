@@ -236,7 +236,7 @@ function InstanceCard({
       {/* Quick actions bar */}
       <div className="mt-3 pt-3 border-t border-gray-800 flex items-center justify-between">
         <button onClick={() => navigate(`/instances/${inst.id}`)} className="text-[11px] text-blue-400 hover:text-blue-300">管理 →</button>
-        <button onClick={() => navigate(`/instances/${inst.id}?tab=chat`)} className="text-[11px] text-gray-500 hover:text-gray-300">💬 聊天</button>
+        <button onClick={() => navigate(`/instances/${inst.id}#chat`)} className="text-[11px] text-gray-500 hover:text-gray-300">💬 聊天</button>
       </div>
     </div>
   );
