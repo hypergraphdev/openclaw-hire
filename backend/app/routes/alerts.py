@@ -38,6 +38,21 @@ def list_alerts(
     }
 
 
+def _safe_write(db: sqlite3.Connection, sql: str, params: tuple = ()) -> None:
+    """Execute a write with retry on database locked."""
+    import time
+    for attempt in range(3):
+        try:
+            db.execute(sql, params)
+            db.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 2:
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            raise
+
+
 @router.post("/{alert_id}/read")
 def mark_alert_read(
     alert_id: str,
@@ -48,8 +63,7 @@ def mark_alert_read(
     row = db.execute("SELECT id FROM alerts WHERE id = ?", (alert_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Alert not found.")
-    db.execute("UPDATE alerts SET is_read = 1 WHERE id = ?", (alert_id,))
-    db.commit()
+    _safe_write(db, "UPDATE alerts SET is_read = 1 WHERE id = ?", (alert_id,))
     return {"ok": True}
 
 
@@ -59,6 +73,5 @@ def mark_all_alerts_read(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Mark all alerts as read."""
-    db.execute("UPDATE alerts SET is_read = 1 WHERE is_read = 0")
-    db.commit()
+    _safe_write(db, "UPDATE alerts SET is_read = 1 WHERE is_read = 0")
     return {"ok": True}

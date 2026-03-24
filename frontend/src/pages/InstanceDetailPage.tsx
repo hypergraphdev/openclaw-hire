@@ -56,8 +56,8 @@ export function InstanceDetailPage() {
     if (hash === "chat" || hash === "monitor") return hash;
     return "info";
   });
-  const [chatExpanded, setChatExpanded] = useState(false);
-  const [monitorExpanded, setMonitorExpanded] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(() => localStorage.getItem("chat_expanded") === "1");
+  const [monitorExpanded, setMonitorExpanded] = useState(() => localStorage.getItem("monitor_expanded") === "1");
 
   // Sync hash with tab
   function switchTab(tab: "info" | "chat" | "monitor") {
@@ -312,22 +312,22 @@ export function InstanceDetailPage() {
               instanceId={instanceId}
               agentName={detail.config.agent_name}
               expanded={chatExpanded}
-              onToggleExpand={() => setChatExpanded((v) => !v)}
+              onToggleExpand={() => setChatExpanded((v) => { const n = !v; localStorage.setItem("chat_expanded", n ? "1" : "0"); return n; })}
             />
           )}
 
           {/* Monitor Tab */}
           {activeTab === "monitor" && instanceId && (
-            <div className={monitorExpanded ? "fixed inset-0 z-40 bg-gray-950 overflow-auto p-4" : ""}>
+            <div className={monitorExpanded ? "fixed inset-0 z-40 bg-gray-950 overflow-auto p-4 pt-14" : ""}>
               {monitorExpanded && (
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg text-white font-medium">监控 - {detail?.instance?.name || instanceId}</h2>
-                  <button onClick={() => setMonitorExpanded(false)} className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded bg-gray-800">退出全屏</button>
+                  <button onClick={() => { setMonitorExpanded(false); localStorage.setItem("monitor_expanded", "0"); }} className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded bg-gray-800">退出全屏</button>
                 </div>
               )}
               {!monitorExpanded && (
                 <div className="flex justify-end mb-2">
-                  <button onClick={() => setMonitorExpanded(true)} className="text-gray-500 hover:text-gray-300 text-xs" title="全屏">
+                  <button onClick={() => { setMonitorExpanded(true); localStorage.setItem("monitor_expanded", "1"); }} className="text-gray-500 hover:text-gray-300 text-xs" title="全屏">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9m11.25-5.25v4.5m0-4.5h-4.5m4.5 0L15 9m-11.25 11.25v-4.5m0 4.5h4.5m-4.5 0L9 15m11.25 5.25v-4.5m0 4.5h-4.5m4.5 0L15 15" /></svg>
                   </button>
                 </div>

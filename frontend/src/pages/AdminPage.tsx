@@ -322,6 +322,8 @@ export function AdminPage() {
                                   <div className="absolute right-0 top-6 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
                                     <button onClick={() => openDiagnostics(i.id)}
                                       className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">详情</button>
+                                    <Link to={`/instances/${i.id}`} onClick={() => setMenuId("")}
+                                      className="block px-3 py-1.5 text-xs text-blue-400 hover:bg-gray-700">实例</Link>
                                     {i.agent_name && orgs.length > 1 && (
                                       <button onClick={() => { setTransferId(i.id); setMenuId(""); }}
                                         className="w-full text-left px-3 py-1.5 text-xs text-yellow-400 hover:bg-gray-700">转移</button>

@@ -53,11 +53,14 @@ def _row_to_instance(row) -> InstanceResponse:
     return InstanceResponse(**d)
 
 
-def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection) -> dict:
-    row = db.execute(
-        "SELECT * FROM instances WHERE id = ? AND owner_id = ?",
-        (instance_id, owner_id),
-    ).fetchone()
+def _get_instance_or_404(instance_id: str, owner_id: str, db: sqlite3.Connection, *, is_admin: bool = False) -> dict:
+    if is_admin:
+        row = db.execute("SELECT * FROM instances WHERE id = ?", (instance_id,)).fetchone()
+    else:
+        row = db.execute(
+            "SELECT * FROM instances WHERE id = ? AND owner_id = ?",
+            (instance_id, owner_id),
+        ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Instance not found.")
     return dict(row)
@@ -206,13 +209,14 @@ def get_instance(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> InstanceDetailResponse:
-    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
     if inst.get("compose_project") and inst.get("install_state") in {"starting", "running", "failed"}:
         try:
             sync_instance_status(instance_id)
         except Exception:
-            pass  # Don't fail detail view if sync has DB lock issues
-        inst = _get_instance_or_404(instance_id, current_user["id"], db)
+            pass
+        inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
 
     inst = _merge_instance_config_fields(inst, db)
 
