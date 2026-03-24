@@ -16,7 +16,14 @@ export function AdminPage() {
   const t = useT();
   const [users, setUsers] = useState<User[]>([]);
   const [userSearch, setUserSearch] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [selectedUserId, _setSelectedUserId] = useState<string>(() => {
+    const hash = window.location.hash.replace("#", "");
+    return hash.startsWith("user/") ? hash.slice(5) : "";
+  });
+  const setSelectedUserId = (id: string) => {
+    _setSelectedUserId(id);
+    window.location.hash = id ? `user/${id}` : "";
+  };
   const [detail, setDetail] = useState<AdminUserInstances | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -65,7 +72,11 @@ export function AdminPage() {
     api.adminUsers()
       .then((rows) => {
         setUsers(rows);
-        if (rows.length > 0) setSelectedUserId(rows[0].id);
+        // Restore from hash or default to first user
+        const hashId = window.location.hash.replace("#user/", "");
+        const hasValidHash = hashId && rows.some((u) => u.id === hashId);
+        if (hasValidHash) _setSelectedUserId(hashId);
+        else if (rows.length > 0) setSelectedUserId(rows[0].id);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : t("admin.loadFailed")))
       .finally(() => setLoadingUsers(false));
