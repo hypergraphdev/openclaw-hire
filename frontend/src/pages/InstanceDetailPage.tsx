@@ -321,7 +321,7 @@ export function InstanceDetailPage() {
             <div className={monitorExpanded ? "fixed inset-0 z-40 bg-gray-950 overflow-auto p-4" : ""}>
               {monitorExpanded && (
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg text-white font-medium">监控 - {detail?.name}</h2>
+                  <h2 className="text-lg text-white font-medium">监控 - {detail?.instance?.name || instanceId}</h2>
                   <button onClick={() => setMonitorExpanded(false)} className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded bg-gray-800">退出全屏</button>
                 </div>
               )}
