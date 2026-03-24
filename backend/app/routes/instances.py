@@ -928,3 +928,269 @@ def chat_ws_ticket(
     if not ws_url.endswith("/ws"):
         ws_url = ws_url.rstrip("/") + "/ws"
     return {"ticket": result["ticket"], "ws_url": ws_url}
+
+
+# ─── Claude Session management ──────────────────────────────────────
+
+from ..services.docker_utils import docker_run as _docker_run, get_container_name as _get_container_name
+
+
+def _get_sessions_paths(product: str) -> tuple[str, str]:
+    """Return (sessions_json_path, sessions_dir) inside the container for each product."""
+    if product == "zylos":
+        return (
+            "/home/zylos/.claude/projects/-home-zylos-zylos/.sessions.json",
+            "/home/zylos/.claude/sessions",
+        )
+    # OpenClaw
+    return (
+        "/home/node/.openclaw/sessions/sessions.json",
+        "/home/node/.openclaw/sessions",
+    )
+
+
+def _parse_sessions_json(raw: str) -> list[dict]:
+    """Parse sessions JSON and return normalized list of session info dicts."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+
+    sessions: list[dict] = []
+    # Handle both array and dict formats
+    items = data if isinstance(data, list) else list(data.values()) if isinstance(data, dict) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        session: dict = {
+            "id": item.get("id") or item.get("sessionId") or "",
+            "type": item.get("type") or item.get("model") or "unknown",
+            "lastActivity": item.get("lastActivity") or item.get("last_activity") or item.get("updatedAt") or "",
+        }
+        # Token usage if available
+        usage = item.get("tokenUsage") or item.get("usage") or {}
+        if usage:
+            session["tokenUsage"] = {
+                "input": usage.get("input") or usage.get("inputTokens") or 0,
+                "output": usage.get("output") or usage.get("outputTokens") or 0,
+            }
+        sessions.append(session)
+    return sessions
+
+
+@router.get("/{instance_id}/sessions")
+def list_sessions(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List Claude sessions for an instance."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    product = inst.get("product") or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+
+    sessions_json_path, sessions_dir = _get_sessions_paths(product)
+
+    # Try reading sessions.json first
+    rc, out = _docker_run(["docker", "exec", container_name, "cat", sessions_json_path], timeout=10)
+    sessions: list[dict] = []
+    if rc == 0 and out.strip():
+        sessions = _parse_sessions_json(out)
+
+    # If no sessions.json or empty, try listing session directories
+    if not sessions:
+        rc2, out2 = _docker_run(
+            ["docker", "exec", container_name, "sh", "-c", f"ls -1t {sessions_dir}/ 2>/dev/null || true"],
+            timeout=10,
+        )
+        if rc2 == 0 and out2.strip():
+            for dirname in out2.strip().splitlines():
+                dirname = dirname.strip()
+                if not dirname or dirname.startswith("."):
+                    continue
+                sessions.append({
+                    "id": dirname,
+                    "type": "session",
+                    "lastActivity": "",
+                })
+
+    return {
+        "sessions": sessions,
+        "count": len(sessions),
+        "container": container_name,
+    }
+
+
+# ─── Skills / Plugins viewer ─────────────────────────────────────────
+
+
+def _list_skills(container_name: str, product: str) -> list[dict]:
+    """List installed skills/plugins from inside a container."""
+    skills: list[dict] = []
+
+    if product == "openclaw":
+        # OpenClaw extensions
+        rc, out = _docker_run(
+            ["docker", "exec", container_name, "ls", "/home/node/.openclaw/extensions/"],
+            timeout=10,
+        )
+        if rc == 0 and out.strip():
+            for name in out.strip().splitlines():
+                name = name.strip()
+                if not name or name.startswith("."):
+                    continue
+                skill: dict = {"id": name, "name": name, "source": "extension", "description": ""}
+                # Try to read package.json for metadata
+                rc2, pkg = _docker_run(
+                    ["docker", "exec", container_name, "cat", f"/home/node/.openclaw/extensions/{name}/package.json"],
+                    timeout=5,
+                )
+                if rc2 == 0 and pkg.strip():
+                    try:
+                        meta = json.loads(pkg)
+                        skill["name"] = meta.get("name", name)
+                        skill["description"] = meta.get("description", "")
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                skills.append(skill)
+    else:
+        # Zylos components
+        rc, out = _docker_run(
+            ["docker", "exec", container_name, "ls", "/home/zylos/zylos/components/"],
+            timeout=10,
+        )
+        if rc == 0 and out.strip():
+            for name in out.strip().splitlines():
+                name = name.strip()
+                if not name or name.startswith("."):
+                    continue
+                skill: dict = {"id": name, "name": name, "source": "component", "description": ""}
+                rc2, pkg = _docker_run(
+                    ["docker", "exec", container_name, "cat", f"/home/zylos/zylos/components/{name}/package.json"],
+                    timeout=5,
+                )
+                if rc2 == 0 and pkg.strip():
+                    try:
+                        meta = json.loads(pkg)
+                        skill["name"] = meta.get("name", name)
+                        skill["description"] = meta.get("description", "")
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                skills.append(skill)
+
+        # Zylos Claude skills
+        rc3, out3 = _docker_run(
+            ["docker", "exec", container_name, "ls", "/home/zylos/.claude/skills/"],
+            timeout=10,
+        )
+        if rc3 == 0 and out3.strip():
+            for name in out3.strip().splitlines():
+                name = name.strip()
+                if not name or name.startswith("."):
+                    continue
+                skill_entry: dict = {"id": f"skill_{name}", "name": name, "source": "skill", "description": ""}
+                # Try to read SKILL.md first line as description
+                rc4, md = _docker_run(
+                    ["docker", "exec", container_name, "head", "-5", f"/home/zylos/.claude/skills/{name}/SKILL.md"],
+                    timeout=5,
+                )
+                if rc4 == 0 and md.strip():
+                    lines = [l.strip() for l in md.strip().splitlines() if l.strip() and not l.strip().startswith("#")]
+                    if lines:
+                        skill_entry["description"] = lines[0][:200]
+                skills.append(skill_entry)
+
+    return skills
+
+
+def _get_skill_base_path(product: str, skill_id: str) -> str:
+    """Return the base path inside container for a given skill id."""
+    if product == "openclaw":
+        return f"/home/node/.openclaw/extensions/{skill_id}"
+    if skill_id.startswith("skill_"):
+        real_name = skill_id[len("skill_"):]
+        return f"/home/zylos/.claude/skills/{real_name}"
+    return f"/home/zylos/zylos/components/{skill_id}"
+
+
+@router.get("/{instance_id}/skills")
+def list_instance_skills(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List installed skills/plugins for an instance."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    product = inst.get("product") or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+    skills = _list_skills(container_name, product)
+    return {"skills": skills}
+
+
+@router.get("/{instance_id}/skills/{skill_id}/content")
+def get_skill_content(
+    instance_id: str,
+    skill_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Read main source file of a skill."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    product = inst.get("product") or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+    base_path = _get_skill_base_path(product, skill_id)
+
+    # Try common entry files in order
+    candidates = ["SKILL.md", "index.ts", "index.js", "index.mjs", "main.ts", "main.js", "package.json"]
+    for filename in candidates:
+        rc, content = _docker_run(
+            ["docker", "exec", container_name, "cat", f"{base_path}/{filename}"],
+            timeout=10,
+        )
+        if rc == 0 and content.strip():
+            return {"content": content, "filename": filename}
+
+    # Fallback: list files
+    rc, listing = _docker_run(
+        ["docker", "exec", container_name, "ls", "-la", base_path],
+        timeout=10,
+    )
+    if rc == 0:
+        return {"content": listing, "filename": "(directory listing)"}
+    raise HTTPException(status_code=404, detail="No readable source file found.")
+
+
+@router.post("/{instance_id}/sessions/clear")
+def clear_sessions(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Clear all Claude sessions for an instance. Helps recover stuck instances."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db)
+    product = inst.get("product") or "openclaw"
+    container_name = _get_container_name(instance_id, product)
+
+    sessions_json_path, sessions_dir = _get_sessions_paths(product)
+
+    errors: list[str] = []
+
+    # Remove session files
+    rc, out = _docker_run(
+        ["docker", "exec", container_name, "sh", "-c", f"rm -rf {sessions_dir}/* 2>&1"],
+        timeout=15,
+    )
+    if rc != 0:
+        errors.append(f"rm sessions dir: {out}")
+
+    # Remove sessions.json
+    rc2, out2 = _docker_run(
+        ["docker", "exec", container_name, "sh", "-c", f"rm -f {sessions_json_path} 2>&1"],
+        timeout=10,
+    )
+    if rc2 != 0:
+        errors.append(f"rm sessions json: {out2}")
+
+    if errors:
+        return {"ok": False, "detail": "; ".join(errors)}
+    return {"ok": True, "detail": "All Claude sessions cleared."}

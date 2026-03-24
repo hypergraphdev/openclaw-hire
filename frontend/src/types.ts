@@ -301,3 +301,67 @@ export type ConnectivityResult = {
 };
 
 export type ConnectivityTestResponse = Record<string, ConnectivityResult>;
+
+// ─── Session types ───
+
+export type SessionTokenUsage = {
+  input: number;
+  output: number;
+};
+
+export type ClaudeSession = {
+  id: string;
+  type: string;
+  lastActivity: string;
+  tokenUsage?: SessionTokenUsage;
+};
+
+export type SessionsResponse = {
+  sessions: ClaudeSession[];
+  count: number;
+  container: string;
+};
+
+export type SessionClearResponse = {
+  ok: boolean;
+  detail: string;
+};
+
+// ─── Skills/Plugins types ───
+
+export type InstanceSkill = {
+  id: string;
+  name: string;
+  source: "extension" | "component" | "skill";
+  description: string;
+};
+
+export type SkillsResponse = {
+  skills: InstanceSkill[];
+};
+
+export type SkillContentResponse = {
+  content: string;
+  filename: string;
+};
+
+// ─── Agent Activity types ───
+
+export type AgentServiceInfo = {
+  name: string;
+  status: string;
+  uptime: string;
+  memory_mb: number;
+  restarts: number;
+};
+
+export type AgentActivityResponse = {
+  claude: {
+    running: boolean;
+    pid: number | null;
+    uptime_seconds: number | null;
+    memory_mb: number | null;
+  };
+  services: AgentServiceInfo[];
+  state: "idle" | "busy" | "waiting" | "offline";
+};

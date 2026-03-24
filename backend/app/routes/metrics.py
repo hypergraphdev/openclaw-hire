@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_current_user, get_db
-from ..services.docker_utils import get_container_name, get_resource_usage, get_claude_info
+from ..services.docker_utils import docker_run, get_container_name, get_resource_usage, get_claude_info
 
 router = APIRouter(prefix="/api/instances", tags=["metrics"])
 
@@ -186,3 +186,122 @@ def connectivity_test(
         results["telegram"] = {"ok": False, "elapsed_ms": 0, "error": "No Telegram token configured"}
 
     return results
+
+
+# ---------------------------------------------------------------------------
+#  Agent activity (Claude + pm2 services + activity-monitor state)
+# ---------------------------------------------------------------------------
+
+def _parse_pm2_jlist(raw: str) -> list[dict]:
+    """Parse pm2 jlist JSON output into a clean service list."""
+    try:
+        procs = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    services: list[dict] = []
+    for p in procs:
+        name = p.get("name", "unknown")
+        pm2_env = p.get("pm2_env", {})
+        monit = p.get("monit", {})
+
+        status = pm2_env.get("status", "unknown")
+        uptime_ms = pm2_env.get("pm_uptime", 0)
+        restarts = pm2_env.get("restart_time", 0)
+        memory_bytes = monit.get("memory", 0)
+
+        # Human-readable uptime
+        import time as _time
+        now_ms = int(_time.time() * 1000)
+        elapsed_ms = max(0, now_ms - uptime_ms) if uptime_ms else 0
+        elapsed_s = elapsed_ms // 1000
+        if elapsed_s < 60:
+            uptime_str = f"{elapsed_s}s"
+        elif elapsed_s < 3600:
+            uptime_str = f"{elapsed_s // 60}m"
+        elif elapsed_s < 86400:
+            uptime_str = f"{elapsed_s // 3600}h"
+        else:
+            uptime_str = f"{elapsed_s // 86400}d"
+
+        services.append({
+            "name": name,
+            "status": status,
+            "uptime": uptime_str if status == "online" else "-",
+            "memory_mb": round(memory_bytes / (1024 * 1024), 1) if memory_bytes else 0,
+            "restarts": restarts,
+        })
+
+    return services
+
+
+def _determine_state(claude_running: bool, services: list[dict], activity_state: str | None) -> str:
+    """Determine overall agent state: idle, busy, waiting, offline."""
+    # If explicit activity-monitor state exists, use it
+    if activity_state and activity_state in ("idle", "busy", "waiting"):
+        return activity_state
+
+    if not claude_running:
+        # Check if any pm2 service is online
+        any_online = any(s["status"] == "online" for s in services)
+        return "waiting" if any_online else "offline"
+
+    return "idle"
+
+
+@router.get("/{instance_id}/agent-activity")
+def agent_activity(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Get real-time agent activity: Claude process, pm2 services, overall state."""
+    _check_owner(instance_id, current_user["id"], db, current_user.get("is_admin", False))
+
+    inst = db.execute(
+        "SELECT product FROM instances WHERE id = ?", (instance_id,)
+    ).fetchone()
+    if not inst:
+        raise HTTPException(status_code=404, detail="Instance not found.")
+
+    product = inst["product"]
+    container = get_container_name(instance_id, product)
+
+    # 1. Claude process info
+    claude = get_claude_info(container)
+
+    # 2. pm2 services
+    rc, pm2_raw = docker_run(
+        ["docker", "exec", container, "bash", "-c", "pm2 jlist 2>/dev/null"],
+        timeout=8,
+    )
+    services = _parse_pm2_jlist(pm2_raw) if rc == 0 else []
+
+    # 3. Activity monitor state (Zylos only)
+    activity_state: str | None = None
+    if product == "zylos":
+        rc_s, state_raw = docker_run(
+            ["docker", "exec", container, "cat",
+             "/home/zylos/zylos/activity-monitor/state.json"],
+            timeout=5,
+        )
+        if rc_s == 0 and state_raw.strip():
+            try:
+                state_obj = json.loads(state_raw)
+                activity_state = state_obj.get("state")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    # 4. Determine overall state
+    state = _determine_state(claude["running"], services, activity_state)
+
+    return {
+        "claude": {
+            "running": claude["running"],
+            "pid": claude["pid"],
+            "uptime_seconds": claude["uptime_seconds"],
+            "memory_mb": claude["memory_mb"],
+        },
+        "services": services,
+        "state": state,
+    }

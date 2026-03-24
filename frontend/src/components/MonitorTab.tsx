@@ -3,8 +3,11 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { AgentActivity } from "./AgentActivity";
 import { TrendChart } from "./charts/TrendChart";
 import { ConnectivityTest } from "./ConnectivityTest";
+import { SessionPanel } from "./SessionPanel";
+import { SkillsPanel } from "./SkillsPanel";
 import { StatusIndicator } from "./StatusIndicator";
 import type { MetricsResponse } from "../types";
 
@@ -38,6 +41,9 @@ export function MonitorTab({ instanceId }: { instanceId: string }) {
 
   return (
     <div className="space-y-4 p-4">
+      {/* Agent Activity — real-time Claude + pm2 services */}
+      <AgentActivity instanceId={instanceId} />
+
       {/* Time range selector */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-300">资源监控</h3>
@@ -93,6 +99,12 @@ export function MonitorTab({ instanceId }: { instanceId: string }) {
               </div>
             );
           })()}
+
+          {/* Claude sessions */}
+          <SessionPanel instanceId={instanceId} />
+
+          {/* Skills / Plugins */}
+          <SkillsPanel instanceId={instanceId} />
 
           {/* Connectivity test */}
           <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">

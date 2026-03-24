@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
@@ -146,6 +146,21 @@ export const api = {
     request<SparklineResponse>(`/api/instances/${id}/metrics/sparkline?field=${field ?? "cpu_percent"}`),
   instanceConnectivityTest: (id: string) =>
     request<ConnectivityTestResponse>(`/api/instances/${id}/connectivity-test`, { method: "POST" }),
+
+  agentActivity: (id: string) =>
+    request<AgentActivityResponse>(`/api/instances/${id}/agent-activity`),
+
+  // Sessions
+  instanceSessions: (id: string) =>
+    request<SessionsResponse>(`/api/instances/${id}/sessions`),
+  instanceSessionsClear: (id: string) =>
+    request<SessionClearResponse>(`/api/instances/${id}/sessions/clear`, { method: "POST" }),
+
+  // Skills / Plugins
+  instanceSkills: (id: string) =>
+    request<SkillsResponse>(`/api/instances/${id}/skills`),
+  instanceSkillContent: (id: string, skillId: string) =>
+    request<SkillContentResponse>(`/api/instances/${id}/skills/${encodeURIComponent(skillId)}/content`),
 
   // Chat proxy
   chatInfo: (id: string) =>
