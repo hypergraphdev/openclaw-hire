@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import os
 import mysql.connector
 from mysql.connector import pooling
 
 ADMIN_EMAIL = "web8stars@gmail.com"
 
 DB_CONFIG = {
-    "host": "localhost",
-    "database": "openclaw_hire",
-    "user": "openclaw",
-    "password": "Oc2026hireMx",
+    "host": os.getenv("DB_HOST", "localhost"),
+    "database": os.getenv("DB_NAME", "openclaw_hire"),
+    "user": os.getenv("DB_USER", "openclaw"),
+    "password": os.getenv("DB_PASSWORD", ""),
     "charset": "utf8mb4",
     "autocommit": True,
 }
