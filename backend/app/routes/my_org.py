@@ -206,8 +206,11 @@ def get_my_org(
     instance_agent_names = {r["agent_name"] for r in inst_rows}
 
     all_bots = []
+    # Sync DB org_id with Hub reality (Hub is source of truth)
+    hub_bot_names_in_org = set()
     for b in all_bots_raw:
         bot_name = b.get("name", "")
+        hub_bot_names_in_org.add(bot_name)
         if bot_name not in instance_agent_names:
             continue
         all_bots.append({
@@ -216,6 +219,22 @@ def get_my_org(
             "online": b.get("online", False),
             "is_mine": bot_name in my_agent_names,
         })
+
+    # Fix stale org_id in DB: if a bot appears in this Hub org but DB says different org, update DB
+    if hub_bot_names_in_org and my_agent_names:
+        my_bots_in_hub = hub_bot_names_in_org & my_agent_names
+        if my_bots_in_hub:
+            try:
+                with get_connection() as conn:
+                    for name in my_bots_in_hub:
+                        conn.execute(
+                            """UPDATE instance_configs SET org_id = ?
+                               WHERE agent_name = ? AND (org_id IS NULL OR org_id != ?)""",
+                            (active_org_id, name, active_org_id),
+                        )
+                    conn.commit()
+            except Exception:
+                pass  # Best effort sync
 
     return {
         "status": "ok",
