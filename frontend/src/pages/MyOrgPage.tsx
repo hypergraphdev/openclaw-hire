@@ -536,7 +536,7 @@ export function MyOrgPage() {
             onClick={() => setShowOffice((v) => !v)}
             className={`shrink-0 text-xs px-2.5 py-1.5 rounded-md border transition-colors ${showOffice ? "bg-blue-600/20 border-blue-600 text-blue-400" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600"}`}
           >
-            {showOffice ? "🏢 关闭办公室" : "🏢 办公室视图"}
+            {showOffice ? "🏢 收起视图" : "🏢 办公视图"}
           </button>
           <div className="relative w-80">
             <input type="text" value={globalSearchQuery}
