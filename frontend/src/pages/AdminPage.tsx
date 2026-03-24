@@ -319,7 +319,7 @@ export function AdminPage() {
                                 <button onClick={() => setMenuId(menuId === i.id ? "" : i.id)}
                                   className="text-gray-500 hover:text-gray-300 px-1 py-0.5 text-sm">⋮</button>
                                 {menuId === i.id && (
-                                  <div className="absolute right-0 top-6 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
+                                  <div className="absolute right-0 bottom-full mb-1 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
                                     <button onClick={() => openDiagnostics(i.id)}
                                       className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">详情</button>
                                     <Link to={`/instances/${i.id}`} onClick={() => setMenuId("")}
