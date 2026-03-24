@@ -254,7 +254,11 @@ def org_chat_info(
     current_user: dict = Depends(get_current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Get chat info for a target bot."""
+    """Get chat info for a target bot.
+
+    Uses instance bot token to query org info (no admin bot needed).
+    Admin bot identity is only resolved when target is user's own bot (for DM).
+    """
     user_id = current_user["id"]
     info = _get_user_org_info(user_id, db)
     if info["status"] != "ok":
@@ -262,16 +266,40 @@ def org_chat_info(
 
     hub_url = _get_hub_url().rstrip("/")
     my_agent_names = {b["agent_name"] for b in info["my_bots"]}
-    token, identity = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
-    # Get my identity
+    # Use first instance bot to query org info (always available, no admin bot needed)
+    query_token = None
+    if info["my_bots"]:
+        query_token = _get_agent_token(info["my_bots"][0]["instance_id"])
+    if not query_token:
+        raise HTTPException(status_code=400, detail="No bot available in this organization.")
+
     try:
-        me = _hub_request(hub_url, token, "GET", "/api/me")
+        me = _hub_request(hub_url, query_token, "GET", "/api/me")
     except Exception:
         raise HTTPException(status_code=502, detail="Failed to get bot identity.")
 
-    my_bot_id = me.get("id", "")
-    my_bot_name = me.get("name", "")
+    # Determine the actual chat identity (admin bot for own bot DM, instance bot otherwise)
+    is_own_bot = target in my_agent_names
+    if is_own_bot:
+        org_id = info.get("org_id", "")
+        user_row = db.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        display_name = user_row["name"] if user_row else ""
+        admin_token = _ensure_user_bot(hub_url, user_id, display_name, target_org_id=org_id or None)
+        if admin_token:
+            try:
+                admin_me = _hub_request(hub_url, admin_token, "GET", "/api/me")
+                my_bot_id = admin_me.get("id", "")
+                my_bot_name = admin_me.get("name", "")
+            except Exception:
+                my_bot_id = me.get("id", "")
+                my_bot_name = me.get("name", "")
+        else:
+            my_bot_id = me.get("id", "")
+            my_bot_name = me.get("name", "")
+    else:
+        my_bot_id = me.get("id", "")
+        my_bot_name = me.get("name", "")
 
     # Get target bot info
     try:
