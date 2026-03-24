@@ -162,6 +162,101 @@ function RenameDialog({
   );
 }
 
+// ─── Instance Card (Grid View) ──────────────────────────────────────
+
+function InstanceCard({
+  inst,
+  onDelete,
+  onRename,
+  deleting,
+}: {
+  inst: Instance;
+  onDelete: () => void;
+  onRename: () => void;
+  deleting: boolean;
+}) {
+  const navigate = useNavigate();
+  const isRunning = inst.install_state === "running";
+  const isConfigured = inst.is_telegram_configured && !!inst.agent_name;
+  const productIcon = inst.product === "zylos" ? "🤖" : "🔷";
+  const stateColor = isRunning ? "border-green-500/40" : inst.install_state === "failed" ? "border-red-500/40" : "border-gray-700";
+
+  return (
+    <div className={`bg-gray-900 border-2 ${stateColor} rounded-xl p-4 hover:bg-gray-800/60 transition-all group relative`}>
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="cursor-pointer flex-1" onClick={() => navigate(`/instances/${inst.id}`)}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{productIcon}</span>
+            <span className="text-white font-medium text-sm hover:text-blue-400 transition-colors truncate">{inst.name}</span>
+          </div>
+          <div className="text-[10px] text-gray-600 font-mono mt-0.5 ml-7">{inst.id}</div>
+        </div>
+        <ActionMenu inst={inst} onDelete={onDelete} onRename={onRename} deleting={deleting} />
+      </div>
+
+      {/* Status badges */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full ${isRunning ? "bg-green-900/40 text-green-400" : inst.install_state === "failed" ? "bg-red-900/40 text-red-400" : "bg-gray-800 text-gray-400"}`}>
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${isRunning ? "bg-green-400" : inst.install_state === "failed" ? "bg-red-400" : "bg-gray-500"}`} />
+          {inst.install_state}
+        </span>
+        <span className={`text-[11px] px-2 py-0.5 rounded-full ${isConfigured ? "bg-blue-900/30 text-blue-400" : "bg-amber-900/30 text-amber-400"}`}>
+          {isConfigured ? "已配置" : inst.agent_name ? "TG未配置" : "未配置"}
+        </span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 capitalize">{inst.product}</span>
+      </div>
+
+      {/* Info grid */}
+      <div className="space-y-1.5 text-[11px]">
+        {inst.agent_name && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">Agent</span>
+            <span className="text-green-400 font-mono truncate ml-2">{inst.agent_name}</span>
+          </div>
+        )}
+        {inst.org_name && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">组织</span>
+            <span className="text-blue-400 truncate ml-2">{inst.org_name}</span>
+          </div>
+        )}
+        {inst.web_console_port && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">端口</span>
+            <span className="text-gray-300 font-mono">{inst.web_console_port}{inst.http_port ? ` / ${inst.http_port}` : ""}</span>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <span className="text-gray-500">部署</span>
+          <span className="text-gray-400">{formatDate(inst.created_at)}</span>
+        </div>
+      </div>
+
+      {/* Quick actions bar */}
+      <div className="mt-3 pt-3 border-t border-gray-800 flex items-center justify-between">
+        <button onClick={() => navigate(`/instances/${inst.id}`)} className="text-[11px] text-blue-400 hover:text-blue-300">管理 →</button>
+        <button onClick={() => navigate(`/instances/${inst.id}?tab=chat`)} className="text-[11px] text-gray-500 hover:text-gray-300">💬 聊天</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── View toggle ────────────────────────────────────────────────────
+
+function ViewToggle({ view, onChange }: { view: "list" | "grid"; onChange: (v: "list" | "grid") => void }) {
+  return (
+    <div className="flex bg-gray-800 rounded-md p-0.5">
+      <button onClick={() => onChange("list")} className={`px-2.5 py-1 rounded text-xs transition-colors ${view === "list" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`} title="列表">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>
+      </button>
+      <button onClick={() => onChange("grid")} className={`px-2.5 py-1 rounded text-xs transition-colors ${view === "grid" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`} title="网格">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+      </button>
+    </div>
+  );
+}
+
 // ─── Main page ──────────────────────────────────────────────────────
 
 export function InstancesPage() {
@@ -172,6 +267,7 @@ export function InstancesPage() {
   const [deletingId, setDeletingId] = useState<string>("");
   const [renamingInst, setRenamingInst] = useState<Instance | null>(null);
   const [orgs, setOrgs] = useState<HxaOrg[]>([]);
+  const [viewMode, setViewMode] = useState<"list" | "grid">(() => (localStorage.getItem("inst_view") as "list" | "grid") || "list");
   const orgMap = Object.fromEntries(orgs.map((o) => [o.id, o.name]));
 
   function configStatus(inst: Instance) {
@@ -217,12 +313,15 @@ export function InstancesPage() {
             {t("instances.count", { count: instances.length })}
           </p>
         </div>
-        <Link
-          to="/catalog"
-          className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md transition-colors whitespace-nowrap"
-        >
-          {t("instances.deployNew")}
-        </Link>
+        <div className="flex items-center gap-3">
+          {instances.length > 0 && <ViewToggle view={viewMode} onChange={(v) => { setViewMode(v); localStorage.setItem("inst_view", v); }} />}
+          <Link
+            to="/catalog"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md transition-colors whitespace-nowrap"
+          >
+            {t("instances.deployNew")}
+          </Link>
+        </div>
       </div>
 
       {instances.length === 0 ? (
@@ -232,6 +331,19 @@ export function InstancesPage() {
           <Link to="/catalog" className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block">
             {t("instances.browseCatalog")}
           </Link>
+        </div>
+      ) : viewMode === "grid" ? (
+        /* ─── Grid view ─── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {instances.map((inst) => (
+            <InstanceCard
+              key={inst.id}
+              inst={inst}
+              onDelete={() => handleDelete(inst.id, inst.name)}
+              onRename={() => setRenamingInst(inst)}
+              deleting={deletingId === inst.id}
+            />
+          ))}
         </div>
       ) : (
         <>
