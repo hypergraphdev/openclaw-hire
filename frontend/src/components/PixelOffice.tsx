@@ -114,8 +114,9 @@ export function PixelOffice({ bots, myBotNames, onBotClick }: PixelOfficeProps) 
     hoveredCharRef.current = null;
     for (const [id, ch] of office.characters) {
       const cx = ch.x + TILE_SIZE / 2;
-      const cy = ch.y + TILE_SIZE;
-      if (Math.abs(tileX - cx) < 8 && Math.abs(tileY - cy) < 16) {
+      const cy = ch.y + TILE_SIZE / 2;
+      // Wider hit area to include name label above character
+      if (Math.abs(tileX - cx) < 20 && tileY > ch.y - 12 && tileY < ch.y + TILE_SIZE + 4) {
         hoveredCharRef.current = id;
         break;
       }
@@ -245,8 +246,8 @@ export function PixelOffice({ bots, myBotNames, onBotClick }: PixelOfficeProps) 
       <div ref={containerRef} className="w-full" style={{ height: "min(60vh, 500px)" }}>
         <canvas
           ref={canvasRef}
-          className="block cursor-crosshair"
-          style={{ width: "100%", height: "100%" }}
+          className="block"
+          style={{ width: "100%", height: "100%", cursor: "pointer" }}
           onMouseMove={handleMouseMoveCapture}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
