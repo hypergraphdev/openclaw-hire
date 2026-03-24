@@ -78,6 +78,7 @@ def init_db() -> None:
                 FOREIGN KEY (instance_id) REFERENCES instances (id)
             )
         """)
+    _migrate_existing_db()
 
 
 def _migrate_existing_db() -> None:
