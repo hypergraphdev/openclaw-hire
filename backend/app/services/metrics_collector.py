@@ -16,7 +16,9 @@ RETENTION_DAYS = 7
 
 def _collect_once(db_path: str) -> int:
     """Collect metrics for all running instances. Returns count collected."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(

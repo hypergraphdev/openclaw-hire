@@ -11,7 +11,9 @@ ADMIN_EMAIL = "web8stars@gmail.com"
 
 def get_connection() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH, check_same_thread=False)
+    connection = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=5000")
     connection.row_factory = sqlite3.Row
     return connection
 
