@@ -469,6 +469,19 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
             "owner_name": owner_info.get("owner_name"),
             "owner_email": owner_info.get("owner_email"),
         })
+    # Auto-sync DB org_id with Hub reality (Hub is source of truth)
+    try:
+        hub_bot_names = {bot.get("name", "") for bot in bots}
+        with get_connection() as conn:
+            for name in hub_bot_names:
+                conn.execute(
+                    "UPDATE instance_configs SET org_id = ? WHERE agent_name = ? AND (org_id IS NULL OR org_id != ?)",
+                    (org_id, name, org_id),
+                )
+            conn.commit()
+    except Exception:
+        pass  # Best effort
+
     return {"agents": enriched, "org_name": org.get("name", "")}
 
 
