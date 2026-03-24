@@ -70,13 +70,10 @@ export function syncAgentsToOffice(
       office.addAgent(charId, undefined, undefined, undefined, undefined, wasOffline || isNew)
     }
 
-    // Set label, avoiding duplicated values like "main (main)"
+    // Set label — just the display name
     const ch = office.characters.get(charId)
     if (ch) {
-      const displayName = activity.name?.trim()
-      ch.label = displayName && displayName !== activity.agentId
-        ? `${displayName} (${activity.agentId})`
-        : activity.agentId
+      ch.label = activity.name?.trim() || activity.agentId
     }
 
     switch (activity.state) {
