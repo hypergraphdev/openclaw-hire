@@ -72,7 +72,9 @@ def _get_user_org_info(user_id: str, db: sqlite3.Connection, target_org_id: str 
     my_bots = orgs_seen.get(org_id, [])
     org_ids = list(orgs_seen.keys())
 
-    return {"status": "ok", "org_id": org_id, "my_bots": my_bots, "all_org_ids": org_ids}
+    # all_my_agent_names: user's bots across ALL orgs (for "is mine" checks even after org transfer)
+    all_my_agent_names = {b["agent_name"] for b in all_bots if b["agent_name"]}
+    return {"status": "ok", "org_id": org_id, "my_bots": my_bots, "all_org_ids": org_ids, "all_my_agent_names": all_my_agent_names}
 
 
 def _resolve_org_secret(org_id: str) -> str:
@@ -126,15 +128,27 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
             raise HTTPException(status_code=500, detail="Failed to initialize admin bot.")
         return token, "admin"
     else:
-        # Chat with other's bot → use my instance bot token
-        # Find first instance with valid token
-        rows = db.execute(
-            """SELECT i.id FROM instances i
-               JOIN instance_configs c ON i.id = c.instance_id
-               WHERE i.owner_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''
-               ORDER BY i.created_at ASC LIMIT 1""",
-            (user_id,),
-        ).fetchall()
+        # Chat with other's bot → use my instance bot in the SAME org
+        # First try to find instance in the same org, then fallback to any
+        if org_id:
+            rows = db.execute(
+                """SELECT i.id FROM instances i
+                   JOIN instance_configs c ON i.id = c.instance_id
+                   WHERE i.owner_id = ? AND c.org_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''
+                   ORDER BY i.created_at ASC LIMIT 1""",
+                (user_id, org_id),
+            ).fetchall()
+        else:
+            rows = []
+        if not rows:
+            # Fallback: any instance with a configured agent
+            rows = db.execute(
+                """SELECT i.id FROM instances i
+                   JOIN instance_configs c ON i.id = c.instance_id
+                   WHERE i.owner_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''
+                   ORDER BY i.created_at ASC LIMIT 1""",
+                (user_id,),
+            ).fetchall()
         if not rows:
             raise HTTPException(status_code=400, detail="You have no configured bot to chat with.")
         instance_id = rows[0]["id"]
@@ -180,15 +194,14 @@ def get_my_org(
     org_secret = _resolve_org_secret(active_org_id)
     all_bots_raw = _get_org_bots(active_org_id, org_secret) if org_secret else []
 
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
 
-    # Filter to instance bots only
+    # Filter to instance bots only — include ALL orgs since bots may have been transferred
     with get_connection() as conn:
         inst_rows = conn.execute(
             """SELECT DISTINCT c.agent_name FROM instance_configs c
                JOIN instances i ON c.instance_id = i.id
-               WHERE c.org_id = ? AND c.agent_name IS NOT NULL AND c.agent_name != ''""",
-            (active_org_id,),
+               WHERE c.agent_name IS NOT NULL AND c.agent_name != ''""",
         ).fetchall()
     instance_agent_names = {r["agent_name"] for r in inst_rows}
 
@@ -234,7 +247,7 @@ def org_chat_send(
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
     token, _ = _pick_chat_token(user_id, req.target_bot_name, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
     content = req.content
@@ -265,7 +278,7 @@ def org_chat_info(
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
 
     # Use first instance bot to query org info (always available, no admin bot needed)
     query_token = None
@@ -354,7 +367,7 @@ def org_chat_messages(
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
     token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
 
     params = f"limit={limit}"
@@ -379,7 +392,7 @@ def org_chat_ws_ticket(
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
 
     if mode == "thread":
         # Thread WS must use instance bot (thread participant)
@@ -479,7 +492,7 @@ def create_thread(
     display_name = user_row["name"] if user_row else ""
 
     # Determine which token to use - prefer first instance bot
-    my_agent_names = {b["agent_name"] for b in info["my_bots"]}
+    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
     if info["my_bots"]:
         token = _get_agent_token(info["my_bots"][0]["instance_id"])
     else:
