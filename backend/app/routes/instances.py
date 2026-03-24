@@ -158,9 +158,26 @@ def list_instances(
         (current_user["id"],),
     ).fetchall()
 
+    # Sync at most one stale instance per request to avoid DB lock contention
+    import time
+    _now = time.time()
     for row in rows:
         if row["compose_project"] and row["install_state"] in {"starting", "running", "failed"}:
-            sync_instance_status(row["id"])
+            # Only sync if last update was >30s ago
+            updated = row["updated_at"] or ""
+            if updated:
+                try:
+                    from datetime import datetime
+                    age = _now - datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+                    if age < 30:
+                        continue
+                except Exception:
+                    pass
+            try:
+                sync_instance_status(row["id"])
+            except Exception:
+                pass  # Don't let sync errors break listing
+            break  # Only sync one per request
 
     rows = db.execute(
         "SELECT * FROM instances WHERE owner_id = ? ORDER BY created_at DESC",
@@ -191,7 +208,10 @@ def get_instance(
 ) -> InstanceDetailResponse:
     inst = _get_instance_or_404(instance_id, current_user["id"], db)
     if inst.get("compose_project") and inst.get("install_state") in {"starting", "running", "failed"}:
-        sync_instance_status(instance_id)
+        try:
+            sync_instance_status(instance_id)
+        except Exception:
+            pass  # Don't fail detail view if sync has DB lock issues
         inst = _get_instance_or_404(instance_id, current_user["id"], db)
 
     inst = _merge_instance_config_fields(inst, db)
