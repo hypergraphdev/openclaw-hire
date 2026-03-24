@@ -239,7 +239,7 @@ export function InstanceDetailPage() {
         </div>
       )}
 
-      <div className={`grid grid-cols-1 gap-5 ${chatExpanded ? "" : "lg:grid-cols-3"}`}>
+      <div className={`grid grid-cols-1 gap-5 ${chatExpanded || monitorExpanded ? "" : "lg:grid-cols-3"}`}>
         {/* Left panel: Install timeline + Docker logs */}
         {!chatExpanded && (
           <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-lg p-5">
@@ -272,7 +272,7 @@ export function InstanceDetailPage() {
         )}
 
         {/* Right column: tabs + content */}
-        <div className={`space-y-4 ${chatExpanded ? "col-span-full" : ""}`}>
+        <div className={`space-y-4 ${chatExpanded || monitorExpanded ? "col-span-full" : ""}`}>
           {/* Tab bar */}
           {detail?.config?.agent_name && (
             <div className="flex border-b border-gray-700">
