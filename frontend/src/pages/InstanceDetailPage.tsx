@@ -5,6 +5,7 @@ import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
 import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
+import { useAuth } from "../contexts/AuthContext";
 import { useT } from "../contexts/LanguageContext";
 import type { InstanceDetail, TelegramConfigResponse } from "../types";
 
@@ -35,8 +36,10 @@ function timelineCollapseKey(id: string) {
 
 export function InstanceDetailPage() {
   const { instanceId } = useParams<{ instanceId: string }>();
+  const { user } = useAuth();
   const t = useT();
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
+  const isOwner = !detail || detail.instance?.owner_id === user?.id;
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
   const [actionLoading, setActionLoading] = useState<"" | "stop" | "restart" | "uninstall" | "logs">("");
@@ -307,13 +310,20 @@ export function InstanceDetailPage() {
           )}
 
           {/* Chat Panel */}
-          {activeTab === "chat" && detail?.config?.agent_name && instanceId && (
-            <ChatPanel
-              instanceId={instanceId}
-              agentName={detail.config.agent_name}
-              expanded={chatExpanded}
-              onToggleExpand={() => setChatExpanded((v) => { const n = !v; localStorage.setItem("chat_expanded", n ? "1" : "0"); return n; })}
-            />
+          {activeTab === "chat" && instanceId && (
+            isOwner && detail?.config?.agent_name ? (
+              <ChatPanel
+                instanceId={instanceId}
+                agentName={detail.config.agent_name}
+                expanded={chatExpanded}
+                onToggleExpand={() => setChatExpanded((v) => { const n = !v; localStorage.setItem("chat_expanded", n ? "1" : "0"); return n; })}
+              />
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center">
+                <div className="text-gray-600 text-3xl mb-3">💬</div>
+                <div className="text-gray-400 text-sm">{isOwner ? "请先配置 HXA 组织后再使用聊天" : "管理员模式下聊天不可用"}</div>
+              </div>
+            )
           )}
 
           {/* Monitor Tab */}
