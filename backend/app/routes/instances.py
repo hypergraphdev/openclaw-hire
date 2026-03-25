@@ -583,7 +583,10 @@ def delete_instance(
         shutil.rmtree(Path(runtime_dir), ignore_errors=True)
 
     cursor = db.cursor()
+    # Delete child rows first to satisfy FK constraints before removing the parent instance row.
     cursor.execute("DELETE FROM install_events WHERE instance_id = %s", (instance_id,))
+    cursor.execute("DELETE FROM instance_metrics WHERE instance_id = %s", (instance_id,))
+    cursor.execute("DELETE FROM instance_configs WHERE instance_id = %s", (instance_id,))
     cursor.execute("DELETE FROM instances WHERE id = %s AND owner_id = %s", (instance_id, current_user["id"]))
     cursor.close()
     return {"status": "deleted", "instance_id": instance_id}
