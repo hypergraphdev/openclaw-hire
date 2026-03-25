@@ -572,6 +572,48 @@ def _get_org_secret_for(org_id: str) -> str:
 #  Bot Transfer
 # ---------------------------------------------------------------------------
 
+def _cleanup_bot_and_tombstone(hub_url: str, org_id: str, org_secret: str, bot_name: str) -> None:
+    """Delete existing bot with same name + tombstone in an org. Best-effort."""
+    origin = "https://www.ucai.net"
+    try:
+        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+        login_req = urllib.request.Request(
+            f"{hub_url}/api/auth/login", data=login_data,
+            headers={"Content-Type": "application/json", "Origin": origin}, method="POST",
+        )
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+
+        # Delete existing bot with same name
+        try:
+            bots_req = urllib.request.Request(
+                f"{hub_url}/api/bots?limit=200",
+                headers={"Cookie": cookie, "Origin": origin},
+            )
+            with urllib.request.urlopen(bots_req, timeout=10) as resp:
+                bots_raw = json.loads(resp.read().decode())
+            items = bots_raw if isinstance(bots_raw, list) else bots_raw.get("bots", bots_raw.get("items", []))
+            for b in items:
+                if b.get("name") == bot_name:
+                    urllib.request.urlopen(urllib.request.Request(
+                        f"{hub_url}/api/bots/{b['id']}",
+                        headers={"Cookie": cookie, "Origin": origin}, method="DELETE",
+                    ), timeout=10)
+                    break
+        except Exception:
+            pass
+
+        # Delete tombstone
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{hub_url}/api/orgs/{org_id}/tombstones/{bot_name}",
+                headers={"Cookie": cookie, "Origin": origin}, method="DELETE",
+            ), timeout=10)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
 class TransferBotRequest(BaseModel):
     target_org_id: str
 
@@ -662,6 +704,9 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
     if not target_org_secret:
         raise HTTPException(status_code=400, detail="Target org secret is empty.")
 
+    # 3.5 Cleanup: delete existing bot with same name + tombstone in target org
+    _cleanup_bot_and_tombstone(hub, target_org_id, target_org_secret, agent_name)
+
     # 4. Login to target org, create ticket, register bot
     try:
         ticket_result = _hub_org_admin_request("POST", "/api/org/tickets", target_org_id, target_org_secret,
@@ -686,6 +731,37 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
         with urllib.request.urlopen(reg_req, timeout=15) as resp:
             reg_result = json.loads(resp.read().decode())
     except Exception as e:
+        # Registration failed — try to rollback: re-register in old org to avoid orphaning
+        if current_org_secret and current_org_id:
+            try:
+                _cleanup_bot_and_tombstone(hub, current_org_id, current_org_secret, agent_name)
+                old_ticket = _hub_org_admin_request("POST", "/api/org/tickets", current_org_id, current_org_secret,
+                                                     {"reusable": False, "skip_approval": True})
+                old_ticket_secret = old_ticket.get("ticket", "") if old_ticket else ""
+                if old_ticket_secret:
+                    rb_data = json.dumps({"org_id": current_org_id, "ticket": old_ticket_secret, "name": agent_name}).encode()
+                    rb_req = urllib.request.Request(
+                        f"{hub}/api/auth/register", data=rb_data,
+                        headers={"Content-Type": "application/json"}, method="POST",
+                    )
+                    with urllib.request.urlopen(rb_req, timeout=15) as resp:
+                        rb_result = json.loads(resp.read().decode())
+                    rb_token = rb_result.get("token", "")
+                    if rb_token:
+                        _write_new_token(instance_id, rb_token, agent_name, current_org_id)
+                        conn = get_connection()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "UPDATE instance_configs SET org_token = %s WHERE instance_id = %s",
+                                (rb_token, instance_id),
+                            )
+                            cursor.close()
+                        finally:
+                            conn.close()
+                        _restart_hxa_connect(instance_id)
+            except Exception:
+                pass  # Rollback also failed — bot is orphaned, MyOrg auto-repair will handle
         raise HTTPException(status_code=502, detail=f"Failed to register bot in target org: {e}")
 
     new_token = reg_result.get("token", "")

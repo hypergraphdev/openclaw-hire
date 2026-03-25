@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from ..database import get_setting, get_connection
 from ..deps import get_current_user, get_db
 from ..services.install_service import _get_hub_url
-from .admin_hxa import _get_agent_token, _hub_admin_request, _hub_org_admin_request
+from .admin_hxa import _get_agent_token, _hub_admin_request, _hub_org_admin_request, _cleanup_bot_and_tombstone, _write_new_token, _restart_hxa_connect
 from .instances import _hub_request, _ensure_user_bot, _make_admin_bot_name
 
 router = APIRouter(prefix="/api/my-org", tags=["my-org"])
@@ -266,6 +266,79 @@ def get_my_org(
                     conn.close()
             except Exception:
                 pass  # Best effort sync
+
+    # Fix orphaned bots: DB says bot is in this org, but Hub doesn't have it.
+    # This can happen when a transfer's delete step succeeded but registration failed.
+    if org_secret and my_agent_names:
+        # Find bots whose DB org_id matches active_org_id but are missing from Hub
+        db_bots_for_org = {b["agent_name"] for b in info["my_bots"]
+                          if b.get("org_id") == active_org_id and b.get("agent_name")}
+        orphaned = db_bots_for_org - hub_bot_names_in_org
+        hub = _get_hub_url().rstrip("/")
+        repaired = 0
+        for orphan_name in orphaned:
+            if repaired >= 2:
+                break  # Limit to avoid slow page loads
+            try:
+                # Find instance_id for this bot
+                conn = get_connection()
+                try:
+                    cursor = conn.cursor(dictionary=True)
+                    cursor.execute(
+                        "SELECT instance_id FROM instance_configs WHERE agent_name = %s AND org_id = %s",
+                        (orphan_name, active_org_id),
+                    )
+                    orphan_row = cursor.fetchone()
+                    cursor.close()
+                finally:
+                    conn.close()
+                if not orphan_row:
+                    continue
+                orphan_instance_id = orphan_row["instance_id"]
+
+                # Cleanup tombstone + re-register
+                _cleanup_bot_and_tombstone(hub, active_org_id, org_secret, orphan_name)
+                ticket_result = _hub_org_admin_request(
+                    "POST", "/api/org/tickets", active_org_id, org_secret,
+                    {"reusable": False, "skip_approval": True},
+                )
+                ticket_secret = ticket_result.get("ticket", "") if ticket_result else ""
+                if not ticket_secret:
+                    continue
+
+                reg_data = json.dumps({"org_id": active_org_id, "ticket": ticket_secret, "name": orphan_name}).encode()
+                reg_req = urllib.request.Request(
+                    f"{hub}/api/auth/register", data=reg_data,
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+                with urllib.request.urlopen(reg_req, timeout=15) as resp:
+                    reg_result = json.loads(resp.read().decode())
+                new_token = reg_result.get("token", "")
+                if new_token:
+                    # Update DB token
+                    conn = get_connection()
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE instance_configs SET org_token = %s WHERE instance_id = %s",
+                            (new_token, orphan_instance_id),
+                        )
+                        cursor.close()
+                    finally:
+                        conn.close()
+                    # Update container config + restart
+                    _write_new_token(orphan_instance_id, new_token, orphan_name, active_org_id)
+                    _restart_hxa_connect(orphan_instance_id)
+                    # Add repaired bot to response
+                    all_bots.append({
+                        "bot_id": reg_result.get("bot_id", ""),
+                        "name": orphan_name,
+                        "online": False,
+                        "is_mine": True,
+                    })
+                    repaired += 1
+            except Exception:
+                pass  # Best effort — skip this orphan
 
     return {
         "status": "ok",
