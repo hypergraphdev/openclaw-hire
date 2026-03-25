@@ -930,7 +930,7 @@ async def chat_upload(
     dest = _UPLOAD_DIR / filename
     dest.write_bytes(data)
 
-    url = f"https://www.ucai.net/openclaw/uploads/{filename}"
+    url = f"https://www.ucai.net/uploads/{filename}"
     return {"url": url, "filename": filename}
 
 

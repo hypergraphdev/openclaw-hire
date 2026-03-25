@@ -148,7 +148,7 @@ function parseCharacterSheet(sheet: SpriteData): LoadedCharacterData {
 }
 
 /**
- * Load character PNGs from /openclaw/assets/pixel-office/characters/ and register them.
+ * Load character PNGs from /assets/pixel-office/characters/ and register them.
  * Loads the default set plus any extra contiguous char_N.png files.
  * Falls back silently to hardcoded templates if the base set fails.
  */
@@ -161,14 +161,14 @@ export async function loadCharacterPNGs(): Promise<boolean> {
     const CHARACTER_SHEET_HEIGHT = 96
 
     for (let i = 0; i < baseCharacterCount; i++) {
-      const img = await loadImage(`/openclaw/assets/pixel-office/characters/char_${i}.png`)
+      const img = await loadImage(`/assets/pixel-office/characters/char_${i}.png`)
       const sheet = stripOpaqueSheetBackground(normalizedSpriteData(img, CHARACTER_SHEET_WIDTH, CHARACTER_SHEET_HEIGHT))
       characters.push(parseCharacterSheet(sheet))
     }
 
     for (let i = baseCharacterCount; i < maxCharacterCount; i++) {
       try {
-        const img = await loadImage(`/openclaw/assets/pixel-office/characters/char_${i}.png`)
+        const img = await loadImage(`/assets/pixel-office/characters/char_${i}.png`)
         const sheet = stripOpaqueSheetBackground(normalizedSpriteData(img, CHARACTER_SHEET_WIDTH, CHARACTER_SHEET_HEIGHT))
         characters.push(parseCharacterSheet(sheet))
       } catch {
@@ -191,7 +191,7 @@ export async function loadCharacterPNGs(): Promise<boolean> {
  */
 export async function loadWallPNG(): Promise<boolean> {
   try {
-    const img = await loadImage('/openclaw/assets/pixel-office/walls.png')
+    const img = await loadImage('/assets/pixel-office/walls.png')
     const sheet = pngToSpriteData(img)
     const PIECE_W = 16
     const PIECE_H = 32

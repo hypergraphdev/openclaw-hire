@@ -1,7 +1,7 @@
 import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "/openclaw");
+  import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "");
 
 const TOKEN_KEY = "openclaw_token";
 

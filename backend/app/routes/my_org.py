@@ -494,7 +494,7 @@ async def org_chat_upload(
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex[:16]}{ext}"
     (_UPLOAD_DIR / filename).write_bytes(data)
-    return {"url": f"https://www.ucai.net/openclaw/uploads/{filename}", "filename": filename}
+    return {"url": f"https://www.ucai.net/uploads/{filename}", "filename": filename}
 
 
 @router.post("/file/upload")
@@ -515,7 +515,7 @@ async def org_file_upload(
     (_UPLOAD_DIR / safe_name).write_bytes(data)
     size_kb = round(len(data) / 1024, 1)
     return {
-        "url": f"https://www.ucai.net/openclaw/uploads/{safe_name}",
+        "url": f"https://www.ucai.net/uploads/{safe_name}",
         "filename": original_name,
         "size_kb": size_kb,
     }
