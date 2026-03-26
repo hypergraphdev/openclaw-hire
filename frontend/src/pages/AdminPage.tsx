@@ -67,6 +67,11 @@ export function AdminPage() {
   const [dockerGroups, setDockerGroups] = useState<DockerContainerGroup[]>([]);
   const [dockerLoading, setDockerLoading] = useState(false);
   const [cleaningProject, setCleaningProject] = useState("");
+  const [dockerMenuProject, setDockerMenuProject] = useState("");
+  const dockerMenuRef = useRef<HTMLDivElement>(null);
+  const [dockerDiagId, setDockerDiagId] = useState("");
+  const [dockerDiagData, setDockerDiagData] = useState<DiagData | null>(null);
+  const [dockerDiagLoading, setDockerDiagLoading] = useState(false);
 
   // Resource limits form
   const [resMemory, setResMemory] = useState(8192);
@@ -78,6 +83,7 @@ export function AdminPage() {
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuId("");
+      if (dockerMenuRef.current && !dockerMenuRef.current.contains(e.target as Node)) setDockerMenuProject("");
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -202,6 +208,21 @@ export function AdminPage() {
   useEffect(() => {
     if (activeTab === "docker") loadDockerContainers();
   }, [activeTab, loadDockerContainers]);
+
+  async function openDockerDiag(instanceId: string) {
+    setDockerDiagId(instanceId);
+    setDockerDiagLoading(true);
+    setDockerDiagData(null);
+    setDockerMenuProject("");
+    try {
+      const data = await api.adminInstanceDiagnostics(instanceId);
+      setDockerDiagData(data);
+    } catch (e: unknown) {
+      alert((e as Error).message || "加载失败");
+      setDockerDiagId("");
+    }
+    setDockerDiagLoading(false);
+  }
 
   async function handleDockerCleanup(project: string) {
     if (!confirm(`确定要清理 "${project}"？将停止并删除所有相关容器和 runtime 目录。此操作不可撤销！`)) return;
@@ -335,18 +356,36 @@ export function AdminPage() {
                         ))}
                         {g.containers.length === 0 && <span className="text-gray-700">仅目录</span>}
                       </td>
-                      <td className="py-2 text-right">
-                        {g.is_orphan ? (
-                          <button onClick={() => handleDockerCleanup(g.project)}
-                            disabled={cleaningProject === g.project}
-                            className="px-2 py-1 text-xs rounded bg-red-600/80 hover:bg-red-500 text-white disabled:opacity-50">
-                            {cleaningProject === g.project ? "清理中..." : "🗑 清理"}
-                          </button>
-                        ) : g.instance_id ? (
-                          <Link to={`/instances/${g.instance_id}`} className="px-2 py-1 text-xs rounded border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800">
-                            跳转
-                          </Link>
-                        ) : null}
+                      <td className="py-2 text-right relative">
+                        <button onClick={() => setDockerMenuProject(dockerMenuProject === g.project ? "" : g.project)}
+                          className="px-2 py-1 text-gray-400 hover:text-white text-sm">⋯</button>
+                        {dockerMenuProject === g.project && (
+                          <div ref={dockerMenuRef}
+                            className="absolute right-0 top-8 z-30 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[120px]">
+                            {g.instance_id && (
+                              <>
+                                <button onClick={() => openDockerDiag(g.instance_id!)}
+                                  className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
+                                  📋 详情
+                                </button>
+                                <Link to={`/instances/${g.instance_id}`} onClick={() => setDockerMenuProject("")}
+                                  className="block px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
+                                  ↗ 跳转实例
+                                </Link>
+                              </>
+                            )}
+                            {g.is_orphan && (
+                              <button onClick={() => { setDockerMenuProject(""); handleDockerCleanup(g.project); }}
+                                disabled={cleaningProject === g.project}
+                                className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700 disabled:opacity-50">
+                                🗑 {cleaningProject === g.project ? "清理中..." : "清理"}
+                              </button>
+                            )}
+                            {!g.instance_id && !g.is_orphan && (
+                              <div className="px-3 py-1.5 text-xs text-gray-600">无操作</div>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -354,6 +393,97 @@ export function AdminPage() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* Docker Diagnostics Modal */}
+      {dockerDiagId && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setDockerDiagId("")}>
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[680px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-white">实例诊断</h3>
+              <button onClick={() => setDockerDiagId("")} className="text-gray-500 hover:text-white text-lg">✕</button>
+            </div>
+            {dockerDiagLoading ? (
+              <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+            ) : dockerDiagData ? (
+              <div className="space-y-3">
+                {/* Basic Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">基本信息</h4>
+                    <div className="space-y-1 text-xs">
+                      <div><span className="text-gray-500">实例名</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.name}</span></div>
+                      <div><span className="text-gray-500">产品</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.product}</span></div>
+                      <div><span className="text-gray-500">ID</span> <span className="text-gray-200 ml-2 font-mono">{dockerDiagData.basic_info?.instance_id}</span></div>
+                      <div><span className="text-gray-500">所有者</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.owner_name}</span></div>
+                      <div><span className="text-gray-500">状态</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.install_state} / {dockerDiagData.basic_info?.status}</span></div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">HXA 插件</h4>
+                    <div className="space-y-1 text-xs">
+                      <div><span className="text-gray-500">安装</span> <StatusDot ok={dockerDiagData.hxa_plugin?.installed} /> <span className="ml-1">{dockerDiagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span></div>
+                      <div><span className="text-gray-500">状态</span> <span className="text-gray-200 ml-2">{dockerDiagData.hxa_plugin?.status}</span></div>
+                      <div><span className="text-gray-500">Agent</span> <span className="text-blue-400 ml-2">{dockerDiagData.hxa_plugin?.agent_name || "-"}</span></div>
+                      <div><span className="text-gray-500">组织</span> <span className="text-gray-200 ml-2 font-mono text-[10px]">{dockerDiagData.hxa_plugin?.org_id || "-"}</span></div>
+                    </div>
+                  </div>
+                </div>
+                {/* Container + Resources */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">容器</h4>
+                    <div className="space-y-1 text-xs">
+                      <div><span className="text-gray-500">状态</span> <StatusDot ok={dockerDiagData.container?.running} /> <span className="ml-1">{dockerDiagData.container?.running ? "运行中" : "已停止"}</span></div>
+                      <div><span className="text-gray-500">磁盘</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.disk_usage_mb ?? "-"} MB</span></div>
+                      <div><span className="text-gray-500">内存限制</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.memory_limit_mb ?? "-"} MB</span></div>
+                      <div><span className="text-gray-500">CPU 限制</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.cpu_limit ?? "-"} 核</span></div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/50 rounded p-3">
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">资源使用</h4>
+                    <div className="space-y-1 text-xs">
+                      <div><span className="text-gray-500">CPU</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.cpu_percent ?? "-"}%</span></div>
+                      <div><span className="text-gray-500">内存</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.mem_used_mb ?? "-"} MB / {dockerDiagData.resource_usage?.mem_total_mb ?? "-"} MB</span></div>
+                    </div>
+                  </div>
+                </div>
+                {/* Config Files */}
+                <div className="bg-gray-800/50 rounded p-3">
+                  <h4 className="text-gray-400 font-medium mb-2 text-xs">配置文件</h4>
+                  <div className="space-y-1 text-xs">
+                    <div><span className="text-gray-500">Runtime 目录</span> <span className="text-gray-200 ml-2 font-mono text-[10px]">{dockerDiagData.runtime_dir || "-"}</span></div>
+                    {(dockerDiagData.config_files || []).length > 0 ? (
+                      (dockerDiagData.config_files as { label: string; path: string }[]).map((f) => (
+                        <div key={f.path}>
+                          <span className="text-green-400">✓</span> <span className="text-gray-400">{f.label}</span>
+                          <span className="text-gray-600 ml-2 font-mono text-[10px]">{f.path}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-gray-600">无配置文件</div>
+                    )}
+                  </div>
+                </div>
+                {/* Claude */}
+                <div className="bg-gray-800/50 rounded p-3">
+                  <h4 className="text-gray-400 font-medium mb-2 text-xs">Claude 进程</h4>
+                  <div className="space-y-1 text-xs">
+                    <div><span className="text-gray-500">状态</span> <StatusDot ok={dockerDiagData.claude?.running} /> <span className="ml-1">{dockerDiagData.claude?.running ? "运行中" : "未运行"}</span></div>
+                    {dockerDiagData.claude?.running && (
+                      <>
+                        <div><span className="text-gray-500">PID</span> <span className="text-gray-200 ml-2">{dockerDiagData.claude?.pid || "-"}</span></div>
+                        <div><span className="text-gray-500">内存</span> <span className="text-gray-200 ml-2">{dockerDiagData.claude?.memory_mb || "-"} MB</span></div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 text-center py-8">无数据</div>
+            )}
+          </div>
         </div>
       )}
 

@@ -395,6 +395,20 @@ def instance_diagnostics(
     # Resource usage (live CPU / memory)
     resource_usage = _get_resource_usage(container_name)
 
+    # Config file paths
+    runtime_dir = RUNTIME_ROOT / instance_id
+    config_files: list[dict] = []
+    candidates = [
+        ("openclaw.json", runtime_dir / "openclaw-config" / "openclaw.json"),
+        (".env", runtime_dir / ".env"),
+        ("docker-compose.yml", runtime_dir / "docker-compose.yml"),
+        ("compose.yml", runtime_dir / "compose.yml"),
+        ("hxa config.json", runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"),
+    ]
+    for label, p in candidates:
+        if p.exists():
+            config_files.append({"label": label, "path": str(p)})
+
     return {
         "basic_info": basic_info,
         "hxa_plugin": hxa_plugin,
@@ -402,6 +416,8 @@ def instance_diagnostics(
         "claude": claude,
         "container": container,
         "resource_usage": resource_usage,
+        "config_files": config_files,
+        "runtime_dir": str(runtime_dir),
     }
 
 
