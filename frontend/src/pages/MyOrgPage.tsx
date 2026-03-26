@@ -310,7 +310,7 @@ export function MyOrgPage() {
             const d = JSON.parse(ev.data);
             if (d.type !== "message" || !d.message) return;
             const msg = d.message;
-            const senderName = msg.sender_name || "";
+            const senderName = d.sender_name || msg.sender_name || "";
             // Ignore messages from our own bots
             const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
             if (myNames.has(senderName)) return;
@@ -355,8 +355,8 @@ export function MyOrgPage() {
             }
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
-              const senderName = msg.sender_name || "";
-              const msgChannelId = (msg as Record<string, unknown>).channel_id as string || d.channel_id as string || "";
+              const senderName = d.sender_name || msg.sender_name || "";
+              const msgChannelId = d.channel_id || (msg as Record<string, unknown>).channel_id as string || "";
               const wsTargetName = (target as { type: "dm"; bot: MyOrgPeer }).bot.name;
               const curChannelId = channelIdRef.current || "";
 
@@ -439,7 +439,7 @@ export function MyOrgPage() {
               const currentThreadId = currentThreadIdRef.current;
               const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
               if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
-              const senderName = msg.sender_name || "";
+              const senderName = d.sender_name || msg.sender_name || "";
               const isFromOther = !myNames.has(senderName);
 
               // Anti-loop: track message rate per thread
