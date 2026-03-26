@@ -216,7 +216,7 @@ export function MyOrgPage() {
 
   const [activeOrgId, setActiveOrgId] = useState("");
   useEffect(() => { api.myOrg(activeOrgId || undefined).then((d) => { setData(d); orgIdRef.current = d?.org_id || ""; }).finally(() => setLoading(false)); }, [activeOrgId]);
-  useEffect(() => { if (data?.status === "ok") api.myOrgThreads(orgIdRef.current).then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
+  useEffect(() => { if (data?.status === "ok" && data?.org_id) api.myOrgThreads(data.org_id).then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.org_id]);
 
   const hashRestoredRef = useRef(false);
 
