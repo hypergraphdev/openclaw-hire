@@ -193,13 +193,66 @@ def _run_install(instance_id: str, item_id: str, container: str):
     try:
         if item_id == "weixin-plugin":
             ok, log = _install_weixin(container, instance_id, item_id)
+            if ok:
+                # Restart container to load the plugin, then tail logs for QR code
+                log += "\n\n=== 重启容器加载插件 ===\n"
+                _update_install(instance_id, item_id, "installing", log)
+                subprocess.run(["docker", "restart", container], capture_output=True, timeout=30)
+
+                import time as _time
+                _time.sleep(5)  # wait for gateway to boot
+
+                log += "=== 等待微信二维码 (容器日志) ===\n"
+                _update_install(instance_id, item_id, "installing", log)
+
+                # Tail container logs for up to 60s looking for QR URL
+                deadline = _time.time() + 60
+                proc = subprocess.Popen(
+                    ["docker", "logs", "-f", "--tail", "50", container],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                )
+                last_flush = 0.0
+                qr_found = False
+                while _time.time() < deadline:
+                    line = proc.stdout.readline()
+                    if not line:
+                        if proc.poll() is not None:
+                            break
+                        _time.sleep(0.2)
+                        continue
+                    log += line
+                    now = _time.time()
+                    if now - last_flush > 2:
+                        _update_install(instance_id, item_id, "installing", log)
+                        last_flush = now
+                    if "qrcode" in line.lower() or "二维码" in line or "扫码" in line or "扫描" in line or "http" in line.lower():
+                        qr_found = True
+                        # Keep reading a few more seconds for the full QR output
+                        qr_end = _time.time() + 8
+                        while _time.time() < qr_end:
+                            extra = proc.stdout.readline()
+                            if not extra:
+                                if proc.poll() is not None:
+                                    break
+                                _time.sleep(0.1)
+                                continue
+                            log += extra
+                        break
+
+                proc.kill()
+                proc.wait(timeout=5)
+
+                if not qr_found:
+                    log += "\n[提示] 未在日志中检测到二维码，请到实例详情页查看容器日志。\n"
+
+                _update_install(instance_id, item_id, "installed", log)
+            else:
+                _update_install(instance_id, item_id, "failed", log)
         elif item_id == "whisper-skill":
             ok, log = _install_whisper(container)
+            _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         else:
             _update_install(instance_id, item_id, "failed", f"Unknown item: {item_id}")
-            return
-
-        _update_install(instance_id, item_id, "installed" if ok else "failed", log)
     except Exception as e:
         _update_install(instance_id, item_id, "failed", str(e))
 
