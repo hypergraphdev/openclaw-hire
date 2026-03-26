@@ -205,16 +205,49 @@ def _run_install(instance_id: str, item_id: str, container: str):
 
 
 def _install_weixin(container: str) -> tuple[bool, str]:
-    """Install WeChat plugin via npx. Returns (success, full_output_including_QR_code)."""
+    """Install WeChat plugin via npx. Returns (success, output).
+
+    The CLI is interactive — it installs the plugin then waits for WeChat QR scan.
+    We stream output and consider it successful once we see the "就绪" or "Installing"
+    keywords, then kill the process (user scans QR from the log output).
+    """
+    import select, io
+
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["docker", "exec", container, "npx", "-y", "@tencent-weixin/openclaw-weixin-cli@latest", "install"],
-            capture_output=True, text=True, timeout=120,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
-        output = result.stdout + result.stderr
-        return result.returncode == 0, output
-    except subprocess.TimeoutExpired:
-        return False, "ERROR: Installation timed out after 120 seconds."
+        output_lines: list[str] = []
+        success = False
+        deadline = __import__("time").time() + 120  # 120s max
+
+        while __import__("time").time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                if proc.poll() is not None:
+                    break
+                __import__("time").sleep(0.1)
+                continue
+            output_lines.append(line)
+            # Check for success indicators
+            if "就绪" in line or "already at" in line or "Installing to" in line or "Restart the gateway" in line:
+                success = True
+            # If plugin is ready and waiting for QR scan, we're done
+            if "首次连接" in line or "扫码" in line or "QR" in line.upper():
+                success = True
+                break
+
+        # Kill the hanging process (it's waiting for QR scan)
+        proc.kill()
+        proc.wait(timeout=5)
+
+        output = "".join(output_lines)
+        # Also treat exit code 0 as success
+        if proc.returncode == 0:
+            success = True
+
+        return success, output
     except Exception as e:
         return False, f"ERROR: {e}"
 
