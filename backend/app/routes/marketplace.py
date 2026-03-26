@@ -192,7 +192,7 @@ def _run_install(instance_id: str, item_id: str, container: str):
     """Execute installation commands in the container. Updates DB with results."""
     try:
         if item_id == "weixin-plugin":
-            ok, log = _install_weixin(container)
+            ok, log = _install_weixin(container, instance_id, item_id)
         elif item_id == "whisper-skill":
             ok, log = _install_whisper(container)
         else:
@@ -204,57 +204,48 @@ def _run_install(instance_id: str, item_id: str, container: str):
         _update_install(instance_id, item_id, "failed", str(e))
 
 
-def _install_weixin(container: str) -> tuple[bool, str]:
+def _install_weixin(container: str, instance_id: str = "", item_id: str = "") -> tuple[bool, str]:
     """Install WeChat plugin via npx. Returns (success, output).
 
-    The CLI is interactive — it installs the plugin then waits for WeChat QR scan.
-    We stream output and consider it successful once we see the "就绪" or "Installing"
-    keywords, then kill the process (user scans QR from the log output).
+    The CLI installs the plugin, shows a QR code, waits for user to scan,
+    then completes the callback. We let it run until it exits naturally
+    (up to 10 minutes for user to scan QR). Output is streamed to DB
+    so the frontend can poll and display QR code in real-time.
     """
-    import select, io
-
     try:
         proc = subprocess.Popen(
             ["docker", "exec", container, "npx", "-y", "@tencent-weixin/openclaw-weixin-cli@latest", "install"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
+        import time as _time
         output_lines: list[str] = []
-        success = False
-        deadline = __import__("time").time() + 120  # 120s max
+        deadline = _time.time() + 600  # 10 min for user to scan QR
+        last_flush = 0.0
 
-        while __import__("time").time() < deadline:
+        while _time.time() < deadline:
             line = proc.stdout.readline()
             if not line:
                 if proc.poll() is not None:
                     break
-                __import__("time").sleep(0.1)
+                _time.sleep(0.2)
                 continue
             output_lines.append(line)
-            # Check for success indicators
-            if "就绪" in line or "already at" in line or "Installing to" in line or "Restart the gateway" in line:
-                success = True
-            # Plugin is ready and about to show QR — keep reading for a bit to capture it
-            if "首次连接" in line or "扫码" in line or "QR" in line.upper():
-                success = True
-                # Read for 15 more seconds to capture QR code output
-                qr_deadline = __import__("time").time() + 15
-                while __import__("time").time() < qr_deadline:
-                    line2 = proc.stdout.readline()
-                    if not line2:
-                        if proc.poll() is not None:
-                            break
-                        __import__("time").sleep(0.1)
-                        continue
-                    output_lines.append(line2)
-                break
+            # Flush to DB every 2 seconds so frontend can poll live
+            now = _time.time()
+            if instance_id and item_id and now - last_flush > 2:
+                _update_install(instance_id, item_id, "installing", "".join(output_lines))
+                last_flush = now
 
-        # Kill the hanging process (it's waiting for QR scan)
-        proc.kill()
-        proc.wait(timeout=5)
+        if proc.poll() is None:
+            # Still running after 10 min — kill
+            proc.kill()
+            proc.wait(timeout=5)
+            output_lines.append("\n[超时] 等待扫码超过10分钟，进程已终止。\n")
 
         output = "".join(output_lines)
-        # Also treat exit code 0 as success
-        if proc.returncode == 0:
+        success = proc.returncode == 0
+        # Also consider success if key installation steps completed
+        if not success and ("就绪" in output or "already at" in output):
             success = True
 
         return success, output
