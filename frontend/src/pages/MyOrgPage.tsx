@@ -516,10 +516,12 @@ export function MyOrgPage() {
         const r = await api.myOrgChatSend(target.bot.name, input.trim(), orgIdRef.current, imgUrl);
         if (r.channel_id && !channelId) { setChannelId(r.channel_id); channelIdRef.current = r.channel_id; }
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
-        // User manually sent — reset anti-loop for this DM
-        const dmLoopKey = `dm_${target.bot.name}`;
-        delete threadMsgTimestamps.current[dmLoopKey];
-        delete threadLoopCooldown.current[dmLoopKey];
+        // User manually sent — reset anti-loop for this DM (key = dm_ch_{channelId})
+        const chId = channelIdRef.current || r.channel_id || "";
+        if (chId) {
+          delete threadMsgTimestamps.current[`dm_ch_${chId}`];
+          delete threadLoopCooldown.current[`dm_ch_${chId}`];
+        }
       } else {
         const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined, orgIdRef.current);
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
