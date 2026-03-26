@@ -243,8 +243,8 @@ export const api = {
 
   // Threads (group chat)
   myOrgThreads: () => request<{ threads: OrgThread[] }>("/api/my-org/threads"),
-  myOrgCreateThread: (topic: string, participantNames: string[]) =>
-    request<OrgThread>("/api/my-org/threads", {
+  myOrgCreateThread: (topic: string, participantNames: string[], orgId?: string) =>
+    request<OrgThread>(`/api/my-org/threads${orgId ? `?org=${orgId}` : ""}`, {
       method: "POST", body: JSON.stringify({ topic, participant_names: participantNames }),
     }),
   myOrgThreadMessages: (threadId: string, before?: string) => {

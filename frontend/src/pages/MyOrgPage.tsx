@@ -434,7 +434,7 @@ export function MyOrgPage() {
 
   async function handleCreateThread() {
     if (!threadTopic.trim()) return; setCreatingThread(true);
-    try { await api.myOrgCreateThread(threadTopic.trim(), threadParticipants); setShowCreateThread(false); setThreadTopic(""); setThreadParticipants([]); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
+    try { await api.myOrgCreateThread(threadTopic.trim(), threadParticipants, orgIdRef.current); setShowCreateThread(false); setThreadTopic(""); setThreadParticipants([]); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
     setCreatingThread(false);
   }

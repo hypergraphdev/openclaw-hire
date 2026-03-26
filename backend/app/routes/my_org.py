@@ -656,12 +656,13 @@ class CreateThreadRequest(BaseModel):
 @router.post("/threads")
 def create_thread(
     req: CreateThreadRequest,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Create a new thread and invite participants."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
