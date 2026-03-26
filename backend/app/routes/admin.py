@@ -74,90 +74,97 @@ def batch_hxa_status(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Get HXA online status for all instances by querying Hub per org."""
+    """Get HXA online status for all instances.
+
+    Strategy: query ALL known orgs from Hub first, build a global
+    bot_name → {online, org_id} map, then match instances by agent_name.
+    This handles bots that were transferred between orgs (local DB org_id stale).
+    """
     _require_admin(current_user)
     from ..database import get_setting, get_connection
     from .admin_hxa import _hub_org_admin_request
 
-    # Collect all org_ids and their agent_names
-    cursor = db.cursor(dictionary=True)
-    cursor.execute(
-        """SELECT c.instance_id, c.agent_name, c.org_id
-           FROM instance_configs c
-           WHERE c.org_id IS NOT NULL AND c.org_id != ''
-             AND c.agent_name IS NOT NULL AND c.agent_name != ''""",
-    )
-    rows = cursor.fetchall()
-    cursor.close()
-
-    # Also include instances without instance_configs but with known Hub names
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT id, agent_name FROM instances WHERE agent_name IS NOT NULL AND agent_name != ''")
-    inst_rows = cursor.fetchall()
-    cursor.close()
-    inst_agent_map = {r["id"]: r["agent_name"] for r in inst_rows}
-
-    # Group by org_id
-    orgs: dict[str, list[dict]] = {}
-    for r in rows:
-        orgs.setdefault(r["org_id"], []).append(r)
-
-    # Helper to resolve org secret
     default_org_id = get_setting("hxa_org_id", "")
     default_org_secret = get_setting("hxa_org_secret", "")
 
-    def _get_secret(oid: str) -> str:
-        if oid == default_org_id:
-            return default_org_secret
-        conn = get_connection()
-        try:
-            cur = conn.cursor(dictionary=True)
-            cur.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (oid,))
-            row = cur.fetchone()
-            cur.close()
-        finally:
-            conn.close()
-        return row["org_secret"] if row else ""
+    # Step 1: Collect ALL known org secrets
+    all_orgs: dict[str, str] = {}  # org_id → org_secret
+    if default_org_id and default_org_secret:
+        all_orgs[default_org_id] = default_org_secret
+    conn = get_connection()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT org_id, org_secret FROM org_secrets WHERE org_secret IS NOT NULL AND org_secret != ''")
+        for r in cur.fetchall():
+            all_orgs[r["org_id"]] = r["org_secret"]
+        cur.close()
+    finally:
+        conn.close()
 
-    # Query each org's bots from Hub
-    result: dict[str, dict] = {}  # instance_id -> {online, org_id, agent_name}
-    for org_id, items in orgs.items():
-        secret = _get_secret(org_id)
-        if not secret:
-            for item in items:
-                result[item["instance_id"]] = {"online": False, "org_id": org_id, "agent_name": item["agent_name"]}
-            continue
+    # Step 2: Query ALL orgs from Hub, build global bot_name → {online, org_id} map
+    global_bot_map: dict[str, dict] = {}  # bot_name → {online, org_id}
+    for org_id, secret in all_orgs.items():
         try:
             hub_bots = _hub_org_admin_request("GET", "/api/bots", org_id, secret) or []
             if isinstance(hub_bots, dict):
                 hub_bots = hub_bots.get("bots", hub_bots.get("items", []))
-            online_map = {b.get("name", ""): b.get("online", False) for b in hub_bots}
-        except Exception:
-            online_map = {}
-        for item in items:
-            result[item["instance_id"]] = {
-                "online": online_map.get(item["agent_name"], False),
-                "org_id": org_id,
-                "agent_name": item["agent_name"],
-            }
-
-    # Also check default org for instances without instance_configs
-    # (bots auto-registered with hire_ prefix)
-    if default_org_secret:
-        try:
-            default_bots = _hub_org_admin_request("GET", "/api/bots", default_org_id, default_org_secret) or []
-            if isinstance(default_bots, dict):
-                default_bots = default_bots.get("bots", default_bots.get("items", []))
-            for b in default_bots:
+            for b in hub_bots:
                 bname = b.get("name", "")
-                # Match hire_{instance_id_prefix} pattern
-                if bname.startswith("hire_"):
-                    suffix = bname[5:]
-                    for inst_id, aname in inst_agent_map.items():
-                        if inst_id.replace("inst_", "").startswith(suffix) and inst_id not in result:
-                            result[inst_id] = {"online": b.get("online", False), "org_id": default_org_id, "agent_name": bname}
+                if not bname:
+                    continue
+                is_online = b.get("online", False)
+                # If bot exists in multiple orgs, prefer the online one
+                if bname not in global_bot_map or is_online:
+                    global_bot_map[bname] = {"online": is_online, "org_id": org_id}
         except Exception:
             pass
+
+    # Step 3: Get all instances with their agent_names
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        """SELECT i.id, i.agent_name AS inst_agent,
+                  c.agent_name AS cfg_agent, c.org_id AS cfg_org_id
+           FROM instances i
+           LEFT JOIN instance_configs c ON i.id = c.instance_id""",
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    # Step 4: Match instances to global bot map
+    result: dict[str, dict] = {}
+    for r in rows:
+        inst_id = r["id"]
+        agent_name = r["cfg_agent"] or r["inst_agent"] or ""
+        db_org_id = r["cfg_org_id"] or ""
+
+        if not agent_name:
+            continue
+
+        hub_info = global_bot_map.get(agent_name)
+        if hub_info:
+            actual_org_id = hub_info["org_id"]
+            # Auto-fix stale org_id in DB if bot was transferred
+            if db_org_id and db_org_id != actual_org_id:
+                try:
+                    fix_cur = db.cursor()
+                    fix_cur.execute(
+                        "UPDATE instance_configs SET org_id = %s WHERE instance_id = %s",
+                        (actual_org_id, inst_id),
+                    )
+                    fix_cur.close()
+                except Exception:
+                    pass
+            result[inst_id] = {
+                "online": hub_info["online"],
+                "org_id": actual_org_id,
+                "agent_name": agent_name,
+            }
+        else:
+            result[inst_id] = {
+                "online": False,
+                "org_id": db_org_id,
+                "agent_name": agent_name,
+            }
 
     return result
 
