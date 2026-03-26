@@ -366,7 +366,7 @@ export function MyOrgPage() {
                 ts.push(now);
                 threadMsgTimestamps.current[loopKey] = ts.filter(t => t > now - 60000);
                 const lastCd = threadLoopCooldown.current[loopKey] || 0;
-                if (threadMsgTimestamps.current[loopKey].length >= 6 && now - lastCd > 300000) {
+                if (threadMsgTimestamps.current[loopKey].length >= 4 && now - lastCd > 300000) {
                   threadLoopCooldown.current[loopKey] = now;
                   api.myOrgChatSend(wsTargetName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
                 }
