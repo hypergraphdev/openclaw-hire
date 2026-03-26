@@ -361,6 +361,20 @@ export function MyOrgPage() {
               const isFromTarget = senderName === wsTargetName;
               const isCurrentlyViewing = currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`;
 
+              // Anti-loop for DM: detect rapid bot replies
+              if (isFromTarget) {
+                const now = Date.now();
+                const loopKey = `dm_${wsTargetName}`;
+                const ts = threadMsgTimestamps.current[loopKey] || [];
+                ts.push(now);
+                threadMsgTimestamps.current[loopKey] = ts.filter(t => t > now - 60000);
+                const lastCd = threadLoopCooldown.current[loopKey] || 0;
+                if (threadMsgTimestamps.current[loopKey].length >= 6 && now - lastCd > 300000) {
+                  threadLoopCooldown.current[loopKey] = now;
+                  api.myOrgChatSend(wsTargetName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
+                }
+              }
+
               if (isFromTarget && isCurrentlyViewing) {
                 // Incoming from the bot we're chatting with — show it
                 setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
@@ -488,6 +502,10 @@ export function MyOrgPage() {
         const r = await api.myOrgChatSend(target.bot.name, input.trim(), orgIdRef.current, imgUrl);
         if (r.channel_id && !channelId) setChannelId(r.channel_id);
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
+        // User manually sent — reset anti-loop for this DM
+        const dmLoopKey = `dm_${target.bot.name}`;
+        delete threadMsgTimestamps.current[dmLoopKey];
+        delete threadLoopCooldown.current[dmLoopKey];
       } else {
         const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined, orgIdRef.current);
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
