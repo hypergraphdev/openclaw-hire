@@ -355,13 +355,10 @@ export function MyOrgPage() {
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
               const senderName = msg.sender_name || "";
-              // WS receives ALL DMs for our bot. Filter by sender_name to route correctly.
-              // Own sent messages are already added by handleSend — WS only handles incoming.
               const wsTargetName = (target as { type: "dm"; bot: MyOrgPeer }).bot.name;
               const isFromTarget = senderName === wsTargetName;
-              const isCurrentlyViewing = currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`;
 
-              // Anti-loop for DM: detect rapid bot replies
+              // Anti-loop for DM: detect rapid bot replies (only count target's messages)
               if (isFromTarget) {
                 const now = Date.now();
                 const loopKey = `dm_${wsTargetName}`;
@@ -375,20 +372,12 @@ export function MyOrgPage() {
                 }
               }
 
-              if (isFromTarget && isCurrentlyViewing) {
-                // Incoming from the bot we're chatting with — show it
+              // DM WS is per-channel — all messages belong to this DM. Show them all (dedup by ID).
+              if (isFromTarget) {
                 setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
-                setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
-                if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
-              } else if (!isFromTarget) {
-                // Incoming from a DIFFERENT bot — unread badge on that bot
-                const senderBot = allBotsRef.current.find((b) => b.name === senderName);
-                if (senderBot) {
-                  setUnreadCounts((prev) => ({ ...prev, [`dm_${senderBot.bot_id}`]: (prev[`dm_${senderBot.bot_id}`] || 0) + 1 }));
-                }
-                playNotificationSound();
               }
-              // else: isFromTarget but not currently viewing — ignored, will load history when switching back
+              setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
+              if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
             }
           } catch { /* */ }
         };
