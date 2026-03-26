@@ -383,7 +383,7 @@ async def upgrade_instance(
     def _do_upgrade():
         # npm i -g openclaw@latest inside container (as root)
         result = subprocess.run(
-            ["docker", "exec", "-u", "root", container, "npm", "i", "-g", "openclaw@latest"],
+            ["docker", "exec", "-u", "root", container, "npm", "i", "-g", "--force", "openclaw@latest"],
             capture_output=True, text=True, timeout=120,
         )
         return result.returncode, result.stdout + result.stderr

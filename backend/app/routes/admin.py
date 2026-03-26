@@ -598,7 +598,7 @@ def instance_control(
     if action == "upgrade":
         if product != "openclaw":
             return {"ok": False, "action": action, "detail": "Upgrade only supported for OpenClaw."}
-        rc, out = _docker_run(["docker", "exec", "-u", "root", container_name, "npm", "i", "-g", "openclaw@latest"], timeout=120)
+        rc, out = _docker_run(["docker", "exec", "-u", "root", container_name, "npm", "i", "-g", "--force", "openclaw@latest"], timeout=120)
         if rc != 0:
             return {"ok": False, "action": action, "detail": out[-2000:]}
         # Restart after upgrade
