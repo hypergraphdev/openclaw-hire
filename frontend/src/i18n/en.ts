@@ -306,4 +306,8 @@ export const en: Record<string, string> = {
   "settings.languageDesc": "Choose your preferred interface language",
   "settings.langZh": "中文",
   "settings.langEn": "English",
+  "settings.theme": "Theme",
+  "settings.themeDesc": "Choose your preferred color theme",
+  "settings.themeDark": "Dark",
+  "settings.themeLight": "Light",
 };

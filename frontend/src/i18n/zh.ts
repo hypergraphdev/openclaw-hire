@@ -306,4 +306,8 @@ export const zh: Record<string, string> = {
   "settings.languageDesc": "选择您偏好的界面语言",
   "settings.langZh": "中文",
   "settings.langEn": "English",
+  "settings.theme": "主题",
+  "settings.themeDesc": "选择您偏好的颜色主题",
+  "settings.themeDark": "深色",
+  "settings.themeLight": "浅色",
 };
