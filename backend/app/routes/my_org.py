@@ -217,7 +217,7 @@ def get_my_org(
 
     my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
 
-    # Filter to instance bots only — include ALL orgs since bots may have been transferred
+    # Filter to instance bots only — exclude admin/user bots
     conn = get_connection()
     try:
         cursor = conn.cursor(dictionary=True)
@@ -232,13 +232,26 @@ def get_my_org(
         conn.close()
     instance_agent_names = {r["agent_name"] for r in inst_rows}
 
+    # Auto-generated instance bot names start with the agent prefix (default "hire_")
+    import os
+    agent_prefix = os.getenv("HXA_CONNECT_AGENT_PREFIX", "hire") + "_"
+
+    # Get the admin panel bot name to exclude it
+    admin_bot_name = get_setting("hxa_admin_bot_name", "hire_admin_panel")
+
+    def _is_instance_bot(name: str) -> bool:
+        """Check if a bot is an instance bot (not an admin/user bot)."""
+        if name == admin_bot_name:
+            return False
+        return name in instance_agent_names or name.startswith(agent_prefix)
+
     all_bots = []
     # Sync DB org_id with Hub reality (Hub is source of truth)
     hub_bot_names_in_org = set()
     for b in all_bots_raw:
         bot_name = b.get("name", "")
         hub_bot_names_in_org.add(bot_name)
-        if bot_name not in instance_agent_names:
+        if not _is_instance_bot(bot_name):
             continue
         all_bots.append({
             "bot_id": b.get("id", ""),
