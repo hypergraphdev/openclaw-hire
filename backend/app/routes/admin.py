@@ -69,6 +69,99 @@ def list_user_instances(
     )
 
 
+@router.get("/instances/hxa-status")
+def batch_hxa_status(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Get HXA online status for all instances by querying Hub per org."""
+    _require_admin(current_user)
+    from ..database import get_setting, get_connection
+    from .admin_hxa import _hub_org_admin_request
+
+    # Collect all org_ids and their agent_names
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        """SELECT c.instance_id, c.agent_name, c.org_id
+           FROM instance_configs c
+           WHERE c.org_id IS NOT NULL AND c.org_id != ''
+             AND c.agent_name IS NOT NULL AND c.agent_name != ''""",
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    # Also include instances without instance_configs but with known Hub names
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id, agent_name FROM instances WHERE agent_name IS NOT NULL AND agent_name != ''")
+    inst_rows = cursor.fetchall()
+    cursor.close()
+    inst_agent_map = {r["id"]: r["agent_name"] for r in inst_rows}
+
+    # Group by org_id
+    orgs: dict[str, list[dict]] = {}
+    for r in rows:
+        orgs.setdefault(r["org_id"], []).append(r)
+
+    # Helper to resolve org secret
+    default_org_id = get_setting("hxa_org_id", "")
+    default_org_secret = get_setting("hxa_org_secret", "")
+
+    def _get_secret(oid: str) -> str:
+        if oid == default_org_id:
+            return default_org_secret
+        conn = get_connection()
+        try:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (oid,))
+            row = cur.fetchone()
+            cur.close()
+        finally:
+            conn.close()
+        return row["org_secret"] if row else ""
+
+    # Query each org's bots from Hub
+    result: dict[str, dict] = {}  # instance_id -> {online, org_id, agent_name}
+    for org_id, items in orgs.items():
+        secret = _get_secret(org_id)
+        if not secret:
+            for item in items:
+                result[item["instance_id"]] = {"online": False, "org_id": org_id, "agent_name": item["agent_name"]}
+            continue
+        try:
+            hub_bots = _hub_org_admin_request("GET", "/api/bots", org_id, secret) or []
+            if isinstance(hub_bots, dict):
+                hub_bots = hub_bots.get("bots", hub_bots.get("items", []))
+            online_map = {b.get("name", ""): b.get("online", False) for b in hub_bots}
+        except Exception:
+            online_map = {}
+        for item in items:
+            result[item["instance_id"]] = {
+                "online": online_map.get(item["agent_name"], False),
+                "org_id": org_id,
+                "agent_name": item["agent_name"],
+            }
+
+    # Also check default org for instances without instance_configs
+    # (bots auto-registered with hire_ prefix)
+    if default_org_secret:
+        try:
+            default_bots = _hub_org_admin_request("GET", "/api/bots", default_org_id, default_org_secret) or []
+            if isinstance(default_bots, dict):
+                default_bots = default_bots.get("bots", default_bots.get("items", []))
+            for b in default_bots:
+                bname = b.get("name", "")
+                # Match hire_{instance_id_prefix} pattern
+                if bname.startswith("hire_"):
+                    suffix = bname[5:]
+                    for inst_id, aname in inst_agent_map.items():
+                        if inst_id.replace("inst_", "").startswith(suffix) and inst_id not in result:
+                            result[inst_id] = {"online": b.get("online", False), "org_id": default_org_id, "agent_name": bname}
+        except Exception:
+            pass
+
+    return result
+
+
 @router.get("/stats")
 def platform_stats(
     current_user: dict = Depends(get_current_user),
@@ -320,8 +413,8 @@ def instance_control(
     product = row["product"] or "openclaw"
     action = payload.action.strip().lower()
 
-    if action not in ("stop", "start", "restart", "kill_claude"):
-        raise HTTPException(status_code=400, detail="Invalid action. Use: stop, start, restart, kill_claude")
+    if action not in ("stop", "start", "restart", "kill_claude", "restart_hxa"):
+        raise HTTPException(status_code=400, detail="Invalid action. Use: stop, start, restart, kill_claude, restart_hxa")
 
     container_name = _get_container_name(instance_id, product)
 
@@ -334,6 +427,14 @@ def instance_control(
         found = _find_compose_file(instance_id)
         if found:
             compose_file = str(found)
+
+    if action == "restart_hxa":
+        # Restart only hxa-connect process inside the container (makes bot online in Hub)
+        if product == "zylos":
+            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"])
+        else:
+            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "all"])
+        return {"ok": rc == 0, "action": action, "detail": out or "hxa-connect restarted"}
 
     if action == "kill_claude":
         if product == "zylos":

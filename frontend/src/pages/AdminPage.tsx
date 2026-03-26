@@ -53,6 +53,10 @@ export function AdminPage() {
   const [diagLoading, setDiagLoading] = useState(false);
   const [controlLoading, setControlLoading] = useState("");
 
+  // HXA online status
+  const [hxaStatus, setHxaStatus] = useState<Record<string, { online: boolean; org_id: string; agent_name: string }>>({});
+  const [hxaRestarting, setHxaRestarting] = useState("");
+
   // Resource limits form
   const [resMemory, setResMemory] = useState(8192);
   const [resCpus, setResCpus] = useState(4);
@@ -82,6 +86,7 @@ export function AdminPage() {
       .finally(() => setLoadingUsers(false));
 
     api.hxaOrgs().then((r) => setOrgs(r.orgs || [])).catch(() => {});
+    api.adminHxaStatus().then(setHxaStatus).catch(() => {});
   }, [t]);
 
   useEffect(() => {
@@ -256,7 +261,8 @@ export function AdminPage() {
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.state")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">组织</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">组内名称</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.telegramBound")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">TG</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">HXA</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.created")}</th>
                         <th className="text-right py-2 text-xs text-gray-500"></th>
                       </tr>
@@ -304,6 +310,38 @@ export function AdminPage() {
                             {i.is_telegram_configured
                               ? <span className="text-green-400 text-xs">✓</span>
                               : <span className="text-gray-600 text-xs">-</span>}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {(() => {
+                              const s = hxaStatus[i.id];
+                              if (!s) return <span className="text-gray-600 text-xs">-</span>;
+                              return (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className={`inline-block w-2 h-2 rounded-full ${s.online ? "bg-green-400" : "bg-gray-500"}`} />
+                                  {!s.online && i.install_state === "running" && (
+                                    <button
+                                      onClick={async () => {
+                                        setHxaRestarting(i.id);
+                                        try {
+                                          await api.adminInstanceControl(i.id, "restart_hxa");
+                                          // Refresh status after a short delay
+                                          setTimeout(() => {
+                                            api.adminHxaStatus().then(setHxaStatus).catch(() => {});
+                                            setHxaRestarting("");
+                                          }, 3000);
+                                        } catch {
+                                          setHxaRestarting("");
+                                        }
+                                      }}
+                                      disabled={hxaRestarting === i.id}
+                                      className="text-[10px] text-yellow-400 hover:text-yellow-300 disabled:opacity-50"
+                                    >
+                                      {hxaRestarting === i.id ? "..." : "使在线"}
+                                    </button>
+                                  )}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="py-2 pr-3 text-gray-500 text-xs">{new Date(i.created_at).toLocaleString()}</td>
                           <td className="py-2 text-right relative">

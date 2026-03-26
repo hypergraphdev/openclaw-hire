@@ -123,6 +123,10 @@ export const api = {
   adminUserInstances: (userId: string) =>
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
 
+  adminHxaStatus: () =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    request<Record<string, { online: boolean; org_id: string; agent_name: string }>>("/api/admin/instances/hxa-status"),
+
   adminInstanceDiagnostics: (instanceId: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     request<any>(`/api/admin/instances/${instanceId}/diagnostics`),
