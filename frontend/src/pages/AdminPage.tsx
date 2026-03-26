@@ -799,6 +799,24 @@ export function AdminPage() {
                       <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.basic_info?.instance_id}</span>
                       <span className="text-gray-500">所有者</span><span className="text-gray-200 truncate">{diagData.basic_info?.owner_name}</span>
                       <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
+                      {diagData.openclaw_version && (<>
+                        <span className="text-gray-500">版本</span>
+                        <span className="text-gray-200 flex items-center gap-2">
+                          {diagData.openclaw_version}
+                          <button
+                            onClick={async () => {
+                              if (!diagData.basic_info?.instance_id) return;
+                              try {
+                                const r = await api.adminInstanceControl(diagData.basic_info?.instance_id, "upgrade");
+                                alert(r.ok ? `升级成功！新版本: ${r.new_version || "unknown"}` : `升级失败: ${r.detail}`);
+                                const fresh = await api.adminInstanceDiagnostics(diagData.basic_info?.instance_id);
+                                setDiagData(fresh);
+                              } catch (e: unknown) { alert((e as Error).message); }
+                            }}
+                            className="text-[10px] px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded"
+                          >升级</button>
+                        </span>
+                      </>)}
                     </div>
                   </div>
                   <div className="bg-gray-800/50 rounded p-3">

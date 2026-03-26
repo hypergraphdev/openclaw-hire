@@ -432,6 +432,15 @@ def instance_diagnostics(
             "am_defaults": am_defaults,
         }
 
+    # OpenClaw version
+    openclaw_version = None
+    if product == "openclaw" and container.get("status") == "running":
+        try:
+            rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
+            openclaw_version = ver_out.strip() if rc == 0 else None
+        except Exception:
+            pass
+
     return {
         "basic_info": basic_info,
         "hxa_plugin": hxa_plugin,
@@ -442,6 +451,7 @@ def instance_diagnostics(
         "config_files": config_files,
         "runtime_dir": str(runtime_dir),
         "zylos_config": zylos_config,
+        "openclaw_version": openclaw_version,
     }
 
 
@@ -570,8 +580,8 @@ def instance_control(
     product = row["product"] or "openclaw"
     action = payload.action.strip().lower()
 
-    if action not in ("stop", "start", "restart", "kill_claude", "restart_hxa"):
-        raise HTTPException(status_code=400, detail="Invalid action. Use: stop, start, restart, kill_claude, restart_hxa")
+    if action not in ("stop", "start", "restart", "kill_claude", "restart_hxa", "upgrade"):
+        raise HTTPException(status_code=400, detail="Invalid action. Use: stop, start, restart, kill_claude, restart_hxa, upgrade")
 
     container_name = _get_container_name(instance_id, product)
 
@@ -584,6 +594,19 @@ def instance_control(
         found = _find_compose_file(instance_id)
         if found:
             compose_file = str(found)
+
+    if action == "upgrade":
+        if product != "openclaw":
+            return {"ok": False, "action": action, "detail": "Upgrade only supported for OpenClaw."}
+        rc, out = _docker_run(["docker", "exec", "-u", "root", container_name, "npm", "i", "-g", "openclaw@latest"], timeout=120)
+        if rc != 0:
+            return {"ok": False, "action": action, "detail": out[-2000:]}
+        # Restart after upgrade
+        _docker_run(["docker", "restart", container_name])
+        # Get new version
+        rc2, ver = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
+        new_ver = ver.strip() if rc2 == 0 else "unknown"
+        return {"ok": True, "action": action, "detail": out[-2000:], "new_version": new_ver}
 
     if action == "restart_hxa":
         # Restart hxa-connect to make bot online in Hub
