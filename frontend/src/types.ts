@@ -107,6 +107,27 @@ export type AdminUserInstances = {
   instances: Instance[];
 };
 
+// ─── Docker container management ───
+
+export type DockerContainerInfo = {
+  name: string;
+  state: string;
+  status: string;
+};
+
+export type DockerContainerGroup = {
+  project: string;
+  containers: DockerContainerInfo[];
+  product: string;
+  instance_id: string | null;
+  instance_name: string | null;
+  owner_email: string | null;
+  install_state: string | null;
+  runtime_dir: string | null;
+  runtime_exists: boolean;
+  is_orphan: boolean;
+};
+
 // ─── Chat types ───
 
 export type ChatPeer = {

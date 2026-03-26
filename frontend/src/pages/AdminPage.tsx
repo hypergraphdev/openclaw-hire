@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
-import type { AdminUserInstances, HxaOrg, Instance, User } from "../types";
+import type { AdminUserInstances, DockerContainerGroup, HxaOrg, Instance, User } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DiagData = Record<string, any>;
@@ -53,9 +53,20 @@ export function AdminPage() {
   const [diagLoading, setDiagLoading] = useState(false);
   const [controlLoading, setControlLoading] = useState("");
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"users" | "docker">(() => {
+    const hash = window.location.hash;
+    return hash === "#docker" ? "docker" : "users";
+  });
+
   // HXA online status
   const [hxaStatus, setHxaStatus] = useState<Record<string, { online: boolean; org_id: string; agent_name: string }>>({});
   const [hxaRestarting, setHxaRestarting] = useState("");
+
+  // Docker management
+  const [dockerGroups, setDockerGroups] = useState<DockerContainerGroup[]>([]);
+  const [dockerLoading, setDockerLoading] = useState(false);
+  const [cleaningProject, setCleaningProject] = useState("");
 
   // Resource limits form
   const [resMemory, setResMemory] = useState(8192);
@@ -179,6 +190,32 @@ export function AdminPage() {
     setControlLoading("");
   }
 
+  const loadDockerContainers = useCallback(async () => {
+    setDockerLoading(true);
+    try {
+      const r = await api.adminDockerContainers();
+      setDockerGroups(r.groups || []);
+    } catch { /* ignore */ }
+    setDockerLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "docker") loadDockerContainers();
+  }, [activeTab, loadDockerContainers]);
+
+  async function handleDockerCleanup(project: string) {
+    if (!confirm(`确定要清理 "${project}"？将停止并删除所有相关容器和 runtime 目录。此操作不可撤销！`)) return;
+    setCleaningProject(project);
+    try {
+      const r = await api.adminDockerCleanup(project);
+      alert(r.details?.join("\n") || "清理完成");
+      loadDockerContainers();
+    } catch (e: unknown) {
+      alert((e as Error).message || "清理失败");
+    }
+    setCleaningProject("");
+  }
+
   function formatUptime(seconds: number | null): string {
     if (seconds === null || seconds === undefined) return "-";
     if (seconds < 60) return `${seconds}秒`;
@@ -195,12 +232,133 @@ export function AdminPage() {
           <Link to="/admin/settings" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.settingsLink")}</Link>
           <Link to="/admin/hxa" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.hxaLink")}</Link>
         </div>
-        <p className="text-gray-500 text-sm mt-1">{t("admin.subtitle")}</p>
+        {/* Tab bar */}
+        <div className="flex gap-1 mt-3 border-b border-gray-800">
+          <button onClick={() => { setActiveTab("users"); window.location.hash = ""; }}
+            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "users" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
+            用户管理
+          </button>
+          <button onClick={() => { setActiveTab("docker"); window.location.hash = "docker"; }}
+            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "docker" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
+            Docker 管理
+          </button>
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 text-sm rounded bg-red-900/40 border border-red-700 text-red-300">{error}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      {/* ── Docker Tab ── */}
+      {activeTab === "docker" && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-gray-400">
+              共 <span className="text-white font-medium">{dockerGroups.length}</span> 组
+              {" · "}
+              <span className="text-amber-400 font-medium">{dockerGroups.filter(g => g.is_orphan).length}</span> 孤儿
+              {" · "}
+              <span className="text-gray-500">{dockerGroups.filter(g => g.containers.every(c => c.state !== "running")).length}</span> 已停止
+            </div>
+            <button onClick={loadDockerContainers} disabled={dockerLoading}
+              className="px-3 py-1 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-50">
+              {dockerLoading ? "加载中..." : "🔄 刷新"}
+            </button>
+          </div>
+
+          {dockerLoading && dockerGroups.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+          ) : dockerGroups.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-8">暂无容器</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 text-xs border-b border-gray-800">
+                  <th className="text-left pb-2 w-8"></th>
+                  <th className="text-left pb-2">容器组</th>
+                  <th className="text-left pb-2">产品</th>
+                  <th className="text-left pb-2">关联实例</th>
+                  <th className="text-left pb-2">所有者</th>
+                  <th className="text-left pb-2">Runtime</th>
+                  <th className="text-left pb-2">容器</th>
+                  <th className="text-right pb-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dockerGroups.map((g) => {
+                  const isRunning = g.containers.some(c => c.state === "running");
+                  const isOrphanDir = g.project.startsWith("dir:");
+                  return (
+                    <tr key={g.project}
+                      className={`border-b border-gray-800/50 ${g.is_orphan ? "border-l-2 border-l-amber-500 bg-amber-900/10" : ""}`}>
+                      <td className="py-2 pl-2">
+                        {isOrphanDir ? (
+                          <span className="inline-block w-2 h-2 rounded-full bg-gray-600" title="仅目录" />
+                        ) : (
+                          <span className={`inline-block w-2 h-2 rounded-full ${isRunning ? "bg-green-400" : "bg-gray-600"}`}
+                            title={isRunning ? "运行中" : "已停止"} />
+                        )}
+                      </td>
+                      <td className="py-2">
+                        <span className="text-gray-200 text-xs font-mono">
+                          {isOrphanDir ? g.project.slice(4) : g.project}
+                        </span>
+                      </td>
+                      <td className="py-2">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${g.product === "openclaw" ? "bg-blue-900/40 text-blue-300" : g.product === "zylos" ? "bg-purple-900/40 text-purple-300" : "bg-gray-800 text-gray-500"}`}>
+                          {g.product === "openclaw" ? "OC" : g.product === "zylos" ? "ZY" : "?"}
+                        </span>
+                      </td>
+                      <td className="py-2">
+                        {g.instance_id ? (
+                          <Link to={`/instances/${g.instance_id}`} className="text-blue-400 hover:text-blue-300 text-xs">
+                            {g.instance_name || g.instance_id}
+                          </Link>
+                        ) : (
+                          <span className="text-amber-400 text-xs">无关联</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-gray-400 text-xs">{g.owner_email || "-"}</td>
+                      <td className="py-2">
+                        {g.runtime_exists ? (
+                          <span className="text-green-400 text-xs" title={g.runtime_dir || ""}>✓ 存在</span>
+                        ) : g.runtime_dir ? (
+                          <span className="text-red-400 text-xs">✗ 不存在</span>
+                        ) : (
+                          <span className="text-gray-600 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-xs text-gray-500">
+                        {g.containers.map(c => (
+                          <div key={c.name} className="truncate max-w-[180px]" title={`${c.name} - ${c.status}`}>
+                            <span className={c.state === "running" ? "text-green-400" : "text-gray-600"}>●</span>{" "}
+                            {c.name.replace(g.project + "-", "").replace(g.project, "(main)")} <span className="text-gray-700">{c.status}</span>
+                          </div>
+                        ))}
+                        {g.containers.length === 0 && <span className="text-gray-700">仅目录</span>}
+                      </td>
+                      <td className="py-2 text-right">
+                        {g.is_orphan ? (
+                          <button onClick={() => handleDockerCleanup(g.project)}
+                            disabled={cleaningProject === g.project}
+                            className="px-2 py-1 text-xs rounded bg-red-600/80 hover:bg-red-500 text-white disabled:opacity-50">
+                            {cleaningProject === g.project ? "清理中..." : "🗑 清理"}
+                          </button>
+                        ) : g.instance_id ? (
+                          <Link to={`/instances/${g.instance_id}`} className="px-2 py-1 text-xs rounded border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800">
+                            跳转
+                          </Link>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Users Tab ── */}
+      {activeTab === "users" && <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* User list - narrower */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
           <h2 className="text-sm font-medium text-gray-300 mb-2">{t("admin.users")}</h2>
@@ -391,7 +549,7 @@ export function AdminPage() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Diagnostics Modal */}
       {diagId && (

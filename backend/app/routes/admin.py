@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -585,3 +587,219 @@ def instance_resources(
     if errors:
         return {"ok": False, "detail": "; ".join(errors)}
     return {"ok": True, "detail": f"Resources updated on {len(all_containers)} container(s): {payload.memory_mb}MB, {payload.cpus} CPUs"}
+
+
+# ---------------------------------------------------------------------------
+#  Docker container management (orphan detection & cleanup)
+# ---------------------------------------------------------------------------
+
+@router.get("/docker-containers")
+def list_docker_containers(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """List ALL hire_/zylos_ Docker containers, match with DB, detect orphans."""
+    _require_admin(current_user)
+
+    # 1. Get all relevant containers
+    raw_containers: list[dict] = []
+    for prefix in ("hire_", "zylos_"):
+        rc, out = _docker_run(
+            ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.State}}\t{{.Status}}", "--filter", f"name={prefix}"],
+            timeout=10,
+        )
+        if rc == 0 and out.strip():
+            for line in out.strip().splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 3:
+                    raw_containers.append({"name": parts[0], "state": parts[1], "status": parts[2]})
+
+    # 2. Get all instances from DB with owner info
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        """SELECT i.id, i.name, i.product, i.owner_id, i.install_state,
+                  u.email AS owner_email, u.name AS owner_name
+           FROM instances i JOIN users u ON i.owner_id = u.id"""
+    )
+    db_instances = cursor.fetchall()
+    cursor.close()
+
+    # Build compose_project → instance mapping
+    project_to_inst: dict[str, dict] = {}
+    inst_ids_in_db: set[str] = set()
+    for inst in db_instances:
+        inst_id = inst["id"]
+        product = inst["product"] or "openclaw"
+        proj = _get_compose_project(inst_id, product)
+        project_to_inst[proj] = inst
+        inst_ids_in_db.add(inst_id)
+
+    # 3. Group containers by project
+    groups: dict[str, dict] = {}  # project → group info
+    for c in raw_containers:
+        name = c["name"]
+        # Determine product and project from container name
+        if name.startswith("zylos_"):
+            # zylos_{instance_id} — the entire name IS the project
+            project = name
+            product = "zylos"
+        elif "-openclaw-" in name:
+            # hire_XXXX-openclaw-gateway-1 → project = hire_XXXX
+            project = name.split("-openclaw-")[0]
+            product = "openclaw"
+        else:
+            # Other hire_ container (maybe cli or unknown)
+            project = name.rsplit("-", 2)[0] if "-" in name else name
+            product = "unknown"
+
+        if project not in groups:
+            groups[project] = {
+                "project": project,
+                "containers": [],
+                "product": product,
+                "instance_id": None,
+                "instance_name": None,
+                "owner_email": None,
+                "install_state": None,
+                "runtime_dir": None,
+                "runtime_exists": False,
+                "is_orphan": True,
+            }
+        groups[project]["containers"].append({
+            "name": name,
+            "state": c["state"],
+            "status": c["status"],
+        })
+
+    # 4. Match groups to DB instances
+    for proj, group in groups.items():
+        inst = project_to_inst.get(proj)
+        if inst:
+            inst_id = inst["id"]
+            rt_dir = str(RUNTIME_ROOT / inst_id)
+            group["instance_id"] = inst_id
+            group["instance_name"] = inst["name"]
+            group["owner_email"] = inst["owner_email"]
+            group["install_state"] = inst["install_state"]
+            group["runtime_dir"] = rt_dir
+            group["runtime_exists"] = (RUNTIME_ROOT / inst_id).is_dir()
+            group["is_orphan"] = False
+
+    # 5. For orphan groups, try to find runtime dir by scanning RUNTIME_ROOT
+    if RUNTIME_ROOT.is_dir():
+        for proj, group in groups.items():
+            if not group["is_orphan"] or group["runtime_dir"]:
+                continue
+            # Try to match project to a runtime dir
+            for d in RUNTIME_ROOT.iterdir():
+                if not d.is_dir():
+                    continue
+                # Check if this dir's compose project matches
+                for prod in ("openclaw", "zylos"):
+                    if _get_compose_project(d.name, prod) == proj:
+                        group["runtime_dir"] = str(d)
+                        group["runtime_exists"] = True
+                        break
+                if group["runtime_dir"]:
+                    break
+
+    # 6. Also find orphan runtime dirs (no matching container)
+    matched_runtime_dirs: set[str] = set()
+    for g in groups.values():
+        if g["runtime_dir"]:
+            matched_runtime_dirs.add(g["runtime_dir"])
+
+    orphan_dirs: list[dict] = []
+    if RUNTIME_ROOT.is_dir():
+        for d in RUNTIME_ROOT.iterdir():
+            if not d.is_dir():
+                continue
+            dir_path = str(d)
+            if dir_path in matched_runtime_dirs:
+                continue
+            inst_id = d.name
+            if inst_id in inst_ids_in_db:
+                continue  # Has DB record, just no container — not an orphan dir
+            orphan_dirs.append({
+                "project": f"dir:{inst_id}",
+                "containers": [],
+                "product": "unknown",
+                "instance_id": None,
+                "instance_name": None,
+                "owner_email": None,
+                "install_state": None,
+                "runtime_dir": dir_path,
+                "runtime_exists": True,
+                "is_orphan": True,
+            })
+
+    # Sort: orphans first, then by project name
+    result = sorted(groups.values(), key=lambda g: (not g["is_orphan"], g["project"]))
+    result.extend(sorted(orphan_dirs, key=lambda g: g["project"]))
+
+    return {"groups": result}
+
+
+class DockerCleanupRequest(BaseModel):
+    project: str
+    remove_runtime: bool = True
+
+
+@router.post("/docker-cleanup")
+def docker_cleanup(
+    payload: DockerCleanupRequest,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Clean up orphan Docker containers and runtime directories."""
+    _require_admin(current_user)
+
+    project = payload.project
+    details: list[str] = []
+
+    # Handle orphan runtime dir (no containers)
+    if project.startswith("dir:"):
+        inst_id = project[4:]
+        rt_path = RUNTIME_ROOT / inst_id
+        if payload.remove_runtime and rt_path.is_dir():
+            shutil.rmtree(rt_path, ignore_errors=True)
+            details.append(f"Runtime dir removed: {rt_path}")
+        return {"ok": True, "details": details}
+
+    # Safety: only allow hire_/zylos_ prefixes
+    if not (project.startswith("hire_") or project.startswith("zylos_")):
+        raise HTTPException(status_code=400, detail="Invalid project prefix.")
+
+    # Find all containers for this project
+    rc, out = _docker_run(
+        ["docker", "ps", "-a", "--format", "{{.Names}}", "--filter", f"name={project}"],
+        timeout=10,
+    )
+    container_names = [n.strip() for n in (out or "").splitlines() if n.strip()] if rc == 0 else []
+
+    # Stop and remove containers
+    for cname in container_names:
+        _docker_run(["docker", "stop", cname], timeout=15)
+        rc_rm, out_rm = _docker_run(["docker", "rm", "-f", cname], timeout=10)
+        details.append(f"{cname}: {'removed' if rc_rm == 0 else out_rm}")
+
+    # Remove runtime directory
+    if payload.remove_runtime:
+        # Find matching runtime dir
+        removed = False
+        if RUNTIME_ROOT.is_dir():
+            for d in RUNTIME_ROOT.iterdir():
+                if not d.is_dir():
+                    continue
+                for prod in ("openclaw", "zylos"):
+                    if _get_compose_project(d.name, prod) == project:
+                        shutil.rmtree(d, ignore_errors=True)
+                        details.append(f"Runtime dir removed: {d}")
+                        removed = True
+                        break
+                if removed:
+                    break
+        if not removed:
+            details.append("No matching runtime dir found")
+
+    return {"ok": True, "details": details}

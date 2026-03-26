@@ -143,6 +143,14 @@ export const api = {
       method: "POST", body: JSON.stringify({ memory_mb: memoryMb, cpus }),
     }),
 
+  adminDockerContainers: () =>
+    request<{ groups: import("./types").DockerContainerGroup[] }>("/api/admin/docker-containers"),
+
+  adminDockerCleanup: (project: string, removeRuntime: boolean = true) =>
+    request<{ ok: boolean; details: string[] }>("/api/admin/docker-cleanup", {
+      method: "POST", body: JSON.stringify({ project, remove_runtime: removeRuntime }),
+    }),
+
   // Metrics & Monitoring
   instanceMetrics: (id: string, hours?: number) =>
     request<MetricsResponse>(`/api/instances/${id}/metrics?hours=${hours ?? 24}`),
