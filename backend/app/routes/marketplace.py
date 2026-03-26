@@ -233,9 +233,19 @@ def _install_weixin(container: str) -> tuple[bool, str]:
             # Check for success indicators
             if "就绪" in line or "already at" in line or "Installing to" in line or "Restart the gateway" in line:
                 success = True
-            # If plugin is ready and waiting for QR scan, we're done
+            # Plugin is ready and about to show QR — keep reading for a bit to capture it
             if "首次连接" in line or "扫码" in line or "QR" in line.upper():
                 success = True
+                # Read for 15 more seconds to capture QR code output
+                qr_deadline = __import__("time").time() + 15
+                while __import__("time").time() < qr_deadline:
+                    line2 = proc.stdout.readline()
+                    if not line2:
+                        if proc.poll() is not None:
+                            break
+                        __import__("time").sleep(0.1)
+                        continue
+                    output_lines.append(line2)
                 break
 
         # Kill the hanging process (it's waiting for QR scan)
