@@ -39,7 +39,14 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [input, setInput] = useState("");
+  const [input, setInputRaw] = useState(() => localStorage.getItem(`chat_draft_${instanceId}`) || "");
+  const setInput = useCallback((v: string | ((p: string) => string)) => {
+    setInputRaw((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      if (next) localStorage.setItem(`chat_draft_${instanceId}`, next); else localStorage.removeItem(`chat_draft_${instanceId}`);
+      return next;
+    });
+  }, [instanceId]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
