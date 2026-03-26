@@ -28,7 +28,7 @@ def client():
 
 
 def _unique_email():
-    return f"test_{uuid.uuid4().hex[:8]}@test.local"
+    return f"test_{uuid.uuid4().hex[:8]}@example.com"
 
 
 def _unique_name():

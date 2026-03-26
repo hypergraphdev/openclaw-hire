@@ -140,7 +140,7 @@ class TestUserCRUD:
         from app.services.auth_service import hash_password
 
         user_id = _unique("user")
-        email = f"{user_id}@test.local"
+        email = f"{user_id}@example.com"
         pw_hash = hash_password("testpass123")
 
         conn = get_connection()
@@ -227,7 +227,7 @@ class TestAuthIntegration:
         from app.services.auth_service import hash_password, verify_password, create_access_token, decode_token
 
         user_id = _unique("user")
-        email = f"{user_id}@test.local"
+        email = f"{user_id}@example.com"
         password = "SecurePass!@#123"
         pw_hash = hash_password(password)
 
