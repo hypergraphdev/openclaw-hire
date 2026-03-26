@@ -18,7 +18,10 @@ python3 -m py_compile app/routes/admin_hxa.py
 echo "All Python files OK"
 
 echo ""
-echo "=== Frontend Type Check ==="
+echo "=== Frontend Tests ==="
 cd "$ROOT_DIR/frontend"
+npx vitest run --reporter=verbose
+echo ""
+echo "=== Frontend Type Check ==="
 npx tsc --noEmit
 echo "TypeScript OK"
