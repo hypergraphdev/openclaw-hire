@@ -258,15 +258,16 @@ def _install_whisper(container: str) -> tuple[bool, str]:
     try:
         r0 = subprocess.run(
             ["docker", "exec", "-u", "root", container, "sh", "-c",
-             "pip3 --version 2>/dev/null || python3 -m ensurepip --upgrade 2>&1 && pip3 --version"],
-            capture_output=True, text=True, timeout=60,
+             "pip3 --version 2>/dev/null || (apt-get update -qq && apt-get install -y -qq python3-pip && pip3 --version)"],
+            capture_output=True, text=True, timeout=120,
         )
         logs.append("=== ensure pip ===")
         logs.append(r0.stdout.strip()[-300:])
         if r0.returncode != 0:
             logs.append(r0.stderr[-300:])
+            return False, "\n".join(logs)
     except subprocess.TimeoutExpired:
-        pass
+        return False, "ERROR: pip install timed out."
 
     # Step 1: pip install
     try:
