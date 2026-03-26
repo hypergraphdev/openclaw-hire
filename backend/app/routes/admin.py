@@ -132,6 +132,15 @@ def batch_hxa_status(
 
     # Step 4: Match instances to global bot map
     result: dict[str, dict] = {}
+    # Build reverse index: extract instance_id suffix from bot names for fuzzy matching
+    # e.g. "hire_e27571bdbfed" → "e27571bdbfed", "hire_inst_603992fdd3" → "603992fdd3"
+    bot_by_suffix: dict[str, dict] = {}
+    for bname, binfo in global_bot_map.items():
+        for prefix in ("hire_inst_", "hire_"):
+            if bname.startswith(prefix):
+                bot_by_suffix[bname[len(prefix):]] = {**binfo, "hub_name": bname}
+                break
+
     for r in rows:
         inst_id = r["id"]
         agent_name = r["cfg_agent"] or r["inst_agent"] or ""
@@ -140,16 +149,37 @@ def batch_hxa_status(
         if not agent_name:
             continue
 
+        # Exact match first
         hub_info = global_bot_map.get(agent_name)
+        hub_name = agent_name
+
+        # Fuzzy match: try matching by instance_id suffix
+        if not hub_info:
+            inst_suffix = inst_id.replace("inst_", "")
+            for suffix, sinfo in bot_by_suffix.items():
+                if inst_suffix.startswith(suffix) or suffix.startswith(inst_suffix[:10]):
+                    hub_info = sinfo
+                    hub_name = sinfo["hub_name"]
+                    break
+
         if hub_info:
             actual_org_id = hub_info["org_id"]
-            # Auto-fix stale org_id in DB if bot was transferred
+            # Auto-fix stale data in DB
+            needs_fix = False
             if db_org_id and db_org_id != actual_org_id:
+                needs_fix = True
+            if hub_name != agent_name:
+                needs_fix = True
+            if needs_fix:
                 try:
                     fix_cur = db.cursor()
                     fix_cur.execute(
-                        "UPDATE instance_configs SET org_id = %s WHERE instance_id = %s",
-                        (actual_org_id, inst_id),
+                        "UPDATE instance_configs SET org_id = %s, agent_name = %s WHERE instance_id = %s",
+                        (actual_org_id, hub_name, inst_id),
+                    )
+                    fix_cur.execute(
+                        "UPDATE instances SET agent_name = %s WHERE id = %s",
+                        (hub_name, inst_id),
                     )
                     fix_cur.close()
                 except Exception:
@@ -157,7 +187,7 @@ def batch_hxa_status(
             result[inst_id] = {
                 "online": hub_info["online"],
                 "org_id": actual_org_id,
-                "agent_name": agent_name,
+                "agent_name": hub_name,
             }
         else:
             result[inst_id] = {
