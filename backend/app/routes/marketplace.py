@@ -273,7 +273,7 @@ def _install_whisper(container: str) -> tuple[bool, str]:
     # Step 1: pip install
     try:
         r1 = subprocess.run(
-            ["docker", "exec", "-u", "root", container, "pip3", "install", "-U", "openai-whisper"],
+            ["docker", "exec", "-u", "root", container, "pip3", "install", "-U", "--break-system-packages", "openai-whisper"],
             capture_output=True, text=True, timeout=300,
         )
         logs.append("=== pip install openai-whisper ===")
