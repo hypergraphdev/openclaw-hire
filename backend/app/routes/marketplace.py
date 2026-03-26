@@ -258,10 +258,24 @@ def _install_whisper(container: str) -> tuple[bool, str]:
     logs = []
     ok = True
 
+    # Step 0: ensure pip is available
+    try:
+        r0 = subprocess.run(
+            ["docker", "exec", "-u", "root", container, "sh", "-c",
+             "pip3 --version 2>/dev/null || python3 -m ensurepip --upgrade 2>&1 && pip3 --version"],
+            capture_output=True, text=True, timeout=60,
+        )
+        logs.append("=== ensure pip ===")
+        logs.append(r0.stdout.strip()[-300:])
+        if r0.returncode != 0:
+            logs.append(r0.stderr[-300:])
+    except subprocess.TimeoutExpired:
+        pass
+
     # Step 1: pip install
     try:
         r1 = subprocess.run(
-            ["docker", "exec", container, "pip", "install", "-U", "openai-whisper"],
+            ["docker", "exec", "-u", "root", container, "pip3", "install", "-U", "openai-whisper"],
             capture_output=True, text=True, timeout=300,
         )
         logs.append("=== pip install openai-whisper ===")
