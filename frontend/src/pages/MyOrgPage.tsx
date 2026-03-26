@@ -449,6 +449,9 @@ export function MyOrgPage() {
         const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined, orgIdRef.current);
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
         setBotTyping(false);
+        // User manually sent — reset anti-loop state for this thread
+        delete threadMsgTimestamps.current[target.thread.id];
+        delete threadLoopCooldown.current[target.thread.id];
       }
       setInput("");
       // Clear draft after successful send
