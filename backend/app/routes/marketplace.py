@@ -243,12 +243,8 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
             output_lines.append("\n[超时] 等待扫码超过10分钟，进程已终止。\n")
 
         output = "".join(output_lines)
-        success = proc.returncode == 0
-        # Also consider success if key installation steps completed
-        if not success and ("就绪" in output or "already at" in output):
-            success = True
-
-        return success, output
+        # WeChat: only returncode 0 means QR scan + callback completed
+        return proc.returncode == 0, output
     except Exception as e:
         return False, f"ERROR: {e}"
 
