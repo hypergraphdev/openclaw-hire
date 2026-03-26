@@ -364,7 +364,9 @@ export function AdminPage() {
               {" · "}
               <span className="text-amber-400 font-medium">{dockerGroups.filter(g => g.is_orphan).length}</span> 孤儿
               {" · "}
-              <span className="text-gray-500">{dockerGroups.filter(g => g.containers.every(c => c.state !== "running")).length}</span> 已停止
+              <span className="text-purple-400 font-medium">{dockerGroups.filter(g => g.is_ghost).length}</span> 幽灵
+              {" · "}
+              <span className="text-gray-500">{dockerGroups.filter(g => g.containers.length > 0 && g.containers.every(c => c.state !== "running")).length}</span> 已停止
             </div>
             <button onClick={loadDockerContainers} disabled={dockerLoading}
               className="px-3 py-1 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-50">
@@ -396,9 +398,11 @@ export function AdminPage() {
                   const isOrphanDir = g.project.startsWith("dir:");
                   return (
                     <tr key={g.project}
-                      className={`border-b border-gray-800/50 ${g.is_orphan ? "border-l-2 border-l-amber-500 bg-amber-900/10" : ""}`}>
+                      className={`border-b border-gray-800/50 ${g.is_orphan ? "border-l-2 border-l-amber-500 bg-amber-900/10" : g.is_ghost ? "border-l-2 border-l-purple-500 bg-purple-900/10" : ""}`}>
                       <td className="py-2 pl-2">
-                        {isOrphanDir ? (
+                        {g.is_ghost ? (
+                          <span className="inline-block w-2 h-2 rounded-full bg-purple-500" title="幽灵：DB有记录但无容器" />
+                        ) : isOrphanDir ? (
                           <span className="inline-block w-2 h-2 rounded-full bg-gray-600" title="仅目录" />
                         ) : (
                           <span className={`inline-block w-2 h-2 rounded-full ${isRunning ? "bg-green-400" : "bg-gray-600"}`}
@@ -441,7 +445,7 @@ export function AdminPage() {
                             {c.name.replace(g.project + "-", "").replace(g.project, "(main)")} <span className="text-gray-700">{c.status}</span>
                           </div>
                         ))}
-                        {g.containers.length === 0 && <span className="text-gray-700">仅目录</span>}
+                        {g.containers.length === 0 && <span className="text-gray-700">{g.is_ghost ? "无容器" : "仅目录"}</span>}
                       </td>
                       <td className="py-2 text-right relative">
                         <button onClick={() => setDockerMenuProject(dockerMenuProject === g.project ? "" : g.project)}
@@ -461,14 +465,14 @@ export function AdminPage() {
                                 </Link>
                               </>
                             )}
-                            {g.is_orphan && (
+                            {(g.is_orphan || g.is_ghost) && (
                               <button onClick={() => { setDockerMenuProject(""); handleDockerCleanup(g.project); }}
                                 disabled={cleaningProject === g.project}
                                 className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700 disabled:opacity-50">
-                                🗑 {cleaningProject === g.project ? "清理中..." : "清理"}
+                                🗑 {cleaningProject === g.project ? "清理中..." : g.is_ghost ? "清理幽灵" : "清理"}
                               </button>
                             )}
-                            {!g.instance_id && !g.is_orphan && (
+                            {!g.instance_id && !g.is_orphan && !g.is_ghost && (
                               <div className="px-3 py-1.5 text-xs text-gray-600">无操作</div>
                             )}
                           </div>

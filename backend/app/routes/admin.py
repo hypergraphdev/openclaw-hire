@@ -851,9 +851,38 @@ def list_docker_containers(
                 "is_orphan": True,
             })
 
-    # Sort: orphans first, then by project name
+    # 7. Find "ghost" instances: in DB but no container at all
+    matched_inst_ids = set()
+    for g in groups.values():
+        if g.get("instance_id"):
+            matched_inst_ids.add(g["instance_id"])
+    ghost_instances: list[dict] = []
+    for inst in db_instances:
+        inst_id = inst["id"]
+        if inst_id in matched_inst_ids:
+            continue
+        product = inst["product"] or "openclaw"
+        proj = _get_compose_project(inst_id, product)
+        rt_dir = str(RUNTIME_ROOT / inst_id)
+        ghost_instances.append({
+            "project": proj,
+            "containers": [],
+            "product": product,
+            "instance_id": inst_id,
+            "instance_name": inst["name"],
+            "owner_email": inst.get("owner_email", ""),
+            "owner_name": inst.get("owner_name", ""),
+            "install_state": inst["install_state"],
+            "runtime_dir": rt_dir,
+            "runtime_exists": (RUNTIME_ROOT / inst_id).is_dir(),
+            "is_orphan": False,
+            "is_ghost": True,
+        })
+
+    # Sort: orphans first, then ghosts, then normal by project name
     result = sorted(groups.values(), key=lambda g: (not g["is_orphan"], g["project"]))
     result.extend(sorted(orphan_dirs, key=lambda g: g["project"]))
+    result.extend(sorted(ghost_instances, key=lambda g: g["project"]))
 
     return {"groups": result}
 
@@ -901,11 +930,43 @@ def docker_cleanup(
         rc_rm, out_rm = _docker_run(["docker", "rm", "-f", cname], timeout=10)
         details.append(f"{cname}: {'removed' if rc_rm == 0 else out_rm}")
 
+    # Find matching instance_id for DB cleanup
+    matched_inst_id: str | None = None
+    if RUNTIME_ROOT.is_dir():
+        for d in RUNTIME_ROOT.iterdir():
+            if not d.is_dir():
+                continue
+            for prod in ("openclaw", "zylos"):
+                if _get_compose_project(d.name, prod) == project:
+                    matched_inst_id = d.name
+                    break
+            if matched_inst_id:
+                break
+    # Also check DB directly by project name pattern
+    if not matched_inst_id:
+        # hire_inst_xxx → inst_xxx, zylos_inst_xxx → inst_xxx
+        for prefix in ("hire_", "zylos_"):
+            if project.startswith(prefix):
+                candidate = project[len(prefix):]
+                if not candidate.startswith("inst_"):
+                    candidate = "inst_" + candidate
+                cursor = db.cursor(dictionary=True)
+                cursor.execute("SELECT id FROM instances WHERE id = %s", (candidate,))
+                if cursor.fetchone():
+                    matched_inst_id = candidate
+                cursor.close()
+                break
+
     # Remove runtime directory
     if payload.remove_runtime:
-        # Find matching runtime dir
         removed = False
-        if RUNTIME_ROOT.is_dir():
+        if matched_inst_id:
+            rt_path = RUNTIME_ROOT / matched_inst_id
+            if rt_path.is_dir():
+                shutil.rmtree(rt_path, ignore_errors=True)
+                details.append(f"Runtime dir removed: {rt_path}")
+                removed = True
+        if not removed and RUNTIME_ROOT.is_dir():
             for d in RUNTIME_ROOT.iterdir():
                 if not d.is_dir():
                     continue
@@ -919,5 +980,14 @@ def docker_cleanup(
                     break
         if not removed:
             details.append("No matching runtime dir found")
+
+    # Clean up DB records (ghost instances)
+    if matched_inst_id:
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM instance_configs WHERE instance_id = %s", (matched_inst_id,))
+        cursor.execute("DELETE FROM install_events WHERE instance_id = %s", (matched_inst_id,))
+        cursor.execute("DELETE FROM instances WHERE id = %s", (matched_inst_id,))
+        cursor.close()
+        details.append(f"DB records cleaned: {matched_inst_id}")
 
     return {"ok": True, "details": details}

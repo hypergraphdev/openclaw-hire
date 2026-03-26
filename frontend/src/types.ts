@@ -126,6 +126,8 @@ export type DockerContainerGroup = {
   runtime_dir: string | null;
   runtime_exists: boolean;
   is_orphan: boolean;
+  is_ghost?: boolean;
+  owner_name?: string | null;
 };
 
 // ─── Chat types ───
