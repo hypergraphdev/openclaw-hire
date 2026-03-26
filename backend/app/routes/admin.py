@@ -434,7 +434,7 @@ def instance_diagnostics(
 
     # OpenClaw version
     openclaw_version = None
-    if product == "openclaw" and container.get("status") == "running":
+    if product == "openclaw" and container.get("running"):
         try:
             rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
             openclaw_version = ver_out.strip() if rc == 0 else None
