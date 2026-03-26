@@ -308,20 +308,20 @@ def _install_whisper(container: str) -> tuple[bool, str]:
     logs = []
     ok = True
 
-    # Step 0: ensure pip is available
+    # Step 0: ensure pip + ffmpeg are available
     try:
         r0 = subprocess.run(
             ["docker", "exec", "-u", "root", container, "sh", "-c",
-             "pip3 --version 2>/dev/null || (apt-get update -qq && apt-get install -y -qq python3-pip && pip3 --version)"],
-            capture_output=True, text=True, timeout=120,
+             "apt-get update -qq && apt-get install -y -qq ffmpeg python3-pip 2>&1 | tail -5 && pip3 --version && ffmpeg -version | head -1"],
+            capture_output=True, text=True, timeout=180,
         )
-        logs.append("=== ensure pip ===")
-        logs.append(r0.stdout.strip()[-300:])
+        logs.append("=== ensure pip + ffmpeg ===")
+        logs.append(r0.stdout.strip()[-400:])
         if r0.returncode != 0:
             logs.append(r0.stderr[-300:])
             return False, "\n".join(logs)
     except subprocess.TimeoutExpired:
-        return False, "ERROR: pip install timed out."
+        return False, "ERROR: dependency install timed out."
 
     # Step 1: pip install
     try:
