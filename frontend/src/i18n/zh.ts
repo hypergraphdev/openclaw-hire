@@ -310,4 +310,22 @@ export const zh: Record<string, string> = {
   "settings.themeDesc": "选择您偏好的颜色主题",
   "settings.themeDark": "深色",
   "settings.themeLight": "浅色",
+
+  // Marketplace
+  "nav.marketplace": "插件市场",
+  "nav.skills": "技能中心",
+  "marketplace.title": "插件市场",
+  "marketplace.desc": "为你的实例扩展功能",
+  "skills.title": "技能中心",
+  "skills.desc": "为你的实例添加 AI 能力",
+  "marketplace.install": "安装",
+  "marketplace.installed": "已安装",
+  "marketplace.installing": "安装中...",
+  "marketplace.failed": "安装失败",
+  "marketplace.selectInstance": "选择实例",
+  "marketplace.confirm": "确认安装",
+  "marketplace.cancel": "取消",
+  "marketplace.viewLog": "查看日志",
+  "marketplace.compatibleWith": "适用于",
+  "marketplace.installTime": "安装耗时",
 };

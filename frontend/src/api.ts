@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MarketplaceInstall, MarketplaceItem, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "");
@@ -365,4 +365,14 @@ export const api = {
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return fetch(`${API_BASE}${path}`, { method: "PUT", headers, body: JSON.stringify(body) });
   },
+
+  // Marketplace
+  marketplaceItems: () => request<MarketplaceItem[]>("/api/marketplace/items"),
+  marketplaceInstalled: (instanceId: string) => request<MarketplaceInstall[]>(`/api/marketplace/installed?instance_id=${instanceId}`),
+  marketplaceInstall: (instanceId: string, itemId: string) =>
+    request<{ ok: boolean; status: string; message: string }>("/api/marketplace/install", {
+      method: "POST", body: JSON.stringify({ instance_id: instanceId, item_id: itemId }),
+    }),
+  marketplaceInstallLog: (instanceId: string, itemId: string) =>
+    request<MarketplaceInstall>(`/api/marketplace/install-log?instance_id=${instanceId}&item_id=${itemId}`),
 };

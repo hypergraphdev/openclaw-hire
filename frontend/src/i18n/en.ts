@@ -310,4 +310,22 @@ export const en: Record<string, string> = {
   "settings.themeDesc": "Choose your preferred color theme",
   "settings.themeDark": "Dark",
   "settings.themeLight": "Light",
+
+  // Marketplace
+  "nav.marketplace": "Plugins",
+  "nav.skills": "Skills",
+  "marketplace.title": "Plugin Marketplace",
+  "marketplace.desc": "Extend your instances with plugins",
+  "skills.title": "Skill Center",
+  "skills.desc": "Add AI capabilities to your instances",
+  "marketplace.install": "Install",
+  "marketplace.installed": "Installed",
+  "marketplace.installing": "Installing...",
+  "marketplace.failed": "Failed",
+  "marketplace.selectInstance": "Select instance",
+  "marketplace.confirm": "Confirm Install",
+  "marketplace.cancel": "Cancel",
+  "marketplace.viewLog": "View Log",
+  "marketplace.compatibleWith": "Compatible with",
+  "marketplace.installTime": "Install time",
 };

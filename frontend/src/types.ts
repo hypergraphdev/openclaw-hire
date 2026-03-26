@@ -390,3 +390,30 @@ export type AgentActivityResponse = {
   services: AgentServiceInfo[];
   state: "idle" | "busy" | "waiting" | "offline";
 };
+
+// ─── Marketplace types ───
+
+export type MarketplaceItem = {
+  id: string;
+  type: "plugin" | "skill";
+  name: string;
+  name_zh?: string;
+  description: string;
+  description_zh?: string;
+  icon: string;
+  product: "openclaw" | "zylos" | "all";
+  tags: string[];
+  version: string;
+  install_time?: string;
+  note?: string;
+  note_zh?: string;
+  models?: string[];
+};
+
+export type MarketplaceInstall = {
+  item_id: string;
+  item_type: "plugin" | "skill";
+  status: "installing" | "installed" | "failed";
+  install_log: string;
+  installed_at: string;
+};

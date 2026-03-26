@@ -72,6 +72,22 @@ def set_setting(key: str, value: str) -> None:
 
 
 def init_db() -> None:
-    """No-op for MySQL — tables are already created in MySQL.
-    Keep the function so main.py startup doesn't break."""
-    pass
+    """Ensure new tables exist (idempotent)."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS marketplace_installs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                instance_id VARCHAR(64) NOT NULL,
+                item_id VARCHAR(64) NOT NULL,
+                item_type ENUM('plugin','skill') NOT NULL,
+                status ENUM('installing','installed','failed') DEFAULT 'installing',
+                install_log MEDIUMTEXT,
+                installed_at VARCHAR(64),
+                UNIQUE KEY uq_inst_item (instance_id, item_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        cursor.close()
+    finally:
+        conn.close()

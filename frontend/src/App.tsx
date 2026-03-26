@@ -13,6 +13,7 @@ import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminHXAPage from "./pages/AdminHXAPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { MyOrgPage } from "./pages/MyOrgPage";
+import { MarketplacePage, SkillCenterPage } from "./pages/MarketplacePage";
 
 function normalizeBasename(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, "");
@@ -141,6 +142,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MyOrgPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/marketplace"
+            element={
+              <ProtectedRoute>
+                <MarketplacePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/skills"
+            element={
+              <ProtectedRoute>
+                <SkillCenterPage />
               </ProtectedRoute>
             }
           />
