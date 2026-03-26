@@ -26,6 +26,7 @@ from ..schemas import (
 from ..services.install_service import (
     _get_hub_url,
     _ORG_ID,
+    _safe_agent_name,
     compose_logs,
     configure_instance_telegram,
     configure_telegram_only,
@@ -482,7 +483,7 @@ async def configure_hxa_endpoint(
         raise HTTPException(status_code=500, detail=message)
 
     now = _utc_now()
-    agent_name = f"hire_{instance_id.replace('-', '')}"[:20]
+    agent_name = _safe_agent_name(instance_id)
     plugin_name = "openclaw-hxa-connect" if inst["product"] == "openclaw" else "hxa-connect"
     cursor = db.cursor()
     cursor.execute(
