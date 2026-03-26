@@ -369,16 +369,17 @@ export function MyOrgPage() {
                 ? msgChannelId === curChannelId
                 : senderName === wsTargetName;
 
-              // Anti-loop: track ALL bot replies by sender, regardless of which DM
+              // Anti-loop: count ALL messages (both sides) per channel
               const myNames = new Set((allBotsRef.current || []).filter(b => b.is_mine).map(b => b.name));
-              if (!myNames.has(senderName)) {
+              const isMyBot = myNames.has(senderName);
+              {
                 const now = Date.now();
-                const loopKey = `dm_${senderName}`;
+                const loopKey = `dm_ch_${msgChannelId || senderName}`;
                 const ts = threadMsgTimestamps.current[loopKey] || [];
                 ts.push(now);
                 threadMsgTimestamps.current[loopKey] = ts.filter(t => t > now - 60000);
                 const lastCd = threadLoopCooldown.current[loopKey] || 0;
-                if (threadMsgTimestamps.current[loopKey].length >= 4 && now - lastCd > 300000) {
+                if (threadMsgTimestamps.current[loopKey].length >= 4 && now - lastCd > 300000 && !isMyBot) {
                   threadLoopCooldown.current[loopKey] = now;
                   api.myOrgChatSend(senderName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
                 }
@@ -386,13 +387,13 @@ export function MyOrgPage() {
 
               if (belongsToCurrentDM) {
                 // Message for current DM — show it
-                if (senderName === wsTargetName) {
+                if (!isMyBot) {
                   setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
                 }
                 setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
                 if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
-              } else {
-                // Message for a DIFFERENT DM — unread badge
+              } else if (!isMyBot) {
+                // Message from OTHER bot for a different DM — unread badge (skip own bot echoes)
                 const senderBot = allBotsRef.current.find((b) => b.name === senderName);
                 if (senderBot) {
                   setUnreadCounts((prev) => ({ ...prev, [`dm_${senderBot.bot_id}`]: (prev[`dm_${senderBot.bot_id}`] || 0) + 1 }));
