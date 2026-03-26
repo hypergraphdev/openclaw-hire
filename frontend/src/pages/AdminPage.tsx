@@ -12,6 +12,86 @@ function StatusDot({ ok }: { ok: boolean | null }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${ok ? "bg-green-400" : "bg-red-500"}`} />;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; instanceId: string; onUpdated: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const amDefaults = config.am_defaults || {};
+  const values = config.values || {};
+
+  // Editable fields: keys that are marked configurable OR the known hardcoded ones we want to expose
+  const editableKeys = [
+    { key: "periodic_probe_interval", label: "定期探针间隔", hardcoded: 180 },
+    { key: "health_check_interval", label: "健康检查间隔", hardcoded: 21600 },
+    { key: "heartbeat_interval", label: "心跳安全网间隔", hardcoded: 7200 },
+    { key: "usage_check_interval", label: "用量检查间隔", hardcoded: 3600 },
+  ];
+
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    const d: Record<string, string> = {};
+    for (const { key, hardcoded } of editableKeys) {
+      d[key] = String(values[key] ?? hardcoded);
+    }
+    return d;
+  });
+
+  async function handleSave() {
+    setSaving(true); setMsg("");
+    const updates: Record<string, number> = {};
+    for (const { key } of editableKeys) {
+      const v = parseInt(drafts[key]);
+      if (!isNaN(v) && v > 0) updates[key] = v;
+    }
+    try {
+      await api.adminZylosConfig(instanceId, updates);
+      setMsg("已保存（需重启 activity-monitor 生效）");
+      onUpdated();
+    } catch (e: unknown) {
+      setMsg((e as Error).message || "保存失败");
+    }
+    setSaving(false);
+  }
+
+  function formatInterval(sec: number): string {
+    if (sec >= 3600) return `${(sec / 3600).toFixed(sec % 3600 ? 1 : 0)}小时`;
+    if (sec >= 60) return `${Math.floor(sec / 60)}分钟`;
+    return `${sec}秒`;
+  }
+
+  return (
+    <div className="bg-gray-800/50 rounded p-3">
+      <h4 className="text-gray-400 font-medium mb-2 text-xs">Activity Monitor 配置
+        <span className="text-gray-600 ml-2 font-mono text-[10px]">{config.path}</span>
+      </h4>
+      <div className="space-y-2">
+        {editableKeys.map(({ key, label, hardcoded }) => {
+          const meta = amDefaults[key];
+          const currentVal = parseInt(drafts[key]) || hardcoded;
+          return (
+            <div key={key} className="flex items-center gap-2 text-xs">
+              <span className="text-gray-400 w-32 shrink-0">{label}</span>
+              <input type="number" min={10} value={drafts[key]}
+                onChange={(e) => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+                className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
+              <span className="text-gray-600">秒</span>
+              <span className="text-gray-600">= {formatInterval(currentVal)}</span>
+              {meta && <span className="text-gray-700 text-[10px]">默认 {meta.default}</span>}
+            </div>
+          );
+        })}
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={handleSave} disabled={saving}
+            className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
+            {saving ? "..." : "保存配置"}
+          </button>
+          {msg && <span className={`text-xs ${msg.startsWith("已") ? "text-green-400" : "text-red-400"}`}>{msg}</span>}
+        </div>
+        <p className="text-gray-600 text-[10px]">⚠️ periodic_probe_interval 是费 token 的主因（每次探针触发 Claude 回应）。建议设为 600+ 秒。hardcoded 值需修改 activity-monitor.js 源码。config.json 中的值仅对 readConfigInt 读取的字段生效。</p>
+      </div>
+    </div>
+  );
+}
+
 export function AdminPage() {
   const t = useT();
   const [users, setUsers] = useState<User[]>([]);
@@ -479,6 +559,10 @@ export function AdminPage() {
                     )}
                   </div>
                 </div>
+                {/* Zylos Activity Monitor Config */}
+                {dockerDiagData.zylos_config && <ZylosConfigPanel config={dockerDiagData.zylos_config} instanceId={dockerDiagId} onUpdated={async () => {
+                  try { setDockerDiagData(await api.adminInstanceDiagnostics(dockerDiagId)); } catch {}
+                }} />}
               </div>
             ) : (
               <div className="text-sm text-gray-500 text-center py-8">无数据</div>
@@ -773,6 +857,11 @@ export function AdminPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Zylos Activity Monitor Config */}
+                {diagData?.zylos_config && <ZylosConfigPanel config={diagData.zylos_config} instanceId={diagId} onUpdated={async () => {
+                  try { setDiagData(await api.adminInstanceDiagnostics(diagId)); } catch {}
+                }} />}
 
                 {/* Row 4: Resource Limits */}
                 <div className="bg-gray-800/50 rounded p-3">

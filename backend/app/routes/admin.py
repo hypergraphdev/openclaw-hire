@@ -409,6 +409,29 @@ def instance_diagnostics(
         if p.exists():
             config_files.append({"label": label, "path": str(p)})
 
+    # Zylos config (activity monitor tuning)
+    zylos_config: dict | None = None
+    if product == "zylos":
+        zy_cfg_path = runtime_dir / "zylos-data" / ".zylos" / "config.json"
+        if zy_cfg_path.exists():
+            try:
+                zylos_config = json.loads(zy_cfg_path.read_text())
+            except Exception:
+                zylos_config = {}
+        # Read hardcoded defaults from activity-monitor.js for display
+        am_defaults = {
+            "periodic_probe_interval": {"default": 180, "unit": "秒", "desc": "定期探针间隔（费token主因）"},
+            "health_check_interval": {"default": 21600, "unit": "秒", "desc": "完整健康检查间隔"},
+            "heartbeat_interval": {"default": 7200, "unit": "秒", "desc": "心跳安全网间隔"},
+            "usage_check_interval": {"default": 3600, "unit": "秒", "desc": "用量检查间隔", "configurable": True},
+            "usage_warn_threshold": {"default": 80, "unit": "%", "desc": "用量警告阈值", "configurable": True},
+        }
+        zylos_config = {
+            "path": str(zy_cfg_path),
+            "values": zylos_config or {},
+            "am_defaults": am_defaults,
+        }
+
     return {
         "basic_info": basic_info,
         "hxa_plugin": hxa_plugin,
@@ -418,7 +441,41 @@ def instance_diagnostics(
         "resource_usage": resource_usage,
         "config_files": config_files,
         "runtime_dir": str(runtime_dir),
+        "zylos_config": zylos_config,
     }
+
+
+# ---------------------------------------------------------------------------
+#  Zylos config update
+# ---------------------------------------------------------------------------
+
+class ZylosConfigUpdateRequest(BaseModel):
+    updates: dict[str, int | float | str]
+
+
+@router.post("/instances/{instance_id}/zylos-config")
+def update_zylos_config(
+    instance_id: str,
+    payload: ZylosConfigUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Update Zylos config.json (activity monitor tuning)."""
+    _require_admin(current_user)
+
+    zy_cfg_path = RUNTIME_ROOT / instance_id / "zylos-data" / ".zylos" / "config.json"
+    if not zy_cfg_path.exists():
+        raise HTTPException(status_code=404, detail="Zylos config not found.")
+
+    try:
+        cfg = json.loads(zy_cfg_path.read_text())
+    except Exception:
+        cfg = {}
+
+    cfg.update(payload.updates)
+    zy_cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+
+    return {"ok": True, "config": cfg}
 
 
 # ---------------------------------------------------------------------------

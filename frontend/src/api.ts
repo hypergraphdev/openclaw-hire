@@ -143,6 +143,11 @@ export const api = {
       method: "POST", body: JSON.stringify({ memory_mb: memoryMb, cpus }),
     }),
 
+  adminZylosConfig: (instanceId: string, updates: Record<string, number>) =>
+    request<{ ok: boolean; config: Record<string, unknown> }>(`/api/admin/instances/${instanceId}/zylos-config`, {
+      method: "POST", body: JSON.stringify({ updates }),
+    }),
+
   adminDockerContainers: () =>
     request<{ groups: import("./types").DockerContainerGroup[] }>("/api/admin/docker-containers"),
 
