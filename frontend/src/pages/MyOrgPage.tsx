@@ -296,12 +296,31 @@ export function MyOrgPage() {
         ws.onmessage = (ev) => {
           try {
             const d = JSON.parse(ev.data);
-            if (d.type === "typing") { setBotTyping(true); clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => setBotTyping(false), 5000); return; }
+            if (d.type === "typing") {
+              // Only show typing indicator if it's for current target
+              if (currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`) {
+                setBotTyping(true); clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => setBotTyping(false), 5000);
+              }
+              return;
+            }
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
-              if (msg.sender_id !== myBotIdRef.current) { setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound(); }
-              setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
-              if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+              const senderName = msg.sender_name || "";
+              const isFromCurrentTarget = currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`;
+
+              if (isFromCurrentTarget) {
+                // Message belongs to current chat — show it
+                if (msg.sender_id !== myBotIdRef.current) { setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound(); }
+                setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
+                if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+              } else {
+                // Message for a different chat — add unread badge, find the bot_id by sender_name
+                const senderBot = (data?.all_bots || []).find((b: MyOrgPeer) => b.name === senderName);
+                if (senderBot) {
+                  setUnreadCounts((prev) => ({ ...prev, [`dm_${senderBot.bot_id}`]: (prev[`dm_${senderBot.bot_id}`] || 0) + 1 }));
+                }
+                playNotificationSound();
+              }
             }
           } catch { /* */ }
         };
