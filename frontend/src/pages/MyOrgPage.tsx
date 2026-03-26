@@ -243,7 +243,7 @@ export function MyOrgPage() {
     setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
     try {
       const curOrg = data?.org_id || "";
-      const info = await api.myOrgChatInfo(bot.name, curOrg); setChatInfo(info); myBotIdRef.current = info.admin_bot_id;
+      const info = await api.myOrgChatInfo(bot.name, curOrg); setChatInfo(info); myBotIdRef.current = info.admin_bot_id; myInstanceBotIdRef.current = info.instance_bot_id || "";
       if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name, undefined, curOrg); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
     } catch { /* */ }
   }, []);
@@ -901,25 +901,28 @@ export function MyOrgPage() {
                 {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? "无搜索结果" : t("chat.noMessages")}</div>}
                 {filteredMessages.map((msg) => {
                   const senderName = (msg as ChatMessage).sender_name || "";
+                  // Build set of all "my" identities: agent names + admin bot name + instance bot name
                   const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
                   if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
+                  if (chatInfo?.instance_bot_name) myNames.add(chatInfo.instance_bot_name);
+                  const myIds = new Set([myBotId, myInstanceBotIdRef.current].filter(Boolean));
 
-                  // DM with own bot: only admin bot messages are "self" (right side)
-                  // DM with others' bot: own instance bot messages are "self"
-                  // Thread: all own bot messages are "self"
+                  const sid = msg.sender_id || "";
                   let isSelf: boolean;
                   if (target?.type === "dm") {
                     const targetIsMyBot = myNames.has(target.bot.name);
                     if (targetIsMyBot) {
-                      // DM own bot: right = admin bot only, left = own instance bot
-                      isSelf = msg.sender_id === myBotId || senderName === chatInfo?.admin_bot_name;
+                      // DM own bot: right = admin bot (by id OR name), left = own instance bot
+                      isSelf = myIds.has(sid) ? sid === myBotId : senderName === (chatInfo?.admin_bot_name || "");
                     } else {
-                      // DM others' bot: right = my instance bot, left = their bot
-                      isSelf = msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
+                      // DM others' bot: right = my instance bot (by id OR name), left = their bot
+                      isSelf = myIds.has(sid) || myNames.has(senderName);
+                      // Exclude admin bot from "self" here — only instance bot is "me"
+                      if (isSelf && senderName === (chatInfo?.admin_bot_name || "") && senderName !== (chatInfo?.instance_bot_name || "")) isSelf = false;
                     }
                   } else {
                     // Thread: right = all my bots + admin bot
-                    isSelf = msg.sender_id === myBotId || msg.sender_id === myInstanceBotIdRef.current || myNames.has(senderName);
+                    isSelf = myIds.has(sid) || myNames.has(senderName);
                   }
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();

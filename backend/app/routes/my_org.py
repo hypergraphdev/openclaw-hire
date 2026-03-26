@@ -526,12 +526,18 @@ def org_chat_info(
         except Exception:
             pass
 
+    # Instance bot identity (first instance bot in this org)
+    instance_bot_id = me.get("id", "")
+    instance_bot_name = me.get("name", "")
+
     return {
         "target_name": target,
         "target_online": target_online,
         "target_id": target_id,
         "admin_bot_name": my_bot_name,
         "admin_bot_id": my_bot_id,
+        "instance_bot_name": instance_bot_name,
+        "instance_bot_id": instance_bot_id,
         "dm_channel_id": dm_channel_id,
     }
 
