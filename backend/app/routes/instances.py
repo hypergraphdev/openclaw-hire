@@ -364,6 +364,45 @@ def uninstall_instance_api(
     return _row_to_instance(row)
 
 
+@router.post("/{instance_id}/upgrade")
+async def upgrade_instance(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+) -> dict:
+    """Upgrade OpenClaw to latest version inside the container."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    if inst["product"] != "openclaw":
+        raise HTTPException(status_code=400, detail="Upgrade is only supported for OpenClaw instances.")
+    compose_file, project, runtime_dir = _require_compose(inst)
+    container = f"{project}-openclaw-gateway-1"
+
+    import asyncio, subprocess
+    loop = asyncio.get_event_loop()
+
+    def _do_upgrade():
+        # npm i -g openclaw@latest inside container (as root)
+        result = subprocess.run(
+            ["docker", "exec", "-u", "root", container, "npm", "i", "-g", "openclaw@latest"],
+            capture_output=True, text=True, timeout=120,
+        )
+        return result.returncode, result.stdout + result.stderr
+
+    try:
+        rc, output = await loop.run_in_executor(None, _do_upgrade)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if rc != 0:
+        return {"ok": False, "output": output[-2000:]}
+
+    # Restart container to pick up new version
+    from ..services.install_service import restart_instance as _restart
+    ok, restart_out = restart_instance(instance_id, compose_file, project, runtime_dir)
+
+    return {"ok": True, "output": output[-2000:], "restarted": ok}
+
+
 @router.get("/{instance_id}/logs", response_model=InstanceLogsResponse)
 def instance_logs(
     instance_id: str,

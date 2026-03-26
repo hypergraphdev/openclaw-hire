@@ -138,6 +138,8 @@ export const zh: Record<string, string> = {
   "detail.stop": "停止",
   "detail.restart": "重启",
   "detail.uninstall": "卸载",
+  "detail.upgrade": "升级",
+  "detail.upgrading": "升级中...",
   "detail.installFirst": "请先安装实例。",
   "detail.installFirstConfig": "请先安装实例以启用配置。",
   "detail.actionFailed": "{action} 失败。",

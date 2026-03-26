@@ -138,6 +138,8 @@ export const en: Record<string, string> = {
   "detail.stop": "Stop",
   "detail.restart": "Restart",
   "detail.uninstall": "Uninstall",
+  "detail.upgrade": "Upgrade",
+  "detail.upgrading": "Upgrading...",
   "detail.installFirst": "Install the instance first.",
   "detail.installFirstConfig": "Install the instance first to enable configuration.",
   "detail.actionFailed": "{action} failed.",

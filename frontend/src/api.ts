@@ -72,6 +72,9 @@ export const api = {
   uninstallInstance: (id: string) =>
     request<Instance>(`/api/instances/${id}/uninstall`, { method: "POST" }),
 
+  upgradeInstance: (id: string) =>
+    request<{ ok: boolean; output: string; restarted?: boolean }>(`/api/instances/${id}/upgrade`, { method: "POST" }),
+
   deleteInstance: (id: string) =>
     request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
 

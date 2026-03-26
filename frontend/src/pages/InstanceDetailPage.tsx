@@ -42,9 +42,10 @@ export function InstanceDetailPage() {
   const isOwner = !detail || detail.instance?.owner_id === user?.id;
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
-  const [actionLoading, setActionLoading] = useState<"" | "stop" | "restart" | "uninstall" | "logs">("");
+  const [actionLoading, setActionLoading] = useState<"" | "stop" | "restart" | "uninstall" | "logs" | "upgrade">("");
   const [logs, setLogs] = useState("");
   const [error, setError] = useState("");
+  const [upgradeResult, setUpgradeResult] = useState<{ ok: boolean; output: string } | null>(null);
   const [botToken, setBotToken] = useState("");
   const [configuring, setConfiguring] = useState(false);
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
@@ -112,7 +113,7 @@ export function InstanceDetailPage() {
     }
   }
 
-  async function handleAction(action: "stop" | "restart" | "uninstall" | "logs") {
+  async function handleAction(action: "stop" | "restart" | "uninstall" | "logs" | "upgrade") {
     if (!instanceId) return;
     setError("");
     setActionLoading(action);
@@ -123,6 +124,10 @@ export function InstanceDetailPage() {
       if (action === "logs") {
         const res = await api.instanceLogs(instanceId, 300);
         setLogs(res.logs || "(no logs)");
+      }
+      if (action === "upgrade") {
+        const res = await api.upgradeInstance(instanceId);
+        setUpgradeResult(res);
       }
       await fetchDetail();
     } catch (err: unknown) {
@@ -216,7 +221,27 @@ export function InstanceDetailPage() {
           <button onClick={() => handleAction("stop")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.stop")}</button>
           <button onClick={() => handleAction("restart")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.restart")}</button>
           <button onClick={() => handleAction("uninstall")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.uninstall")}</button>
+          {instance.product === "openclaw" && (
+            <button onClick={() => handleAction("upgrade")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">
+              {actionLoading === "upgrade" ? t("detail.upgrading") : t("detail.upgrade")}
+            </button>
+          )}
         </div>
+
+        {upgradeResult && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setUpgradeResult(null)}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-white">{t("detail.upgrade")}</h3>
+                <span className={`text-xs px-2 py-1 rounded-full ${upgradeResult.ok ? "bg-green-900/40 text-green-400" : "bg-red-900/40 text-red-400"}`}>
+                  {upgradeResult.ok ? "Success" : "Failed"}
+                </span>
+              </div>
+              <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">{upgradeResult.output}</pre>
+              <button onClick={() => setUpgradeResult(null)} className="mt-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-lg">Close</button>
+            </div>
+          </div>
+        )}
 
         {isInstalling && (
           <div className="flex items-center gap-2 text-blue-400 text-sm">
