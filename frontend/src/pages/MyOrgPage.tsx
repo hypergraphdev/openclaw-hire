@@ -225,7 +225,7 @@ export function MyOrgPage() {
   // Load thread detail when selecting a thread
   async function loadThreadDetail(threadId: string) {
     try {
-      const d = await api.myOrgThreadDetail(threadId);
+      const d = await api.myOrgThreadDetail(threadId, orgIdRef.current);
       setThreadDetail({ initiator_id: d.initiator_id, participant_count: d.participant_count, participants: d.participants, context: d.context });
     } catch { setThreadDetail(null); }
   }
@@ -263,7 +263,7 @@ export function MyOrgPage() {
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false);
     setUnreadCounts((p) => ({ ...p, [`thread_${thread.id}`]: 0 }));
     await loadThreadDetail(thread.id);
-    try { const h = await api.myOrgThreadMessages(thread.id); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); } catch { /* */ }
+    try { const h = await api.myOrgThreadMessages(thread.id, undefined, orgIdRef.current); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); } catch { /* */ }
   }, []);
 
   // Restore from URL hash on load (e.g. #dm/HTX_Bill or #thread/Fourth)
@@ -411,7 +411,7 @@ export function MyOrgPage() {
         if (r.channel_id && !channelId) setChannelId(r.channel_id);
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
       } else {
-        const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined);
+        const r = await api.myOrgThreadSend(target.thread.id, input.trim(), imgUrl, threadBotId || undefined, orgIdRef.current);
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
         setBotTyping(false);
       }
@@ -428,7 +428,7 @@ export function MyOrgPage() {
     const oldest = messages[0];
     try {
       if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id, orgIdRef.current); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
-      else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, String(oldest.created_at || oldest.id)); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
+      else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, String(oldest.created_at || oldest.id), orgIdRef.current); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
     } catch { /* */ }
   }
 
@@ -441,20 +441,20 @@ export function MyOrgPage() {
 
   async function handleRenameTopic() {
     if (!topicDraft.trim() || !target || target.type !== "thread") return;
-    try { await api.myOrgThreadUpdate(target.thread.id, { topic: topicDraft.trim() }); setShowRenameTopic(false); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); setTarget({ type: "thread", thread: { ...target.thread, topic: topicDraft.trim() } }); }
+    try { await api.myOrgThreadUpdate(target.thread.id, { topic: topicDraft.trim() }, orgIdRef.current); setShowRenameTopic(false); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); setTarget({ type: "thread", thread: { ...target.thread, topic: topicDraft.trim() } }); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
 
   async function handleSaveAnnouncement() {
     if (!target || target.type !== "thread") return;
-    try { await api.myOrgThreadUpdate(target.thread.id, { context: { announcement: announcementDraft } }); setShowAnnouncement(false); await loadThreadDetail(target.thread.id); }
+    try { await api.myOrgThreadUpdate(target.thread.id, { context: { announcement: announcementDraft } }, orgIdRef.current); setShowAnnouncement(false); await loadThreadDetail(target.thread.id); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
 
   async function handleLeaveThread() {
     if (!target || target.type !== "thread") return;
     if (!confirm("确定退出群聊？")) return;
-    try { await api.myOrgThreadLeave(target.thread.id); setTarget(null); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); }
+    try { await api.myOrgThreadLeave(target.thread.id, orgIdRef.current); setTarget(null); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
 
@@ -620,13 +620,13 @@ export function MyOrgPage() {
                     selectThread(thread);
                     // Load messages around the target — keep loading older until we find it
                     try {
-                      const firstPage = await api.myOrgThreadMessages(thread.id);
+                      const firstPage = await api.myOrgThreadMessages(thread.id, undefined, orgIdRef.current);
                       let allMsgs = firstPage.messages || [];
                       let found = allMsgs.some((m) => m.id === r.id);
                       let attempts = 0;
                       while (!found && allMsgs.length > 0 && attempts < 10) {
                         const oldest = allMsgs[allMsgs.length - 1];
-                        const more = await api.myOrgThreadMessages(thread.id, String(oldest.created_at || oldest.id));
+                        const more = await api.myOrgThreadMessages(thread.id, String(oldest.created_at || oldest.id), orgIdRef.current);
                         if (!more.messages?.length) break;
                         allMsgs = [...allMsgs, ...more.messages];
                         found = more.messages.some((m: { id: string }) => m.id === r.id);
@@ -773,7 +773,7 @@ export function MyOrgPage() {
                           e.stopPropagation();
                           if (!confirm(`确定将 ${p.name} 移出群聊？`)) return;
                           try {
-                            await api.myOrgThreadKick(target!.type === "thread" ? (target as { type: "thread"; thread: OrgThread }).thread.id : "", p.bot_id);
+                            await api.myOrgThreadKick(target!.type === "thread" ? (target as { type: "thread"; thread: OrgThread }).thread.id : "", p.bot_id, orgIdRef.current);
                             await loadThreadDetail((target as { type: "thread"; thread: OrgThread }).thread.id);
                           } catch (err: unknown) { alert((err as Error).message || "Failed"); }
                         }} className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-300">移除</button>
@@ -796,7 +796,7 @@ export function MyOrgPage() {
                   {allBots.filter((b) => !threadMemberNames?.has(b.name)).map((bot) => (
                     <button key={bot.bot_id} onClick={async () => {
                       try {
-                        await api.myOrgThreadInvite(target.thread.id, bot.name);
+                        await api.myOrgThreadInvite(target.thread.id, bot.name, orgIdRef.current);
                         await loadThreadDetail(target.thread.id);
                       } catch (e: unknown) { alert((e as Error).message || "Failed"); }
                     }} className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800">

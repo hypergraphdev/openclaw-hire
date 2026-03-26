@@ -754,12 +754,13 @@ def thread_messages(
     thread_id: str,
     before: str = Query(""),
     limit: int = Query(50),
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Get messages in a thread."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
@@ -793,12 +794,13 @@ class ThreadSendRequest(BaseModel):
 def thread_send(
     thread_id: str,
     req: ThreadSendRequest,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Send a message to a thread using instance bot identity."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
@@ -845,12 +847,13 @@ def _get_thread_token(user_id: str, info: dict, hub_url: str, db) -> str:
 @router.get("/threads/{thread_id}")
 def get_thread_detail(
     thread_id: str,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Get thread detail with participants."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
@@ -869,12 +872,13 @@ class UpdateThreadRequest(BaseModel):
 def update_thread(
     thread_id: str,
     req: UpdateThreadRequest,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Update thread topic or context (announcement)."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
@@ -895,12 +899,13 @@ def update_thread(
 @router.post("/threads/{thread_id}/leave")
 def leave_thread(
     thread_id: str,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Leave a thread. Sends DM to initiator notifying departure."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
@@ -950,12 +955,13 @@ class InviteRequest(BaseModel):
 def invite_to_thread(
     thread_id: str,
     req: InviteRequest,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Invite a bot to thread by name."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
@@ -974,12 +980,13 @@ class KickRequest(BaseModel):
 def kick_from_thread(
     thread_id: str,
     req: KickRequest,
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Remove a bot from thread (creator only)."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
@@ -999,6 +1006,7 @@ def kick_from_thread(
 
 @router.post("/search/sync")
 def search_sync(
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
@@ -1006,7 +1014,7 @@ def search_sync(
     from ..message_index import sync_messages
 
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
@@ -1042,6 +1050,7 @@ def search_messages_endpoint(
     from_sender: str = Query("", alias="from"),
     to_name: str = Query("", alias="to"),
     limit: int = Query(50),
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
@@ -1049,7 +1058,7 @@ def search_messages_endpoint(
     from ..message_index import search_messages
 
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 

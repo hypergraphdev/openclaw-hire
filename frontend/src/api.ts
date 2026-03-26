@@ -247,25 +247,26 @@ export const api = {
     request<OrgThread>(`/api/my-org/threads${orgId ? `?org=${orgId}` : ""}`, {
       method: "POST", body: JSON.stringify({ topic, participant_names: participantNames }),
     }),
-  myOrgThreadMessages: (threadId: string, before?: string) => {
+  myOrgThreadMessages: (threadId: string, before?: string, orgId?: string) => {
     const params = new URLSearchParams({ limit: "50" });
     if (before) params.set("before", before);
+    if (orgId) params.set("org", orgId);
     return request<{ messages: ThreadMessage[]; has_more: boolean }>(`/api/my-org/threads/${threadId}/messages?${params}`);
   },
-  myOrgThreadSend: (threadId: string, content: string, imageUrl?: string, botInstanceId?: string) =>
-    request<ThreadMessage>(`/api/my-org/threads/${threadId}/messages`, {
+  myOrgThreadSend: (threadId: string, content: string, imageUrl?: string, botInstanceId?: string, orgId?: string) =>
+    request<ThreadMessage>(`/api/my-org/threads/${threadId}/messages${orgId ? `?org=${orgId}` : ""}`, {
       method: "POST", body: JSON.stringify({ content, image_url: imageUrl || null, bot_instance_id: botInstanceId || null }),
     }),
-  myOrgThreadDetail: (threadId: string) =>
-    request<{ id: string; topic: string; initiator_id: string; context: string | null; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[] }>(`/api/my-org/threads/${threadId}`),
-  myOrgThreadUpdate: (threadId: string, body: { topic?: string; context?: Record<string, unknown> }) =>
-    request<unknown>(`/api/my-org/threads/${threadId}`, { method: "PATCH", body: JSON.stringify(body) }),
-  myOrgThreadLeave: (threadId: string) =>
-    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/leave`, { method: "POST" }),
-  myOrgThreadInvite: (threadId: string, name: string) =>
-    request<unknown>(`/api/my-org/threads/${threadId}/invite`, { method: "POST", body: JSON.stringify({ name }) }),
-  myOrgThreadKick: (threadId: string, botId: string) =>
-    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/kick`, { method: "POST", body: JSON.stringify({ bot_id: botId }) }),
+  myOrgThreadDetail: (threadId: string, orgId?: string) =>
+    request<{ id: string; topic: string; initiator_id: string; context: string | null; participant_count: number; participants: { bot_id: string; name?: string; online: boolean }[] }>(`/api/my-org/threads/${threadId}${orgId ? `?org=${orgId}` : ""}`),
+  myOrgThreadUpdate: (threadId: string, body: { topic?: string; context?: Record<string, unknown> }, orgId?: string) =>
+    request<unknown>(`/api/my-org/threads/${threadId}${orgId ? `?org=${orgId}` : ""}`, { method: "PATCH", body: JSON.stringify(body) }),
+  myOrgThreadLeave: (threadId: string, orgId?: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/leave${orgId ? `?org=${orgId}` : ""}`, { method: "POST" }),
+  myOrgThreadInvite: (threadId: string, name: string, orgId?: string) =>
+    request<unknown>(`/api/my-org/threads/${threadId}/invite${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify({ name }) }),
+  myOrgThreadKick: (threadId: string, botId: string, orgId?: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/kick${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify({ bot_id: botId }) }),
 
   // Search
   myOrgSearchSync: () => request<{ ok: boolean; new_messages: number }>("/api/my-org/search/sync", { method: "POST" }),
