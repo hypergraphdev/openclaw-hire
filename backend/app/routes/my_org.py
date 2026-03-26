@@ -494,37 +494,20 @@ def org_chat_info(
     # Find existing DM channel — use the identity token (admin_token for own bot, query_token for others)
     chat_token = admin_token if (is_own_bot and admin_token) else query_token
     dm_channel_id = ""
-    if target_id:
-        try:
-            inbox = _hub_request(hub_url, chat_token, "GET", "/api/inbox?since=0&limit=50")
-            if isinstance(inbox, list):
-                for item in inbox:
-                    msg = item if isinstance(item, dict) else {}
-                    # Match by ID first
-                    other_id = msg.get("sender_id") if msg.get("sender_id") != my_bot_id else msg.get("recipient_id", "")
-                    if other_id == target_id:
-                        dm_channel_id = msg.get("channel_id", "")
-                        break
-                    # Fallback: match by name (some Hub versions omit recipient_id)
-                    other_name = msg.get("sender_name") if msg.get("sender_id") != my_bot_id else msg.get("recipient_name", "")
-                    if other_name == target:
-                        dm_channel_id = msg.get("channel_id", "")
-                        break
-        except Exception:
-            pass
-    # Fallback: try Hub /api/channels to find DM channel directly
-    if not dm_channel_id and target_id:
-        try:
-            channels = _hub_request(hub_url, chat_token, "GET", "/api/channels")
-            if isinstance(channels, list):
-                for ch in channels:
-                    members = ch.get("members", [])
-                    member_ids = {m.get("id", "") if isinstance(m, dict) else m for m in members}
-                    if target_id in member_ids and my_bot_id in member_ids:
-                        dm_channel_id = ch.get("id", "")
-                        break
-        except Exception:
-            pass
+    try:
+        inbox = _hub_request(hub_url, chat_token, "GET", "/api/inbox?since=0&limit=100")
+        if isinstance(inbox, list):
+            for item in inbox:
+                msg = item if isinstance(item, dict) else {}
+                # Match by sender id/name OR recipient id/name
+                if msg.get("sender_id") == target_id or msg.get("sender_name") == target:
+                    dm_channel_id = msg.get("channel_id", "")
+                    break
+                if msg.get("recipient_id") == target_id or msg.get("recipient_name") == target:
+                    dm_channel_id = msg.get("channel_id", "")
+                    break
+    except Exception:
+        pass
 
     # Instance bot identity (first instance bot in this org)
     instance_bot_id = me.get("id", "")
