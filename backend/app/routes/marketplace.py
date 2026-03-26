@@ -216,7 +216,7 @@ def _install_weixin(container: str) -> str:
     """Install WeChat plugin via npx. Returns full output including QR code."""
     try:
         result = subprocess.run(
-            ["docker", "exec", container, "npx", "-y", "@anthropic-ai/openclaw-weixin-cli@latest", "install"],
+            ["docker", "exec", container, "npx", "-y", "@anthropic-ai/openclaw-weixin@latest"],
             capture_output=True, text=True, timeout=120,
         )
         return result.stdout + result.stderr
