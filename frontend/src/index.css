@@ -124,3 +124,51 @@ html[data-theme="light"] {
 
 /* Placeholder text */
 [data-theme="light"] ::placeholder { color: #9ca3af !important; }
+
+/* Layer 6: Restore white text on colored backgrounds (buttons, badges, chat bubbles) */
+[data-theme="light"] .bg-blue-600,
+[data-theme="light"] .bg-blue-700,
+[data-theme="light"] .bg-blue-500,
+[data-theme="light"] .bg-red-500,
+[data-theme="light"] .bg-red-600,
+[data-theme="light"] .bg-green-600,
+[data-theme="light"] .bg-green-700,
+[data-theme="light"] .bg-green-500,
+[data-theme="light"] .bg-amber-600,
+[data-theme="light"] .bg-purple-600,
+[data-theme="light"] .bg-indigo-600 { color: #ffffff !important; }
+
+/* Buttons: ensure text stays white on colored buttons */
+[data-theme="light"] button.bg-blue-600,
+[data-theme="light"] button.bg-red-500,
+[data-theme="light"] button.bg-red-600,
+[data-theme="light"] button.bg-green-600,
+[data-theme="light"] button.bg-green-700,
+[data-theme="light"] button.bg-amber-600 { color: #ffffff !important; }
+
+/* Outline/ghost buttons on light bg need darker text + visible border */
+[data-theme="light"] button.bg-gray-800,
+[data-theme="light"] button.bg-gray-700 {
+  background-color: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #374151 !important;
+}
+
+/* Badge (red notification dot) */
+[data-theme="light"] .bg-red-500.text-white { color: #ffffff !important; }
+
+/* Chat: self-sent messages (blue bg) keep white text */
+[data-theme="light"] .bg-blue-600 *,
+[data-theme="light"] .bg-blue-700 * { color: inherit; }
+
+/* Cards in modals: give them a subtle border for contrast */
+[data-theme="light"] .bg-gray-800.rounded-lg,
+[data-theme="light"] .bg-gray-800.rounded-xl {
+  border: 1px solid #e5e7eb !important;
+}
+
+/* Select dropdown options */
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #1f2937;
+}
