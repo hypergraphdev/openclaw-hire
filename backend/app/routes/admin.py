@@ -429,11 +429,13 @@ def instance_control(
             compose_file = str(found)
 
     if action == "restart_hxa":
-        # Restart only hxa-connect process inside the container (makes bot online in Hub)
+        # Restart hxa-connect to make bot online in Hub
         if product == "zylos":
+            # Zylos has pm2 managing hxa-connect as a separate process
             rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"])
         else:
-            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "all"])
+            # OpenClaw gateway embeds hxa-connect — restart the whole container
+            rc, out = _docker_run(["docker", "restart", container_name])
         return {"ok": rc == 0, "action": action, "detail": out or "hxa-connect restarted"}
 
     if action == "kill_claude":

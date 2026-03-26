@@ -51,6 +51,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const generalFileRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -404,6 +405,23 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               className="hidden"
               onChange={handleFileChange}
             />
+            {/* Hidden general file input */}
+            <input
+              ref={generalFileRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.zip,.tar,.gz,.json,.xml,.mp3,.mp4,.wav,.jpg,.jpeg,.png,.gif,.webp"
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
+                try {
+                  setUploading(true);
+                  const result = await api.myOrgFileUpload(f);
+                  const link = `\u{1F4CE} [${result.filename}](${result.url}) (${result.size_kb}KB)`;
+                  setInput((v) => v ? v + "\n" + link : link);
+                } catch (err: unknown) { setSendError((err as Error).message || "上传失败"); }
+                finally { setUploading(false); }
+              }}
+            />
             {/* Image picker button */}
             <button
               onClick={handlePickImage}
@@ -413,6 +431,17 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" />
+              </svg>
+            </button>
+            {/* File upload button */}
+            <button
+              onClick={() => generalFileRef.current?.click()}
+              disabled={sending || uploading}
+              className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40 transition-colors"
+              title="上传文件"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
               </svg>
             </button>
             {/* Emoji picker */}

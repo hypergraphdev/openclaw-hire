@@ -103,7 +103,7 @@ function playNotificationSound() {
 }
 
 function OnlineDot({ online }: { online: boolean }) {
-  return <span className={`inline-block h-2 w-2 rounded-full ${online ? "bg-green-400" : "bg-gray-500"}`} />;
+  return <span className={`inline-block h-2 w-2 rounded-full ${online ? "bg-green-400" : "bg-gray-500"}`} title={online ? "组织在线" : "组织离线"} />;
 }
 
 function Badge({ count }: { count: number }) {
