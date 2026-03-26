@@ -162,6 +162,7 @@ export function MyOrgPage() {
   const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
   const [messages, setMessages] = useState<(ChatMessage | ThreadMessage)[]>([]);
   const [channelId, setChannelId] = useState<string | null>(null);
+  const channelIdRef = useRef<string | null>(null);
   const [input, setInputRaw] = useState("");
   const [sending, setSending] = useState(false);
   // Draft persistence: save/restore input per target
@@ -247,13 +248,13 @@ export function MyOrgPage() {
     setTarget({ type: "dm", bot }); currentTargetRef.current = `dm_${bot.bot_id}`;
     window.location.hash = `dm/${encodeURIComponent(bot.name)}`;
     setInputRaw(loadDraft(bot.name)); // Restore draft for new target
-    setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
+    setMessages([]); setChannelId(null); channelIdRef.current = null; setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false); setThreadDetail(null);
     setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
     try {
       const curOrg = orgIdRef.current || "";
       const info = await api.myOrgChatInfo(bot.name, curOrg); setChatInfo(info); myBotIdRef.current = info.admin_bot_id; myInstanceBotIdRef.current = info.instance_bot_id || "";
-      if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name, undefined, curOrg); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
+      if (info.dm_channel_id) { setChannelId(info.dm_channel_id); channelIdRef.current = info.dm_channel_id; const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name, undefined, curOrg); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
     } catch { /* */ }
   }, []);
 
@@ -355,29 +356,45 @@ export function MyOrgPage() {
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
               const senderName = msg.sender_name || "";
+              const msgChannelId = (msg as Record<string, unknown>).channel_id as string || d.channel_id as string || "";
               const wsTargetName = (target as { type: "dm"; bot: MyOrgPeer }).bot.name;
-              const isFromTarget = senderName === wsTargetName;
+              const curChannelId = channelIdRef.current || "";
 
-              // Anti-loop for DM: detect rapid bot replies (only count target's messages)
-              if (isFromTarget) {
+              // Route by channel_id (primary) or sender_name (fallback if channel unknown yet)
+              const belongsToCurrentDM = curChannelId
+                ? msgChannelId === curChannelId
+                : senderName === wsTargetName;
+
+              // Anti-loop: track ALL bot replies by sender, regardless of which DM
+              const myNames = new Set((allBotsRef.current || []).filter(b => b.is_mine).map(b => b.name));
+              if (!myNames.has(senderName)) {
                 const now = Date.now();
-                const loopKey = `dm_${wsTargetName}`;
+                const loopKey = `dm_${senderName}`;
                 const ts = threadMsgTimestamps.current[loopKey] || [];
                 ts.push(now);
                 threadMsgTimestamps.current[loopKey] = ts.filter(t => t > now - 60000);
                 const lastCd = threadLoopCooldown.current[loopKey] || 0;
                 if (threadMsgTimestamps.current[loopKey].length >= 4 && now - lastCd > 300000) {
                   threadLoopCooldown.current[loopKey] = now;
-                  api.myOrgChatSend(wsTargetName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
+                  api.myOrgChatSend(senderName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
                 }
               }
 
-              // DM WS is per-channel — all messages belong to this DM. Show them all (dedup by ID).
-              if (isFromTarget) {
-                setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
+              if (belongsToCurrentDM) {
+                // Message for current DM — show it
+                if (senderName === wsTargetName) {
+                  setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
+                }
+                setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
+                if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+              } else {
+                // Message for a DIFFERENT DM — unread badge
+                const senderBot = allBotsRef.current.find((b) => b.name === senderName);
+                if (senderBot) {
+                  setUnreadCounts((prev) => ({ ...prev, [`dm_${senderBot.bot_id}`]: (prev[`dm_${senderBot.bot_id}`] || 0) + 1 }));
+                }
+                playNotificationSound();
               }
-              setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
-              if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
             }
           } catch { /* */ }
         };
@@ -489,7 +506,7 @@ export function MyOrgPage() {
       if (pendingImage) { setUploading(true); const u = await api.myOrgChatUpload(pendingImage.file); imgUrl = u.url; URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); setUploading(false); }
       if (target.type === "dm") {
         const r = await api.myOrgChatSend(target.bot.name, input.trim(), orgIdRef.current, imgUrl);
-        if (r.channel_id && !channelId) setChannelId(r.channel_id);
+        if (r.channel_id && !channelId) { setChannelId(r.channel_id); channelIdRef.current = r.channel_id; }
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
         // User manually sent — reset anti-loop for this DM
         const dmLoopKey = `dm_${target.bot.name}`;
