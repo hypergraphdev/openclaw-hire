@@ -212,9 +212,10 @@ export function MyOrgPage() {
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const userScrolledUp = useRef(false);
   const currentTargetRef = useRef("");
+  const orgIdRef = useRef("");
 
   const [activeOrgId, setActiveOrgId] = useState("");
-  useEffect(() => { api.myOrg(activeOrgId || undefined).then(setData).finally(() => setLoading(false)); }, [activeOrgId]);
+  useEffect(() => { api.myOrg(activeOrgId || undefined).then((d) => { setData(d); orgIdRef.current = d?.org_id || ""; }).finally(() => setLoading(false)); }, [activeOrgId]);
   useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
   const hashRestoredRef = useRef(false);
@@ -242,7 +243,7 @@ export function MyOrgPage() {
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false); setThreadDetail(null);
     setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
     try {
-      const curOrg = data?.org_id || "";
+      const curOrg = orgIdRef.current || "";
       const info = await api.myOrgChatInfo(bot.name, curOrg); setChatInfo(info); myBotIdRef.current = info.admin_bot_id; myInstanceBotIdRef.current = info.instance_bot_id || "";
       if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name, undefined, curOrg); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
     } catch { /* */ }
@@ -288,7 +289,7 @@ export function MyOrgPage() {
     async function connect() {
       setWsStatus("connecting");
       try {
-        const { ticket, ws_url } = await api.myOrgChatWsTicket((target as { type: "dm"; bot: MyOrgPeer }).bot.name, undefined, data?.org_id);
+        const { ticket, ws_url } = await api.myOrgChatWsTicket((target as { type: "dm"; bot: MyOrgPeer }).bot.name, undefined, orgIdRef.current);
         const ws = new WebSocket(`${ws_url}?ticket=${ticket}`); wsRef.current = ws;
         ws.onopen = () => mounted && setWsStatus("connected");
         ws.onclose = () => { if (!mounted) return; setWsStatus("disconnected"); wsRef.current = null; setTimeout(() => mounted && connect(), 3000); };
@@ -341,7 +342,7 @@ export function MyOrgPage() {
         // Use empty target to get instance bot ws ticket
         // Use instance bot token for thread WS (bot is thread participant)
         const params = new URLSearchParams({ mode: "thread" });
-        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params, data?.org_id);
+        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params, orgIdRef.current);
         const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
         wsRef.current = ws;
         ws.onopen = () => {
@@ -406,7 +407,7 @@ export function MyOrgPage() {
       let imgUrl: string | undefined;
       if (pendingImage) { setUploading(true); const u = await api.myOrgChatUpload(pendingImage.file); imgUrl = u.url; URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); setUploading(false); }
       if (target.type === "dm") {
-        const r = await api.myOrgChatSend(target.bot.name, input.trim(), data?.org_id, imgUrl);
+        const r = await api.myOrgChatSend(target.bot.name, input.trim(), orgIdRef.current, imgUrl);
         if (r.channel_id && !channelId) setChannelId(r.channel_id);
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
       } else {
@@ -426,7 +427,7 @@ export function MyOrgPage() {
     if (messages.length === 0 || !target) return;
     const oldest = messages[0];
     try {
-      if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id, data?.org_id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
+      if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id, orgIdRef.current); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
       else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, String(oldest.created_at || oldest.id)); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
     } catch { /* */ }
   }
