@@ -213,9 +213,10 @@ export function MyOrgPage() {
   const userScrolledUp = useRef(false);
   const currentTargetRef = useRef("");
   const orgIdRef = useRef("");
+  const allBotsRef = useRef<MyOrgPeer[]>([]);
 
   const [activeOrgId, setActiveOrgId] = useState("");
-  useEffect(() => { api.myOrg(activeOrgId || undefined).then((d) => { setData(d); orgIdRef.current = d?.org_id || ""; }).finally(() => setLoading(false)); }, [activeOrgId]);
+  useEffect(() => { api.myOrg(activeOrgId || undefined).then((d) => { setData(d); orgIdRef.current = d?.org_id || ""; allBotsRef.current = d?.all_bots || []; }).finally(() => setLoading(false)); }, [activeOrgId]);
   useEffect(() => { if (data?.status === "ok" && data?.org_id) api.myOrgThreads(data.org_id).then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.org_id]);
 
   const hashRestoredRef = useRef(false);
@@ -307,21 +308,26 @@ export function MyOrgPage() {
             if (d.type === "message" && d.message) {
               const msg: ChatMessage = d.message;
               const senderName = msg.sender_name || "";
-              const isFromCurrentTarget = currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`;
+              // WS receives ALL DMs for our bot. Filter by sender_name to route correctly.
+              // Own sent messages are already added by handleSend — WS only handles incoming.
+              const wsTargetName = (target as { type: "dm"; bot: MyOrgPeer }).bot.name;
+              const isFromTarget = senderName === wsTargetName;
+              const isCurrentlyViewing = currentTargetRef.current === `dm_${(target as { type: "dm"; bot: MyOrgPeer }).bot.bot_id}`;
 
-              if (isFromCurrentTarget) {
-                // Message belongs to current chat — show it
-                if (msg.sender_id !== myBotIdRef.current) { setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound(); }
+              if (isFromTarget && isCurrentlyViewing) {
+                // Incoming from the bot we're chatting with — show it
+                setBotTyping(false); clearTimeout(typingTimer.current); playNotificationSound();
                 setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : sortMsgs([...prev, msg]));
                 if (!userScrolledUp.current) requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
-              } else {
-                // Message for a different chat — add unread badge, find the bot_id by sender_name
-                const senderBot = (data?.all_bots || []).find((b: MyOrgPeer) => b.name === senderName);
+              } else if (!isFromTarget) {
+                // Incoming from a DIFFERENT bot — unread badge on that bot
+                const senderBot = allBotsRef.current.find((b) => b.name === senderName);
                 if (senderBot) {
                   setUnreadCounts((prev) => ({ ...prev, [`dm_${senderBot.bot_id}`]: (prev[`dm_${senderBot.bot_id}`] || 0) + 1 }));
                 }
                 playNotificationSound();
               }
+              // else: isFromTarget but not currently viewing — ignored, will load history when switching back
             }
           } catch { /* */ }
         };
