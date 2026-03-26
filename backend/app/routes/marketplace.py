@@ -192,43 +192,37 @@ def _run_install(instance_id: str, item_id: str, container: str):
     """Execute installation commands in the container. Updates DB with results."""
     try:
         if item_id == "weixin-plugin":
-            log = _install_weixin(container)
+            ok, log = _install_weixin(container)
         elif item_id == "whisper-skill":
-            log = _install_whisper(container)
+            ok, log = _install_whisper(container)
         else:
-            log = f"Unknown item: {item_id}"
-            _update_install(instance_id, item_id, "failed", log)
+            _update_install(instance_id, item_id, "failed", f"Unknown item: {item_id}")
             return
 
-        # Determine success
-        status = "installed"
-        if "ERR" in log.upper() and "error" in log.lower():
-            # Only mark failed if there's a real error, not just npm warnings
-            if "npm ERR!" in log or "fatal" in log.lower() or "Traceback" in log:
-                status = "failed"
-
-        _update_install(instance_id, item_id, status, log)
+        _update_install(instance_id, item_id, "installed" if ok else "failed", log)
     except Exception as e:
         _update_install(instance_id, item_id, "failed", str(e))
 
 
-def _install_weixin(container: str) -> str:
-    """Install WeChat plugin via npx. Returns full output including QR code."""
+def _install_weixin(container: str) -> tuple[bool, str]:
+    """Install WeChat plugin via npx. Returns (success, full_output_including_QR_code)."""
     try:
         result = subprocess.run(
             ["docker", "exec", container, "npx", "-y", "@tencent-weixin/openclaw-weixin-cli@latest", "install"],
             capture_output=True, text=True, timeout=120,
         )
-        return result.stdout + result.stderr
+        output = result.stdout + result.stderr
+        return result.returncode == 0, output
     except subprocess.TimeoutExpired:
-        return "ERROR: Installation timed out after 120 seconds."
+        return False, "ERROR: Installation timed out after 120 seconds."
     except Exception as e:
-        return f"ERROR: {e}"
+        return False, f"ERROR: {e}"
 
 
-def _install_whisper(container: str) -> str:
-    """Install Whisper + download tiny and base models."""
+def _install_whisper(container: str) -> tuple[bool, str]:
+    """Install Whisper + download tiny and base models. Returns (success, log)."""
     logs = []
+    ok = True
 
     # Step 1: pip install
     try:
@@ -240,9 +234,9 @@ def _install_whisper(container: str) -> str:
         logs.append(r1.stdout[-500:] if len(r1.stdout) > 500 else r1.stdout)
         if r1.returncode != 0:
             logs.append(r1.stderr[-500:])
-            return "\n".join(logs) + "\nERROR: pip install failed."
+            return False, "\n".join(logs)
     except subprocess.TimeoutExpired:
-        return "ERROR: pip install timed out."
+        return False, "ERROR: pip install timed out."
 
     # Step 2: Download tiny model
     try:
@@ -254,8 +248,10 @@ def _install_whisper(container: str) -> str:
         logs.append(r2.stdout.strip())
         if r2.returncode != 0:
             logs.append(r2.stderr[-300:])
+            ok = False
     except subprocess.TimeoutExpired:
         logs.append("\nWARNING: tiny model download timed out.")
+        ok = False
 
     # Step 3: Download base model
     try:
@@ -267,10 +263,12 @@ def _install_whisper(container: str) -> str:
         logs.append(r3.stdout.strip())
         if r3.returncode != 0:
             logs.append(r3.stderr[-300:])
+            ok = False
     except subprocess.TimeoutExpired:
         logs.append("\nWARNING: base model download timed out.")
+        ok = False
 
-    return "\n".join(logs)
+    return ok, "\n".join(logs)
 
 
 def _update_install(instance_id: str, item_id: str, status: str, log: str):
