@@ -155,8 +155,13 @@ export function MyOrgPage() {
   const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
   const [messages, setMessages] = useState<(ChatMessage | ThreadMessage)[]>([]);
   const [channelId, setChannelId] = useState<string | null>(null);
-  const [input, setInput] = useState("");
+  const [input, setInputRaw] = useState("");
   const [sending, setSending] = useState(false);
+  // Draft persistence: save/restore input per target
+  const draftKey = useCallback((name: string) => `orgchat_draft_${name}`, []);
+  const saveDraft = useCallback((name: string, text: string) => { if (text) localStorage.setItem(`orgchat_draft_${name}`, text); else localStorage.removeItem(`orgchat_draft_${name}`); }, []);
+  const loadDraft = useCallback((name: string) => localStorage.getItem(`orgchat_draft_${name}`) || "", []);
+  const setInput = useCallback((v: string | ((prev: string) => string)) => { setInputRaw(v); }, []);
   const [hasMore, setHasMore] = useState(false);
   const [wsStatus, setWsStatus] = useState<"connected" | "connecting" | "disconnected">("disconnected");
   const [botTyping, setBotTyping] = useState(false);
@@ -225,20 +230,33 @@ export function MyOrgPage() {
   }
 
   const selectDM = useCallback(async (bot: MyOrgPeer) => {
+    // Save draft of current target before switching
+    if (target) {
+      const curName = target.type === "dm" ? target.bot.name : target.thread.id;
+      saveDraft(curName, input);
+    }
     setTarget({ type: "dm", bot }); currentTargetRef.current = `dm_${bot.bot_id}`;
     window.location.hash = `dm/${encodeURIComponent(bot.name)}`;
+    setInputRaw(loadDraft(bot.name)); // Restore draft for new target
     setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false); setThreadDetail(null);
     setUnreadCounts((p) => ({ ...p, [`dm_${bot.bot_id}`]: 0 }));
     try {
-      const info = await api.myOrgChatInfo(bot.name); setChatInfo(info); myBotIdRef.current = info.admin_bot_id;
-      if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
+      const curOrg = data?.org_id || "";
+      const info = await api.myOrgChatInfo(bot.name, curOrg); setChatInfo(info); myBotIdRef.current = info.admin_bot_id;
+      if (info.dm_channel_id) { setChannelId(info.dm_channel_id); const h = await api.myOrgChatMessages(info.dm_channel_id, bot.name, undefined, curOrg); setMessages(sortMsgs(h.messages)); setHasMore(h.has_more); }
     } catch { /* */ }
   }, []);
 
   const selectThread = useCallback(async (thread: OrgThread) => {
+    // Save draft of current target before switching
+    if (target) {
+      const curName = target.type === "dm" ? target.bot.name : target.thread.id;
+      saveDraft(curName, input);
+    }
     setTarget({ type: "thread", thread }); currentTargetRef.current = `thread_${thread.id}`;
     window.location.hash = `thread/${encodeURIComponent(thread.topic)}`;
+    setInputRaw(loadDraft(thread.id)); // Restore draft for thread
     setUnreadCounts((prev) => { const next = { ...prev }; delete next[`thread_${thread.id}`]; return next; });
     setMessages([]); setChannelId(null); setChatInfo(null); setBotTyping(false); setPendingImage(null); setShowEmoji(false);
     setShowThreadMenu(false); setShowMembers(false); setShowSearch(false);
@@ -270,7 +288,7 @@ export function MyOrgPage() {
     async function connect() {
       setWsStatus("connecting");
       try {
-        const { ticket, ws_url } = await api.myOrgChatWsTicket((target as { type: "dm"; bot: MyOrgPeer }).bot.name);
+        const { ticket, ws_url } = await api.myOrgChatWsTicket((target as { type: "dm"; bot: MyOrgPeer }).bot.name, undefined, data?.org_id);
         const ws = new WebSocket(`${ws_url}?ticket=${ticket}`); wsRef.current = ws;
         ws.onopen = () => mounted && setWsStatus("connected");
         ws.onclose = () => { if (!mounted) return; setWsStatus("disconnected"); wsRef.current = null; setTimeout(() => mounted && connect(), 3000); };
@@ -304,7 +322,7 @@ export function MyOrgPage() {
         // Use empty target to get instance bot ws ticket
         // Use instance bot token for thread WS (bot is thread participant)
         const params = new URLSearchParams({ mode: "thread" });
-        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params);
+        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params, data?.org_id);
         const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
         wsRef.current = ws;
         ws.onopen = () => {
@@ -369,7 +387,7 @@ export function MyOrgPage() {
       let imgUrl: string | undefined;
       if (pendingImage) { setUploading(true); const u = await api.myOrgChatUpload(pendingImage.file); imgUrl = u.url; URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); setUploading(false); }
       if (target.type === "dm") {
-        const r = await api.myOrgChatSend(target.bot.name, input.trim(), imgUrl);
+        const r = await api.myOrgChatSend(target.bot.name, input.trim(), data?.org_id, imgUrl);
         if (r.channel_id && !channelId) setChannelId(r.channel_id);
         setMessages((p) => p.some((m) => m.id === r.message.id) ? p : sortMsgs([...p, r.message]));
       } else {
@@ -377,7 +395,10 @@ export function MyOrgPage() {
         setMessages((p) => p.some((m) => m.id === r.id) ? p : sortMsgs([...p, r]));
         setBotTyping(false);
       }
-      setInput(""); requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+      setInput("");
+      // Clear draft after successful send
+      if (target) { const tName = target.type === "dm" ? target.bot.name : target.thread.id; saveDraft(tName, ""); }
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     } catch { setBotTyping(false); setUploading(false); clearTimeout(typingTimer.current); }
     setSending(false);
   }
@@ -386,7 +407,7 @@ export function MyOrgPage() {
     if (messages.length === 0 || !target) return;
     const oldest = messages[0];
     try {
-      if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
+      if (target.type === "dm" && channelId) { const h = await api.myOrgChatMessages(channelId, target.bot.name, oldest.id, data?.org_id); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
       else if (target.type === "thread") { const h = await api.myOrgThreadMessages(target.thread.id, String(oldest.created_at || oldest.id)); setMessages((p) => sortMsgs([...h.messages, ...p])); setHasMore(h.has_more); }
     } catch { /* */ }
   }
@@ -426,6 +447,8 @@ export function MyOrgPage() {
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const val = e.target.value;
     setInput(val);
+    // Save draft in real-time
+    if (target) { const tName = target.type === "dm" ? target.bot.name : target.thread.id; saveDraft(tName, val); }
     // Check for @ trigger
     const atMatch = val.match(/@([\w\-\u4e00-\u9fff]*)$/);
     if (atMatch) {

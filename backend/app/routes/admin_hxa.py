@@ -825,19 +825,19 @@ def _write_new_token(instance_id: str, new_token: str, agent_name: str, org_id: 
 
 def _restart_hxa_connect(instance_id: str) -> None:
     """Restart hxa-connect process in container."""
-    container_name = f"hire_{instance_id}"
-    # Check product type
     runtime_dir = RUNTIME_ROOT / instance_id
     oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
 
     if oc_cfg.exists():
-        # OpenClaw: restart the main process
+        # OpenClaw: no pm2 — hxa-connect is embedded in gateway, restart the container
+        container_name = f"hire_{instance_id}-openclaw-gateway-1"
         subprocess.run(
-            ["docker", "exec", container_name, "pm2", "restart", "all"],
-            capture_output=True, timeout=30,
+            ["docker", "restart", container_name],
+            capture_output=True, timeout=60,
         )
     else:
-        # Zylos: restart hxa-connect component
+        # Zylos: has pm2 managing hxa-connect as a separate process
+        container_name = f"zylos_{instance_id}"
         subprocess.run(
             ["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"],
             capture_output=True, timeout=30,

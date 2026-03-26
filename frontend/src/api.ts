@@ -206,18 +206,24 @@ export const api = {
 
   // My Organization
   myOrg: (orgId?: string) => request<MyOrgData>(`/api/my-org${orgId ? `?org=${orgId}` : ""}`),
-  myOrgChatInfo: (target: string) => request<ChatInfo>(`/api/my-org/chat/info?target=${encodeURIComponent(target)}`),
-  myOrgChatSend: (target: string, content: string, imageUrl?: string) =>
+  myOrgChatInfo: (target: string, orgId?: string) => {
+    const p = new URLSearchParams({ target });
+    if (orgId) p.set("org", orgId);
+    return request<ChatInfo>(`/api/my-org/chat/info?${p}`);
+  },
+  myOrgChatSend: (target: string, content: string, orgId?: string, imageUrl?: string, senderBot?: string) =>
     request<ChatSendResponse>("/api/my-org/chat/send", {
-      method: "POST", body: JSON.stringify({ target_bot_name: target, content, image_url: imageUrl || null }),
+      method: "POST", body: JSON.stringify({ target_bot_name: target, content, image_url: imageUrl || null, org_id: orgId || null, sender_bot: senderBot || null }),
     }),
-  myOrgChatMessages: (channelId: string, target: string, before?: string) => {
+  myOrgChatMessages: (channelId: string, target: string, before?: string, orgId?: string) => {
     const params = new URLSearchParams({ channel_id: channelId, target, limit: "50" });
     if (before) params.set("before", before);
+    if (orgId) params.set("org", orgId);
     return request<ChatMessagesResponse>(`/api/my-org/chat/messages?${params}`);
   },
-  myOrgChatWsTicket: (target: string, extraParams?: URLSearchParams) => {
+  myOrgChatWsTicket: (target: string, extraParams?: URLSearchParams, orgId?: string) => {
     const p = new URLSearchParams({ target });
+    if (orgId) p.set("org", orgId);
     if (extraParams) extraParams.forEach((v, k) => p.set(k, v));
     return request<ChatWsTicketResponse>(`/api/my-org/chat/ws-ticket?${p}`, { method: "POST" });
   },

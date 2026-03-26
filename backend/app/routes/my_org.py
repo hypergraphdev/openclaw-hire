@@ -126,14 +126,18 @@ def _get_org_name(org_id: str) -> str:
     return row["org_name"] if row else org_id[:12]
 
 
-def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str], hub_url: str, db, org_id: str = "") -> tuple[str, str]:
+def _pick_chat_token(
+    user_id: str, target_bot_name: str, my_bot_names_in_org: set[str],
+    hub_url: str, db, org_id: str = "", sender_bot: str | None = None,
+) -> tuple[str, str]:
     """Pick the right token for chatting.
     Returns (token, identity_type) where identity_type is 'admin' or instance_id.
 
-    - Target is MY bot → use admin bot token (in same org)
-    - Target is OTHER's bot → use my first instance bot token
+    - Target is MY bot (in CURRENT org) → use admin bot token (in same org)
+    - Target is OTHER's bot → use my instance bot token in same org
+    - sender_bot: if user has multiple bots in the org, specify which one sends
     """
-    if target_bot_name in my_bot_names:
+    if target_bot_name in my_bot_names_in_org:
         # Chat with own bot → use admin bot in the SAME org
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT name FROM users WHERE id = %s", (user_id,))
@@ -146,9 +150,21 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
         return token, "admin"
     else:
         # Chat with other's bot → use my instance bot in the SAME org
-        # First try to find instance in the same org, then fallback to any
         cursor = db.cursor(dictionary=True)
-        if org_id:
+        if sender_bot and org_id:
+            # User explicitly chose which bot to send as
+            cursor.execute(
+                """SELECT i.id FROM instances i
+                   JOIN instance_configs c ON i.id = c.instance_id
+                   WHERE i.owner_id = %s AND c.org_id = %s AND c.agent_name = %s
+                   LIMIT 1""",
+                (user_id, org_id, sender_bot),
+            )
+            rows = cursor.fetchall()
+        else:
+            rows = []
+        if not rows and org_id:
+            # Find any of my bots in the same org
             cursor.execute(
                 """SELECT i.id FROM instances i
                    JOIN instance_configs c ON i.id = c.instance_id
@@ -157,8 +173,6 @@ def _pick_chat_token(user_id: str, target_bot_name: str, my_bot_names: set[str],
                 (user_id, org_id),
             )
             rows = cursor.fetchall()
-        else:
-            rows = []
         if not rows:
             # Fallback: any instance with a configured agent
             cursor.execute(
@@ -368,6 +382,8 @@ class OrgChatSendRequest(BaseModel):
     target_bot_name: str
     content: str
     image_url: str | None = None
+    org_id: str | None = None
+    sender_bot: str | None = None  # When user has multiple bots in org, specify which one sends
 
 
 @router.post("/chat/send")
@@ -378,13 +394,20 @@ def org_chat_send(
 ):
     """Send a message to a bot in the org. Identity depends on target."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    # Use the org_id from the request (current page), not auto-detected
+    active_org_id = req.org_id or ""
+    info = _get_user_org_info(user_id, db, target_org_id=active_org_id or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
+    org_id = info.get("org_id", "")
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
-    token, _ = _pick_chat_token(user_id, req.target_bot_name, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
+    # Only check bots in the CURRENT org for "is mine" detection
+    my_bot_names_in_org = {b["agent_name"] for b in info["my_bots"] if b.get("agent_name")}
+    token, _ = _pick_chat_token(
+        user_id, req.target_bot_name, my_bot_names_in_org, hub_url, db,
+        org_id=org_id, sender_bot=req.sender_bot,
+    )
 
     content = req.content
     if req.image_url:
@@ -400,6 +423,7 @@ def org_chat_send(
 @router.get("/chat/info")
 def org_chat_info(
     target: str = Query(...),
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
@@ -409,12 +433,13 @@ def org_chat_info(
     Admin bot identity is only resolved when target is user's own bot (for DM).
     """
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
+    # Only check bots in the CURRENT org
+    my_agent_names_in_org = {b["agent_name"] for b in info["my_bots"] if b.get("agent_name")}
 
     # Use first instance bot to query org info (always available, no admin bot needed)
     query_token = None
@@ -429,7 +454,7 @@ def org_chat_info(
         raise HTTPException(status_code=502, detail="Failed to get bot identity.")
 
     # Determine the actual chat identity (admin bot for own bot DM, instance bot otherwise)
-    is_own_bot = target in my_agent_names
+    is_own_bot = target in my_agent_names_in_org
     if is_own_bot:
         org_id = info.get("org_id", "")
         _cur = db.cursor(dictionary=True)
@@ -450,12 +475,13 @@ def org_chat_info(
             my_bot_id = me.get("id", "")
             my_bot_name = me.get("name", "")
     else:
+        admin_token = None
         my_bot_id = me.get("id", "")
         my_bot_name = me.get("name", "")
 
     # Get target bot info
     try:
-        bots = _hub_request(hub_url, token, "GET", "/api/bots")
+        bots = _hub_request(hub_url, query_token, "GET", "/api/bots")
         if isinstance(bots, dict):
             bots = bots.get("bots", [])
     except Exception:
@@ -465,11 +491,12 @@ def org_chat_info(
     target_id = target_bot.get("id", "") if target_bot else ""
     target_online = target_bot.get("online", False) if target_bot else False
 
-    # Find existing DM channel
+    # Find existing DM channel — use the identity token (admin_token for own bot, query_token for others)
+    chat_token = admin_token if (is_own_bot and admin_token) else query_token
     dm_channel_id = ""
     if target_id:
         try:
-            inbox = _hub_request(hub_url, token, "GET", "/api/inbox?since=0&limit=50")
+            inbox = _hub_request(hub_url, chat_token, "GET", "/api/inbox?since=0&limit=50")
             if isinstance(inbox, list):
                 for item in inbox:
                     msg = item if isinstance(item, dict) else {}
@@ -496,18 +523,19 @@ def org_chat_messages(
     target: str = Query(...),
     before: str = Query(""),
     limit: int = Query(50),
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Get messages for a DM channel."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
-    token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
+    my_bot_names_in_org = {b["agent_name"] for b in info["my_bots"] if b.get("agent_name")}
+    token, _ = _pick_chat_token(user_id, target, my_bot_names_in_org, hub_url, db, org_id=info.get("org_id", ""))
 
     params = f"limit={limit}"
     if before:
@@ -521,17 +549,18 @@ def org_chat_messages(
 def org_chat_ws_ticket(
     target: str = Query(""),
     mode: str = Query("dm"),
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Get WebSocket ticket. mode=dm uses chat identity, mode=thread uses instance bot."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    my_agent_names = info.get("all_my_agent_names", {b["agent_name"] for b in info["my_bots"]})
+    my_bot_names_in_org = {b["agent_name"] for b in info["my_bots"] if b.get("agent_name")}
 
     if mode == "thread":
         # Thread WS must use instance bot (thread participant)
@@ -542,7 +571,7 @@ def org_chat_ws_ticket(
         if not token:
             raise HTTPException(status_code=400, detail="No instance bot available for thread WS.")
     elif target:
-        token, _ = _pick_chat_token(user_id, target, my_agent_names, hub_url, db, org_id=info.get("org_id", ""))
+        token, _ = _pick_chat_token(user_id, target, my_bot_names_in_org, hub_url, db, org_id=info.get("org_id", ""))
     else:
         _cur = db.cursor(dictionary=True)
         _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
