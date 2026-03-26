@@ -35,7 +35,7 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
     return d;
   });
 
-  async function handleSave() {
+  async function handleSave(restart: boolean) {
     setSaving(true); setMsg("");
     const updates: Record<string, number> = {};
     for (const { key } of editableKeys) {
@@ -43,8 +43,11 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
       if (!isNaN(v) && v > 0) updates[key] = v;
     }
     try {
-      await api.adminZylosConfig(instanceId, updates);
-      setMsg("已保存（需重启 activity-monitor 生效）");
+      const r = await api.adminZylosConfig(instanceId, updates, restart);
+      const msgs: string[] = [];
+      if (r.patched) msgs.push("源码已自动 patch");
+      msgs.push(restart ? "pm2 已重启，立即生效" : "已保存（需重启生效）");
+      setMsg(msgs.join("，"));
       onUpdated();
     } catch (e: unknown) {
       setMsg((e as Error).message || "保存失败");
@@ -80,13 +83,17 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
           );
         })}
         <div className="flex items-center gap-2 pt-1">
-          <button onClick={handleSave} disabled={saving}
-            className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
-            {saving ? "..." : "保存配置"}
+          <button onClick={() => handleSave(false)} disabled={saving}
+            className="px-3 py-1 text-xs rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
+            {saving ? "..." : "仅保存"}
           </button>
-          {msg && <span className={`text-xs ${msg.startsWith("已") ? "text-green-400" : "text-red-400"}`}>{msg}</span>}
+          <button onClick={() => handleSave(true)} disabled={saving}
+            className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
+            {saving ? "..." : "保存并重启 ✓"}
+          </button>
+          {msg && <span className={`text-xs ${msg.includes("生效") || msg.includes("patch") ? "text-green-400" : msg.startsWith("已") ? "text-green-400" : "text-red-400"}`}>{msg}</span>}
         </div>
-        <p className="text-gray-600 text-[10px]">⚠️ periodic_probe_interval 是费 token 的主因（每次探针触发 Claude 回应）。建议设为 600+ 秒。hardcoded 值需修改 activity-monitor.js 源码。config.json 中的值仅对 readConfigInt 读取的字段生效。</p>
+        <p className="text-gray-600 text-[10px]">⚠️ periodic_probe_interval 是费 token 的主因（每次探针触发 Claude 回应）。建议设为 600+ 秒。保存时会自动 patch 源码让硬编码常量读 config.json，"保存并重启"立即生效。</p>
       </div>
     </div>
   );

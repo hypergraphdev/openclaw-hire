@@ -451,6 +451,28 @@ def instance_diagnostics(
 
 class ZylosConfigUpdateRequest(BaseModel):
     updates: dict[str, int | float | str]
+    restart_pm2: bool = False
+
+
+# Replacements to make hardcoded constants read from config.json
+_AM_PATCHES: list[tuple[str, str]] = [
+    (
+        "const HEARTBEAT_INTERVAL = 7200;",
+        "const HEARTBEAT_INTERVAL = readConfigInt('heartbeat_interval', 7200);",
+    ),
+    (
+        "const DOWN_RETRY_INTERVAL = 3600;",
+        "const DOWN_RETRY_INTERVAL = readConfigInt('down_retry_interval', 3600);",
+    ),
+    (
+        "const PERIODIC_PROBE_INTERVAL = 180;",
+        "const PERIODIC_PROBE_INTERVAL = readConfigInt('periodic_probe_interval', 180);",
+    ),
+    (
+        "const HEALTH_CHECK_INTERVAL = 21600;",
+        "const HEALTH_CHECK_INTERVAL = readConfigInt('health_check_interval', 21600);",
+    ),
+]
 
 
 @router.post("/instances/{instance_id}/zylos-config")
@@ -460,7 +482,7 @@ def update_zylos_config(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Update Zylos config.json (activity monitor tuning)."""
+    """Update Zylos config.json + optionally patch activity-monitor.js to use readConfigInt."""
     _require_admin(current_user)
 
     zy_cfg_path = RUNTIME_ROOT / instance_id / "zylos-data" / ".zylos" / "config.json"
@@ -475,7 +497,30 @@ def update_zylos_config(
     cfg.update(payload.updates)
     zy_cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 
-    return {"ok": True, "config": cfg}
+    # Auto-patch activity-monitor.js to use readConfigInt for hardcoded constants
+    am_path = RUNTIME_ROOT / instance_id / "zylos-data" / ".claude" / "skills" / "activity-monitor" / "scripts" / "activity-monitor.js"
+    patched = False
+    if am_path.exists():
+        src = am_path.read_text()
+        for old, new in _AM_PATCHES:
+            if old in src:
+                src = src.replace(old, new)
+                patched = True
+        if patched:
+            am_path.write_text(src)
+
+    # Restart pm2 activity-monitor to pick up changes
+    details: list[str] = []
+    if patched:
+        details.append("activity-monitor.js patched to use readConfigInt")
+    details.append("config.json updated")
+
+    if payload.restart_pm2:
+        container = f"zylos_{instance_id}"
+        rc, out = _docker_run(["docker", "exec", container, "pm2", "restart", "activity-monitor"], timeout=15)
+        details.append(f"pm2 restart: {'ok' if rc == 0 else out}")
+
+    return {"ok": True, "config": cfg, "details": details, "patched": patched}
 
 
 # ---------------------------------------------------------------------------

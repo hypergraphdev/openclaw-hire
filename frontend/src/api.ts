@@ -143,9 +143,9 @@ export const api = {
       method: "POST", body: JSON.stringify({ memory_mb: memoryMb, cpus }),
     }),
 
-  adminZylosConfig: (instanceId: string, updates: Record<string, number>) =>
-    request<{ ok: boolean; config: Record<string, unknown> }>(`/api/admin/instances/${instanceId}/zylos-config`, {
-      method: "POST", body: JSON.stringify({ updates }),
+  adminZylosConfig: (instanceId: string, updates: Record<string, number>, restartPm2: boolean = false) =>
+    request<{ ok: boolean; config: Record<string, unknown>; details: string[]; patched: boolean }>(`/api/admin/instances/${instanceId}/zylos-config`, {
+      method: "POST", body: JSON.stringify({ updates, restart_pm2: restartPm2 }),
     }),
 
   adminDockerContainers: () =>
