@@ -108,7 +108,7 @@ function OnlineDot({ online }: { online: boolean }) {
 
 function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
-  return <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{count > 99 ? "99+" : count}</span>;
+  return <span className="ml-auto shrink-0 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">{count > 99 ? "99+" : count}</span>;
 }
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
