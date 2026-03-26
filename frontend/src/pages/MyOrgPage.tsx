@@ -150,6 +150,10 @@ export function MyOrgPage() {
   const [creatingThread, setCreatingThread] = useState(false);
   const [threadBotId, setThreadBotId] = useState("");  // which bot to send as in threads
 
+  // Thread anti-loop: detect rapid bot-to-bot messages and auto-send stop message
+  const threadMsgTimestamps = useRef<Record<string, number[]>>({});
+  const threadLoopCooldown = useRef<Record<string, number>>({});
+
   // Target + chat state
   const [target, setTarget] = useState<ChatTarget | null>(null);
   const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
@@ -374,6 +378,31 @@ export function MyOrgPage() {
               if (chatInfo?.admin_bot_name) myNames.add(chatInfo.admin_bot_name);
               const senderName = msg.sender_name || "";
               const isFromOther = !myNames.has(senderName);
+
+              // Anti-loop: track message rate per thread
+              if (isFromOther && msgThreadId) {
+                const now = Date.now();
+                const ts = threadMsgTimestamps.current[msgThreadId] || [];
+                ts.push(now);
+                // Keep only last 60 seconds
+                const cutoff = now - 60000;
+                threadMsgTimestamps.current[msgThreadId] = ts.filter(t => t > cutoff);
+                const recentCount = threadMsgTimestamps.current[msgThreadId].length;
+                const lastCooldown = threadLoopCooldown.current[msgThreadId] || 0;
+
+                // If 6+ bot messages in 60s and cooldown expired (5 min)
+                if (recentCount >= 6 && now - lastCooldown > 300000) {
+                  threadLoopCooldown.current[msgThreadId] = now;
+                  // Auto-send stop message
+                  api.myOrgThreadSend(
+                    msgThreadId,
+                    "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。",
+                    undefined,
+                    threadBotId || undefined,
+                    orgIdRef.current,
+                  ).catch(() => {});
+                }
+              }
 
               if (msgThreadId === currentThreadId) {
                 // Message belongs to current thread — show in chat
