@@ -716,12 +716,13 @@ def create_thread(
 
 @router.get("/threads")
 def list_threads(
+    org: str = Query(""),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """List threads the user's bot participates in."""
     user_id = current_user["id"]
-    info = _get_user_org_info(user_id, db)
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 

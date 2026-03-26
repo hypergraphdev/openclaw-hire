@@ -216,7 +216,7 @@ export function MyOrgPage() {
 
   const [activeOrgId, setActiveOrgId] = useState("");
   useEffect(() => { api.myOrg(activeOrgId || undefined).then((d) => { setData(d); orgIdRef.current = d?.org_id || ""; }).finally(() => setLoading(false)); }, [activeOrgId]);
-  useEffect(() => { if (data?.status === "ok") api.myOrgThreads().then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
+  useEffect(() => { if (data?.status === "ok") api.myOrgThreads(orgIdRef.current).then((r) => setThreads(r.threads || [])).catch(() => {}); }, [data?.status]);
 
   const hashRestoredRef = useRef(false);
 
@@ -434,14 +434,14 @@ export function MyOrgPage() {
 
   async function handleCreateThread() {
     if (!threadTopic.trim()) return; setCreatingThread(true);
-    try { await api.myOrgCreateThread(threadTopic.trim(), threadParticipants, orgIdRef.current); setShowCreateThread(false); setThreadTopic(""); setThreadParticipants([]); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
+    try { await api.myOrgCreateThread(threadTopic.trim(), threadParticipants, orgIdRef.current); setShowCreateThread(false); setThreadTopic(""); setThreadParticipants([]); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
     setCreatingThread(false);
   }
 
   async function handleRenameTopic() {
     if (!topicDraft.trim() || !target || target.type !== "thread") return;
-    try { await api.myOrgThreadUpdate(target.thread.id, { topic: topicDraft.trim() }); setShowRenameTopic(false); const r = await api.myOrgThreads(); setThreads(r.threads || []); setTarget({ type: "thread", thread: { ...target.thread, topic: topicDraft.trim() } }); }
+    try { await api.myOrgThreadUpdate(target.thread.id, { topic: topicDraft.trim() }); setShowRenameTopic(false); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); setTarget({ type: "thread", thread: { ...target.thread, topic: topicDraft.trim() } }); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
 
@@ -454,7 +454,7 @@ export function MyOrgPage() {
   async function handleLeaveThread() {
     if (!target || target.type !== "thread") return;
     if (!confirm("确定退出群聊？")) return;
-    try { await api.myOrgThreadLeave(target.thread.id); setTarget(null); const r = await api.myOrgThreads(); setThreads(r.threads || []); }
+    try { await api.myOrgThreadLeave(target.thread.id); setTarget(null); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
 
