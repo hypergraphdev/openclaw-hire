@@ -720,33 +720,45 @@ def list_threads(
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
-    """List threads the user's bot participates in."""
+    """List threads the user's bots participate in (current org only)."""
     user_id = current_user["id"]
     info = _get_user_org_info(user_id, db, target_org_id=org or None)
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
+    current_org_id = info.get("org_id", "")
 
-    # Use first instance bot to list threads
-    if info["my_bots"]:
-        token = _get_agent_token(info["my_bots"][0]["instance_id"])
-    else:
+    # Query threads from ALL user's bots in this org, merge & dedup
+    seen_ids: set[str] = set()
+    all_threads: list[dict] = []
+    tokens: list[str] = []
+    for bot in info.get("my_bots", []):
+        t = _get_agent_token(bot["instance_id"])
+        if t:
+            tokens.append(t)
+    if not tokens:
         _cur = db.cursor(dictionary=True)
         _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
         user_row = _cur.fetchone()
         _cur.close()
-        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
-    if not token:
-        return {"threads": []}
+        t = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
+        if t:
+            tokens.append(t)
+    for token in tokens:
+        try:
+            result = _hub_request(hub_url, token, "GET", "/api/threads?status=active&limit=50")
+            items = result if isinstance(result, list) else result.get("threads", result.get("items", []))
+            for th in items:
+                tid = th.get("id", "")
+                # Filter: only threads belonging to current org
+                if tid and tid not in seen_ids and th.get("org_id", "") == current_org_id:
+                    seen_ids.add(tid)
+                    all_threads.append(th)
+        except Exception:
+            pass
 
-    try:
-        result = _hub_request(hub_url, token, "GET", "/api/threads?status=active&limit=50")
-        threads = result if isinstance(result, list) else result.get("threads", result.get("items", []))
-    except Exception:
-        threads = []
-
-    return {"threads": threads}
+    return {"threads": all_threads}
 
 
 @router.get("/threads/{thread_id}/messages")
