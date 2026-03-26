@@ -154,6 +154,9 @@ export function MyOrgPage() {
   const threadMsgTimestamps = useRef<Record<string, number[]>>({});
   const threadLoopCooldown = useRef<Record<string, number>>({});
 
+  // Global notification WS — stays connected to detect DMs from any bot
+  const notifWsRef = useRef<WebSocket | null>(null);
+
   // Target + chat state
   const [target, setTarget] = useState<ChatTarget | null>(null);
   const [chatInfo, setChatInfo] = useState<ChatInfo | null>(null);
@@ -285,6 +288,46 @@ export function MyOrgPage() {
       if (thread) { hashRestoredRef.current = true; selectThread(thread); }
     }
   }, [data?.status, threads, selectDM, selectThread]);
+
+  // Global notification WS — uses instance bot token to detect incoming DMs from any bot.
+  // Adds unread badges when messages arrive for bots we're NOT currently viewing.
+  useEffect(() => {
+    if (!data?.my_bots?.length) return;
+    const orgId = orgIdRef.current;
+    if (!orgId) return;
+    let mounted = true;
+    async function connectNotif() {
+      try {
+        const params = new URLSearchParams({ mode: "thread" }); // instance bot token
+        const { ticket, ws_url } = await api.myOrgChatWsTicket("", params, orgId);
+        const ws = new WebSocket(`${ws_url}?ticket=${ticket}`);
+        notifWsRef.current = ws;
+        ws.onclose = () => { notifWsRef.current = null; if (mounted) setTimeout(connectNotif, 5000); };
+        ws.onerror = () => ws.close();
+        ws.onmessage = (ev) => {
+          try {
+            const d = JSON.parse(ev.data);
+            if (d.type !== "message" || !d.message) return;
+            const msg = d.message;
+            const senderName = msg.sender_name || "";
+            // Ignore messages from our own bots
+            const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
+            if (myNames.has(senderName)) return;
+            // If we're currently viewing this sender's DM, skip (main DM WS handles it)
+            const senderBot = allBotsRef.current.find((b) => b.name === senderName);
+            if (!senderBot) return;
+            const dmKey = `dm_${senderBot.bot_id}`;
+            if (currentTargetRef.current === dmKey) return;
+            // Add unread badge
+            setUnreadCounts((prev) => ({ ...prev, [dmKey]: (prev[dmKey] || 0) + 1 }));
+            playNotificationSound();
+          } catch { /* */ }
+        };
+      } catch { if (mounted) setTimeout(connectNotif, 5000); }
+    }
+    connectNotif();
+    return () => { mounted = false; notifWsRef.current?.close(); notifWsRef.current = null; };
+  }, [data?.org_id]);
 
   // WebSocket for DM
   useEffect(() => {
