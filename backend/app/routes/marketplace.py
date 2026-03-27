@@ -193,61 +193,9 @@ def _run_install(instance_id: str, item_id: str, container: str):
     try:
         if item_id == "weixin-plugin":
             ok, log = _install_weixin(container, instance_id, item_id)
-            if ok:
-                # Restart container to load the plugin, then tail logs for QR code
-                log += "\n\n=== 重启容器加载插件 ===\n"
-                _update_install(instance_id, item_id, "installing", log)
-                subprocess.run(["docker", "restart", container], capture_output=True, timeout=30)
-
-                import time as _time
-                _time.sleep(5)  # wait for gateway to boot
-
-                log += "=== 等待微信二维码 (容器日志) ===\n"
-                _update_install(instance_id, item_id, "installing", log)
-
-                # Tail container logs for up to 60s looking for QR URL
-                deadline = _time.time() + 60
-                proc = subprocess.Popen(
-                    ["docker", "logs", "-f", "--tail", "50", container],
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                )
-                last_flush = 0.0
-                qr_found = False
-                while _time.time() < deadline:
-                    line = proc.stdout.readline()
-                    if not line:
-                        if proc.poll() is not None:
-                            break
-                        _time.sleep(0.2)
-                        continue
-                    log += line
-                    now = _time.time()
-                    if now - last_flush > 2:
-                        _update_install(instance_id, item_id, "installing", log)
-                        last_flush = now
-                    if "qrcode" in line.lower() or "二维码" in line or "扫码" in line or "扫描" in line or "http" in line.lower():
-                        qr_found = True
-                        # Keep reading a few more seconds for the full QR output
-                        qr_end = _time.time() + 8
-                        while _time.time() < qr_end:
-                            extra = proc.stdout.readline()
-                            if not extra:
-                                if proc.poll() is not None:
-                                    break
-                                _time.sleep(0.1)
-                                continue
-                            log += extra
-                        break
-
-                proc.kill()
-                proc.wait(timeout=5)
-
-                if not qr_found:
-                    log += "\n[提示] 未在日志中检测到二维码，请到实例详情页查看容器日志。\n"
-
-                _update_install(instance_id, item_id, "installed", log)
-            else:
-                _update_install(instance_id, item_id, "failed", log)
+            # Only mark "installed" if user completed QR scan (returncode == 0)
+            # Otherwise mark "failed" so user can retry
+            _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "whisper-skill":
             ok, log = _install_whisper(container)
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
@@ -258,22 +206,138 @@ def _run_install(instance_id: str, item_id: str, container: str):
 
 
 def _install_weixin(container: str, instance_id: str = "", item_id: str = "") -> tuple[bool, str]:
-    """Install WeChat plugin via npx. Returns (success, output).
+    """Install WeChat plugin 2.0.x via manual npm pack (bypasses CLI legacy bug).
 
-    The CLI installs the plugin, shows a QR code, waits for user to scan,
-    then completes the callback. We let it run until it exits naturally
-    (up to 10 minutes for user to scan QR). Output is streamed to DB
-    so the frontend can poll and display QR code in real-time.
+    Steps:
+    1. Check OpenClaw version (must be >= 2026.3.24)
+    2. Download and extract plugin 2.0.x into extensions dir
+    3. Add channel config to openclaw.json
+    4. Restart gateway to load plugin
+    5. Run `openclaw channels login` for QR code (streamed to DB)
     """
+    import time as _time
+    logs: list[str] = []
+    PLUGIN_VERSION = "2.0.1"
+    EXT_DIR = "/home/node/.openclaw/extensions/openclaw-weixin"
+    CONFIG_PATH = "/home/node/.openclaw/openclaw.json"
+
+    def _log(msg: str):
+        logs.append(msg + "\n")
+
+    def _flush():
+        if instance_id and item_id:
+            _update_install(instance_id, item_id, "installing", "".join(logs))
+
+    def _exec(cmd: list[str], timeout: int = 60, user: str = "") -> tuple[int, str]:
+        full_cmd = ["docker", "exec"]
+        if user:
+            full_cmd += ["-u", user]
+        full_cmd += [container] + cmd
+        try:
+            r = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
+            return r.returncode, (r.stdout + r.stderr).strip()
+        except subprocess.TimeoutExpired:
+            return 1, "timeout"
+
+    # Step 1: Check OpenClaw version
+    _log("=== 检查 OpenClaw 版本 ===")
+    rc, ver_out = _exec(["sh", "-c", "cat /app/package.json 2>/dev/null | grep '\"version\"' | head -1"])
+    _log(ver_out)
+    _flush()
+    if "2026.3.24" not in ver_out and "2026.3.25" not in ver_out and "2026.4" not in ver_out and "2027" not in ver_out:
+        # Try to detect actual version number
+        ver_match = ""
+        for part in ver_out.split('"'):
+            if part.startswith("2026.") or part.startswith("2027."):
+                ver_match = part
+                break
+        if ver_match and ver_match < "2026.3.24":
+            _log(f"⚠️  当前版本 {ver_match} 过低，微信插件 2.0.x 需要 >= 2026.3.24")
+            _log("请先在实例详情页升级 OpenClaw 版本。")
+            return False, "".join(logs)
+
+    # Step 2: Download and extract plugin
+    _log("\n=== 安装微信插件 %s ===" % PLUGIN_VERSION)
+    _flush()
+    rc, out = _exec(["sh", "-c", f"mkdir -p {EXT_DIR} && cd {EXT_DIR} && npm pack @tencent-weixin/openclaw-weixin@{PLUGIN_VERSION} 2>&1"], timeout=60)
+    _log(out)
+    _flush()
+    if rc != 0 or ".tgz" not in out:
+        _log("❌ 下载插件包失败")
+        return False, "".join(logs)
+
+    tgz_file = out.strip().split("\n")[-1].strip()
+    rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && tar xzf {tgz_file} --strip-components=1 && rm -f {tgz_file}"])
+    _log("解压完成")
+
+    _log("安装依赖...")
+    _flush()
+    rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && npm install --production 2>&1 | tail -5"], timeout=120)
+    _log(out)
+    _flush()
+
+    # Verify version
+    rc, out = _exec(["sh", "-c", f"cat {EXT_DIR}/package.json | grep '\"version\"' | head -1"])
+    _log(f"插件版本: {out.strip()}")
+
+    # Step 3: Ensure channel config
+    _log("\n=== 配置 openclaw.json ===")
+    _flush()
+    config_script = f"""
+import json
+with open("{CONFIG_PATH}") as f:
+    cfg = json.load(f)
+changed = False
+if "channels" not in cfg:
+    cfg["channels"] = {{}}
+if "openclaw-weixin" not in cfg["channels"]:
+    cfg["channels"]["openclaw-weixin"] = {{"enabled": True}}
+    changed = True
+if "plugins" not in cfg:
+    cfg["plugins"] = {{}}
+if "entries" not in cfg["plugins"]:
+    cfg["plugins"]["entries"] = {{}}
+if "openclaw-weixin" not in cfg["plugins"]["entries"]:
+    cfg["plugins"]["entries"]["openclaw-weixin"] = {{"enabled": True}}
+    changed = True
+if changed:
+    with open("{CONFIG_PATH}", "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\\n")
+    print("config updated")
+else:
+    print("config already ok")
+"""
+    rc, out = _exec(["python3", "-c", config_script])
+    _log(out)
+
+    # Step 4: Restart gateway
+    _log("\n=== 重启 Gateway 加载插件 ===")
+    _flush()
+    subprocess.run(["docker", "restart", container], capture_output=True, timeout=30)
+    _time.sleep(8)
+    _log("Gateway 已重启")
+    _flush()
+
+    # Check plugin loaded without errors
+    rc, check_out = _exec(["sh", "-c", f"cat /tmp/openclaw/openclaw-*.log 2>/dev/null | grep -i 'weixin.*fail' | tail -3"])
+    if "fail" in check_out.lower():
+        _log(f"⚠️  插件加载异常: {check_out}")
+        _flush()
+
+    # Step 5: Run channels login for QR code
+    _log("\n=== 启动微信扫码登录 ===")
+    _log("执行 openclaw channels login --channel openclaw-weixin\n")
+    _flush()
+
     try:
         proc = subprocess.Popen(
-            ["docker", "exec", container, "npx", "-y", "@tencent-weixin/openclaw-weixin-cli@latest", "install"],
+            ["docker", "exec", container, "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
-        import time as _time
-        output_lines: list[str] = []
         deadline = _time.time() + 600  # 10 min for user to scan QR
-        last_flush = 0.0
+        last_flush_t = 0.0
+        qr_found = False
 
         while _time.time() < deadline:
             line = proc.stdout.readline()
@@ -282,25 +346,30 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
                     break
                 _time.sleep(0.2)
                 continue
-            output_lines.append(line)
-            # Flush to DB every 2 seconds so frontend can poll live
+            logs.append(line)
             now = _time.time()
-            if instance_id and item_id and now - last_flush > 2:
-                _update_install(instance_id, item_id, "installing", "".join(output_lines))
-                last_flush = now
+            if now - last_flush_t > 1:
+                _flush()
+                last_flush_t = now
+            # Detect QR code lines (block characters)
+            if "▄" in line or "█" in line or "二维码" in line or "扫描" in line:
+                qr_found = True
 
         if proc.poll() is None:
-            # Still running after 10 min — kill
             proc.kill()
             proc.wait(timeout=5)
-            output_lines.append("\n[超时] 等待扫码超过10分钟，进程已终止。\n")
+            _log("\n[超时] 等待扫码超过10分钟，进程已终止。")
 
-        output = "".join(output_lines)
-        # Success if CLI installed the plugin (even if still waiting for QR scan)
-        success = proc.returncode == 0 or "就绪" in output or "already at" in output or "Installing to" in output
-        return success, output
+        _flush()
+        success = proc.returncode == 0
+        if success:
+            _log("\n✅ 微信绑定成功！")
+        elif qr_found:
+            _log("\n⚠️  二维码已显示但未完成扫码绑定。请重新安装以获取新的二维码。")
+        return success, "".join(logs)
     except Exception as e:
-        return False, f"ERROR: {e}"
+        _log(f"\nERROR: {e}")
+        return False, "".join(logs)
 
 
 def _install_whisper(container: str) -> tuple[bool, str]:

@@ -79,7 +79,7 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
         const data = await api.marketplaceInstallLog(logModal!.instanceId, logModal!.itemId);
         if (active) setLogData(data);
         if (data.status === "installing" && active) {
-          pollRef.current = window.setTimeout(poll, 2000);
+          pollRef.current = window.setTimeout(poll, 1000);
         } else {
           // Refresh installed map
           api.marketplaceInstalled(logModal!.instanceId).then(installed => {
