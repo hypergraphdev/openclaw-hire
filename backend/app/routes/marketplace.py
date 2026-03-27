@@ -332,29 +332,37 @@ else:
 
     try:
         proc = subprocess.Popen(
-            ["docker", "exec", container, "script", "-qc",
-             "openclaw channels login --channel openclaw-weixin", "/dev/null"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+            ["docker", "exec", "-t", container,
+             "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
         )
         deadline = _time.time() + 600  # 10 min for user to scan QR
         last_flush_t = 0.0
         qr_found = False
+        import select
+        buf = b""
 
         while _time.time() < deadline:
-            line = proc.stdout.readline()
-            if not line:
+            # Use select to check if data available (non-blocking)
+            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+            if ready:
+                chunk = proc.stdout.read1(4096) if hasattr(proc.stdout, 'read1') else proc.stdout.read(4096)
+                if not chunk:
+                    if proc.poll() is not None:
+                        break
+                    continue
+                # Decode, strip TTY carriage returns
+                text = chunk.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "")
+                logs.append(text)
+                if "▄" in text or "█" in text or "二维码" in text or "扫描" in text:
+                    qr_found = True
+                now = _time.time()
+                if now - last_flush_t > 0.5:
+                    _flush()
+                    last_flush_t = now
+            else:
                 if proc.poll() is not None:
                     break
-                _time.sleep(0.2)
-                continue
-            logs.append(line)
-            now = _time.time()
-            if now - last_flush_t > 1:
-                _flush()
-                last_flush_t = now
-            # Detect QR code lines (block characters)
-            if "▄" in line or "█" in line or "二维码" in line or "扫描" in line:
-                qr_found = True
 
         if proc.poll() is None:
             proc.kill()
