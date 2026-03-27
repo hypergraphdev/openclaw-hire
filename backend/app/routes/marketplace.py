@@ -487,45 +487,45 @@ def _install_whisper(container: str) -> tuple[bool, str]:
 
     # Step 4: Write skill file so the AI agent knows about Whisper capability
     if ok:
-        skill_content = r"""# Whisper 语音转文本技能
-
-## 能力说明
-你的系统已安装 OpenAI Whisper 和 FFmpeg，具备本地语音转文字能力。
-
-## 可用模型
-- **tiny** (~75MB) - 速度最快，适合简短语音
-- **base** (~140MB) - 平衡速度和准确度，推荐日常使用
-
-## 使用方法
-
-### Python 调用
-```python
-import whisper
-
-model = whisper.load_model("base")  # 或 "tiny"
-result = model.transcribe("audio_file.mp3")
-print(result["text"])
-```
-
-### 命令行调用
-```bash
-whisper audio_file.mp3 --model base --language zh
-```
-
-### 支持的音频格式
-mp3, wav, m4a, ogg, flac, webm 等（FFmpeg 支持的所有格式）
-
-### 支持的语言
-中文、英文、日文等 99 种语言。可指定 `--language` 参数，或让模型自动检测。
-
-## 注意事项
-- 当用户发送音频文件时，直接用 Whisper 在本地转录，无需调用外部 API
-- 优先使用 base 模型，如果速度要求高可用 tiny
-- 转录完成后直接展示文字结果
-"""
-        # Determine skill directory based on container type
-        # OpenClaw: /home/node/.openclaw/skills/
-        # Zylos: /home/zylos/zylos/.claude/skills/
+        skill_lines = [
+            "# Whisper 语音转文本技能",
+            "",
+            "## 能力说明",
+            "你的系统已安装 OpenAI Whisper 和 FFmpeg，具备本地语音转文字能力。",
+            "",
+            "## 可用模型（仅限以下两个，禁止使用其他模型）",
+            "- **tiny** - 速度最快，适合简短语音",
+            "- **base** - 平衡速度和准确度，推荐日常使用",
+            "",
+            "## 重要限制",
+            "- **严禁使用 small/medium/large 等未安装的模型**，系统只安装了 tiny 和 base",
+            "- 使用未安装的模型会导致自动下载数百MB甚至数GB文件，严重浪费资源",
+            "- 默认使用 base 模型，用户要求快速时用 tiny",
+            "",
+            "## 命令行调用（推荐）",
+            "```bash",
+            "whisper audio_file.mp3 --model base --language zh --output_format txt --output_dir .",
+            "```",
+            "",
+            "## Python 调用",
+            "```python",
+            "import whisper",
+            "model = whisper.load_model('base')  # 只能用 'base' 或 'tiny'",
+            "result = model.transcribe('audio_file.mp3', language='zh')",
+            "print(result['text'])",
+            "```",
+            "",
+            "## 支持的音频格式",
+            "mp3, wav, m4a, ogg, flac, webm 等（FFmpeg 支持的所有格式）",
+            "",
+            "## 注意事项",
+            "- 当用户发送音频文件时，直接用 Whisper 在本地转录，无需调用外部 API",
+            "- 转录完成后直接展示文字结果",
+        ]
+        skill_content = "\n".join(skill_lines)
+        # Write skill file using docker cp (most reliable, no shell escaping issues)
+        import tempfile
+        skill_written = False
         for skill_dir in [
             "/home/node/.openclaw/skills/whisper-transcription",
             "/home/zylos/zylos/.claude/skills/whisper-transcription",
@@ -535,14 +535,26 @@ mp3, wav, m4a, ogg, flac, webm 等（FFmpeg 支持的所有格式）
                     ["docker", "exec", container, "mkdir", "-p", skill_dir],
                     capture_output=True, timeout=10,
                 )
-                subprocess.run(
-                    ["docker", "exec", container, "sh", "-c", f"cat > {skill_dir}/SKILL.md << 'SKILLEOF'\n{skill_content}\nSKILLEOF"],
-                    capture_output=True, timeout=10,
+                # Write to temp file on host, then docker cp into container
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+                    f.write(skill_content)
+                    tmp_path = f.name
+                r = subprocess.run(
+                    ["docker", "cp", tmp_path, f"{container}:{skill_dir}/SKILL.md"],
+                    capture_output=True, text=True, timeout=10,
                 )
-            except Exception:
-                pass
-        logs.append("\n=== 技能文件已写入 ===")
-        logs.append("AI Agent 现在知道自己有 Whisper 语音转文字能力了。")
+                os.unlink(tmp_path)
+                if r.returncode == 0:
+                    logs.append(f"\n=== 技能文件已写入 {skill_dir}/SKILL.md ===")
+                    skill_written = True
+                else:
+                    logs.append(f"\n=== 技能文件写入失败: {r.stderr[:200]} ===")
+            except Exception as e:
+                logs.append(f"\n=== 技能文件写入异常: {e} ===")
+        if skill_written:
+            logs.append("AI Agent 现在知道自己有 Whisper 语音转文字能力了。")
+        else:
+            logs.append("警告：技能文件写入失败，AI Agent 可能不知道自己有 Whisper 能力。")
 
     return ok, "\n".join(logs)
 
