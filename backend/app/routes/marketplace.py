@@ -436,6 +436,65 @@ def _install_whisper(container: str) -> tuple[bool, str]:
         logs.append("\nWARNING: base model download timed out.")
         ok = False
 
+    # Step 4: Write skill file so the AI agent knows about Whisper capability
+    if ok:
+        skill_content = r"""# Whisper 语音转文本技能
+
+## 能力说明
+你的系统已安装 OpenAI Whisper 和 FFmpeg，具备本地语音转文字能力。
+
+## 可用模型
+- **tiny** (~75MB) - 速度最快，适合简短语音
+- **base** (~140MB) - 平衡速度和准确度，推荐日常使用
+
+## 使用方法
+
+### Python 调用
+```python
+import whisper
+
+model = whisper.load_model("base")  # 或 "tiny"
+result = model.transcribe("audio_file.mp3")
+print(result["text"])
+```
+
+### 命令行调用
+```bash
+whisper audio_file.mp3 --model base --language zh
+```
+
+### 支持的音频格式
+mp3, wav, m4a, ogg, flac, webm 等（FFmpeg 支持的所有格式）
+
+### 支持的语言
+中文、英文、日文等 99 种语言。可指定 `--language` 参数，或让模型自动检测。
+
+## 注意事项
+- 当用户发送音频文件时，直接用 Whisper 在本地转录，无需调用外部 API
+- 优先使用 base 模型，如果速度要求高可用 tiny
+- 转录完成后直接展示文字结果
+"""
+        # Determine skill directory based on container type
+        # OpenClaw: /home/node/.openclaw/skills/
+        # Zylos: /home/zylos/zylos/.claude/skills/
+        for skill_dir in [
+            "/home/node/.openclaw/skills/whisper-transcription",
+            "/home/zylos/zylos/.claude/skills/whisper-transcription",
+        ]:
+            try:
+                subprocess.run(
+                    ["docker", "exec", container, "mkdir", "-p", skill_dir],
+                    capture_output=True, timeout=10,
+                )
+                subprocess.run(
+                    ["docker", "exec", container, "sh", "-c", f"cat > {skill_dir}/SKILL.md << 'SKILLEOF'\n{skill_content}\nSKILLEOF"],
+                    capture_output=True, timeout=10,
+                )
+            except Exception:
+                pass
+        logs.append("\n=== 技能文件已写入 ===")
+        logs.append("AI Agent 现在知道自己有 Whisper 语音转文字能力了。")
+
     return ok, "\n".join(logs)
 
 
