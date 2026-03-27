@@ -669,10 +669,10 @@ def rename_agent(
     current_user=Depends(get_current_user),
     db = Depends(get_db),
 ):
-    """Rename instance's agent in HXA org (only if current name starts with hire_inst_)."""
+    """Rename instance's agent in HXA org (only if current name starts with hire_)."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     current_name = inst["agent_name"] or ""
-    if not current_name.startswith("hire_inst_"):
+    if not current_name.startswith("hire_"):
         raise HTTPException(status_code=400, detail="已改名的实例不允许再次修改。")
 
     new_name = req.agent_name.strip()
