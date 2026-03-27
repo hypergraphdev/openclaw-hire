@@ -27,6 +27,7 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
   const [logModal, setLogModal] = useState<{ instanceId: string; itemId: string } | null>(null);
   const [logData, setLogData] = useState<MarketplaceInstall | null>(null);
   const pollRef = useRef<number>(0);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   // Installed status per instance
   const [installedMap, setInstalledMap] = useState<Record<string, Record<string, MarketplaceInstall>>>({});
@@ -69,6 +70,11 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
     }
     setInstalling(false);
   }
+
+  // Auto-scroll log to bottom when new content arrives
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logData?.install_log]);
 
   // Poll install log
   useEffect(() => {
@@ -203,7 +209,7 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
       {/* Log Modal — not dismissible by clicking outside during install */}
       {logModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-white">{t("marketplace.viewLog")}</h3>
               <span className={`text-xs px-2 py-1 rounded-full ${
@@ -216,8 +222,9 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
                  t("marketplace.installing")}
               </span>
             </div>
-            <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">
+            <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre">
               {logData?.install_log || "Waiting for output..."}
+              <div ref={logEndRef} />
             </pre>
             <button
               onClick={() => setLogModal(null)}
