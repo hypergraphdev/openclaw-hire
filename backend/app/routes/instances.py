@@ -226,12 +226,12 @@ def list_instances(
     return results
 
 
-@router.get("/{instance_id}", response_model=InstanceDetailResponse)
+@router.get("/{instance_id}")
 def get_instance(
     instance_id: str,
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
-) -> InstanceDetailResponse:
+):
     is_admin = bool(current_user.get("is_admin"))
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
     if inst.get("compose_project") and inst.get("install_state") in {"starting", "running", "failed"}:
