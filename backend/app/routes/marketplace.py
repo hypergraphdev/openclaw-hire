@@ -332,7 +332,8 @@ else:
 
     try:
         proc = subprocess.Popen(
-            ["docker", "exec", container, "stdbuf", "-oL", "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
+            ["docker", "exec", container, "script", "-qc",
+             "openclaw channels login --channel openclaw-weixin", "/dev/null"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
         )
         deadline = _time.time() + 600  # 10 min for user to scan QR
