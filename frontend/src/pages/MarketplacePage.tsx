@@ -128,7 +128,6 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
             <div className="text-xs text-gray-500 space-y-1 mb-4">
               <div>{t("marketplace.compatibleWith")}: <span className="text-gray-300">{item.product === "all" ? "OpenClaw, Zylos" : item.product === "openclaw" ? "OpenClaw" : "Zylos"}</span></div>
               {item.install_time && <div>{t("marketplace.installTime")}: <span className="text-gray-300">{item.install_time}</span></div>}
-              {item.models && <div>Models: <span className="text-gray-300">{item.models.join(", ")}</span></div>}
             </div>
 
             {(lang === "zh" ? item.note_zh : item.note) && (
