@@ -56,6 +56,8 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
+  const [weixinRestarting, setWeixinRestarting] = useState(false);
+  const [weixinRestartMsg, setWeixinRestartMsg] = useState("");
   const [weixinLogging, setWeixinLogging] = useState(false);
   const [weixinLog, setWeixinLog] = useState("");
   const [weixinLogStatus, setWeixinLogStatus] = useState("");
@@ -157,6 +159,21 @@ export function InstanceDetailPage() {
     } finally {
       setConfiguring(false);
     }
+  }
+
+  async function handleWeixinRestart() {
+    if (!instanceId) return;
+    setWeixinRestarting(true);
+    setWeixinRestartMsg("");
+    try {
+      // Restart the container to reload weixin plugin
+      await api.restartInstance(instanceId);
+      setWeixinRestartMsg("✅ 微信插件已重启");
+      setTimeout(() => fetchDetail(), 3000);
+    } catch (err: unknown) {
+      setWeixinRestartMsg(`❌ ${err instanceof Error ? err.message : "重启失败"}`);
+    }
+    setWeixinRestarting(false);
   }
 
   async function handleWeixinLogin() {
@@ -515,9 +532,15 @@ export function InstanceDetailPage() {
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
                     微信插件已安装
                   </div>
-                  <button onClick={handleWeixinLogin} className="text-xs text-blue-400 hover:text-blue-300 underline">
-                    重新绑定微信
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button onClick={handleWeixinLogin} className="text-xs text-blue-400 hover:text-blue-300 underline">
+                      重新绑定微信
+                    </button>
+                    <button onClick={handleWeixinRestart} disabled={weixinRestarting} className="text-xs text-gray-400 hover:text-gray-200 underline disabled:opacity-50">
+                      {weixinRestarting ? "重启中..." : "重启微信插件"}
+                    </button>
+                  </div>
+                  {weixinRestartMsg && <p className={`text-xs ${weixinRestartMsg.startsWith("✅") ? "text-green-400" : "text-red-400"}`}>{weixinRestartMsg}</p>}
                 </div>
               ) : (
                 <div className="space-y-3">
