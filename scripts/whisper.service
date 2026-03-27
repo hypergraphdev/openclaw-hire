@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/home/wwwroot/openclaw-hire/backend
-ExecStart=/usr/bin/python3 whisper_service.py --model small --preload --host 127.0.0.1 --port 8019
+ExecStart=/usr/bin/python3 whisper_service.py --model small --preload --host 0.0.0.0 --port 8019
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
