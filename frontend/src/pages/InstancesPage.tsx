@@ -56,7 +56,7 @@ function ActionMenu({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const canRename = (inst.agent_name || "").startsWith("hire_inst_");
+  const canRename = (inst.agent_name || "").startsWith("hire_");
 
   return (
     <div ref={ref} className="relative">
