@@ -49,6 +49,19 @@ MARKETPLACE_ITEMS = [
         "install_time": "~5s",
         "models": ["tiny", "base", "small (默认，宿主机共享服务)"],
     },
+    {
+        "id": "edge-tts-skill",
+        "type": "skill",
+        "name": "Text to Speech (Edge TTS)",
+        "name_zh": "文本转语音 (Edge TTS)",
+        "description": "Install Microsoft Edge TTS for high-quality text-to-speech. Supports 300+ voices in 40+ languages. Free, no API key needed.",
+        "description_zh": "安装微软 Edge TTS 文本转语音引擎。支持 300+ 种语音、40+ 种语言，免费无需 API Key。",
+        "icon": "🔊",
+        "product": "all",
+        "tags": ["AI", "Speech", "TTS"],
+        "version": "latest",
+        "install_time": "~30s",
+    },
 ]
 
 ITEM_MAP = {item["id"]: item for item in MARKETPLACE_ITEMS}
@@ -199,6 +212,9 @@ def _run_install(instance_id: str, item_id: str, container: str):
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "whisper-skill":
             ok, log = _install_whisper(container)
+            _update_install(instance_id, item_id, "installed" if ok else "failed", log)
+        elif item_id == "edge-tts-skill":
+            ok, log = _install_edge_tts(container)
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         else:
             _update_install(instance_id, item_id, "failed", f"Unknown item: {item_id}")
@@ -524,3 +540,143 @@ def _update_install(instance_id: str, item_id: str, status: str, log: str):
         cursor.close()
     finally:
         conn.close()
+
+
+def _install_edge_tts(container: str) -> tuple[bool, str]:
+    """Install edge-tts in container + write skill file."""
+    import tempfile
+
+    logs: list[str] = []
+
+    # Step 1: pip install edge-tts
+    logs.append("=== pip install edge-tts ===")
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "-u", "root", container, "sh", "-c",
+             "pip3 install -U --break-system-packages edge-tts 2>&1 || "
+             "pip install -U --break-system-packages edge-tts 2>&1 || "
+             "(apt-get update -qq && apt-get install -y -qq python3-pip && pip3 install -U --break-system-packages edge-tts) 2>&1"],
+            capture_output=True, text=True, timeout=120,
+        )
+        output = r.stdout.strip()
+        logs.append(output[-500:] if len(output) > 500 else output)
+        if r.returncode != 0:
+            logs.append(r.stderr[-300:] if r.stderr else "")
+            return False, "\n".join(logs)
+    except subprocess.TimeoutExpired:
+        return False, "ERROR: pip install timed out."
+
+    # Step 2: Verify install
+    logs.append("\n=== 验证安装 ===")
+    try:
+        r2 = subprocess.run(
+            ["docker", "exec", container, "python3", "-c", "import edge_tts; print('edge-tts OK, version:', edge_tts.__version__)"],
+            capture_output=True, text=True, timeout=15,
+        )
+        logs.append(r2.stdout.strip())
+        if r2.returncode != 0:
+            logs.append(r2.stderr[-200:])
+            return False, "\n".join(logs)
+    except Exception as e:
+        logs.append(f"验证失败: {e}")
+        return False, "\n".join(logs)
+
+    # Step 3: Write skill file
+    logs.append("\n=== 写入技能文件 ===")
+    skill_content = """# Edge TTS 文本转语音技能
+
+## 能力说明
+本系统已安装 edge-tts，可以将文本转换为高质量语音。
+使用微软 Edge 在线 TTS 服务，支持 300+ 种声音、40+ 种语言。
+
+## 使用方法
+
+### 命令行（推荐，最简单）
+```bash
+# 自动检测语言，使用默认声音
+edge-tts --text "要转换的文本" --write-media output.mp3
+
+# 指定中文声音
+edge-tts --text "你好世界" --voice zh-CN-XiaoxiaoNeural --write-media output.mp3
+
+# 指定英文声音
+edge-tts --text "Hello world" --voice en-US-AriaNeural --write-media output.mp3
+
+# 指定日文声音
+edge-tts --text "こんにちは" --voice ja-JP-NanamiNeural --write-media output.mp3
+```
+
+### Python 调用
+```python
+import asyncio
+import edge_tts
+
+async def tts(text, voice, output_file):
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(output_file)
+
+# 中文
+asyncio.run(tts("你好世界", "zh-CN-XiaoxiaoNeural", "output.mp3"))
+# 英文
+asyncio.run(tts("Hello world", "en-US-AriaNeural", "output.mp3"))
+```
+
+### 列出所有可用声音
+```bash
+edge-tts --list-voices | head -50
+```
+
+## 语言检测与声音选择规则
+- **根据文本语言自动选择对应语言的声音**
+- 中文文本 → zh-CN-XiaoxiaoNeural（女）或 zh-CN-YunxiNeural（男）
+- 英文文本 → en-US-AriaNeural（女）或 en-US-GuyNeural（男）
+- 日文文本 → ja-JP-NanamiNeural（女）
+- 韩文文本 → ko-KR-SunHiNeural（女）
+- 默认使用女声，用户要求男声时切换
+
+## 常用声音列表
+| 语言 | 女声 | 男声 |
+|------|------|------|
+| 中文 | zh-CN-XiaoxiaoNeural | zh-CN-YunxiNeural |
+| 英文 | en-US-AriaNeural | en-US-GuyNeural |
+| 日文 | ja-JP-NanamiNeural | ja-JP-KeitaNeural |
+| 韩文 | ko-KR-SunHiNeural | ko-KR-InJoonNeural |
+| 法语 | fr-FR-DeniseNeural | fr-FR-HenriNeural |
+| 德语 | de-DE-KatjaNeural | de-DE-ConradNeural |
+
+## 注意事项
+- 当用户要求朗读文本、生成语音时，直接使用 edge-tts
+- 生成后将 mp3 文件发送给用户
+- 需要网络连接（调用微软在线服务）
+- 完全免费，无需 API Key
+"""
+    skill_written = False
+    for skill_dir in [
+        "/home/node/.openclaw/skills/edge-tts",
+        "/home/zylos/zylos/.claude/skills/edge-tts",
+    ]:
+        try:
+            subprocess.run(
+                ["docker", "exec", container, "mkdir", "-p", skill_dir],
+                capture_output=True, timeout=10,
+            )
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+                f.write(skill_content)
+                tmp_path = f.name
+            r = subprocess.run(
+                ["docker", "cp", tmp_path, f"{container}:{skill_dir}/SKILL.md"],
+                capture_output=True, text=True, timeout=10,
+            )
+            os.unlink(tmp_path)
+            if r.returncode == 0:
+                logs.append(f"✅ 技能文件已写入 {skill_dir}/SKILL.md")
+                skill_written = True
+        except Exception as e:
+            logs.append(f"写入异常: {e}")
+
+    if skill_written:
+        logs.append("\n✅ 安装完成！AI Agent 现在可以将文本转换为语音了。")
+        return True, "\n".join(logs)
+    else:
+        logs.append("\n❌ 技能文件写入失败")
+        return False, "\n".join(logs)
