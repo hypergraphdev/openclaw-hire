@@ -445,6 +445,9 @@ def weixin_login(
             # Clear previous log
             open(host_log, "w").close()
             master, slave = pty.openpty()
+            # Set PTY width to 200 cols so QR code lines don't wrap
+            import struct, fcntl, termios
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 200, 0, 0))
             proc = subprocess.Popen(
                 ["docker", "exec", "-t", container, "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
                 stdout=slave, stderr=slave, stdin=subprocess.DEVNULL,
