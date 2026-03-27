@@ -436,60 +436,38 @@ def weixin_login(
     compose_file, project, runtime_dir = _require_compose(inst)
     container = f"{project}-openclaw-gateway-1"
 
-    # Write log to host-accessible file
-    import os, pty, select, subprocess, threading
+    # Write log to host-accessible file (same approach as marketplace: script + tee inside container)
+    import os, subprocess, threading
+    container_log = "/home/node/.openclaw/weixin-login.log"
     host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
 
     def _run_login():
         try:
             # Clear previous log
-            open(host_log, "w").close()
-            master, slave = pty.openpty()
-            # Set PTY width to 200 cols so QR code lines don't wrap
-            import struct, fcntl, termios
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 200, 0, 0))
+            subprocess.run(["docker", "exec", container, "sh", "-c", f"rm -f {container_log}; touch {container_log}"],
+                           capture_output=True, timeout=10)
+            # Run channels login via script (PTY for unbuffered) + tee to file
             proc = subprocess.Popen(
-                ["docker", "exec", "-t", container, "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
-                stdout=slave, stderr=slave, stdin=subprocess.DEVNULL,
+                ["docker", "exec", container, "script", "-qc",
+                 f"openclaw channels login --channel openclaw-weixin 2>&1 | tee {container_log}",
+                 "/dev/null"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
             )
-            os.close(slave)
             import time
             deadline = time.time() + 600  # 10 min
-            with open(host_log, "ab") as f:
-                while time.time() < deadline:
-                    if proc.poll() is not None:
-                        # Read remaining
-                        try:
-                            while True:
-                                ready, _, _ = select.select([master], [], [], 0.1)
-                                if not ready:
-                                    break
-                                chunk = os.read(master, 4096)
-                                if not chunk:
-                                    break
-                                f.write(chunk)
-                                f.flush()
-                        except OSError:
-                            pass
-                        break
-                    try:
-                        ready, _, _ = select.select([master], [], [], 1.0)
-                        if ready:
-                            chunk = os.read(master, 4096)
-                            if chunk:
-                                f.write(chunk)
-                                f.flush()
-                            else:
-                                break
-                    except OSError:
-                        break
-            os.close(master)
+            while time.time() < deadline:
+                time.sleep(1)
+                if proc.poll() is not None:
+                    break
             if proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=5)
         except Exception as e:
-            with open(host_log, "a") as f:
-                f.write(f"\nERROR: {e}\n")
+            try:
+                with open(host_log, "a") as f:
+                    f.write(f"\nERROR: {e}\n")
+            except Exception:
+                pass
 
     thread = threading.Thread(target=_run_login, daemon=True)
     thread.start()
