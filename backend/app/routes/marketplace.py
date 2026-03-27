@@ -302,29 +302,36 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
     _log("\n=== 配置 openclaw.json ===")
     _flush()
     config_script = f"""
-import json
+import json, datetime
 with open("{CONFIG_PATH}") as f:
     cfg = json.load(f)
-changed = False
 if "channels" not in cfg:
     cfg["channels"] = {{}}
-if "openclaw-weixin" not in cfg["channels"]:
-    cfg["channels"]["openclaw-weixin"] = {{"enabled": True}}
-    changed = True
+cfg["channels"]["openclaw-weixin"] = {{"enabled": True}}
 if "plugins" not in cfg:
     cfg["plugins"] = {{}}
 if "entries" not in cfg["plugins"]:
     cfg["plugins"]["entries"] = {{}}
-if "openclaw-weixin" not in cfg["plugins"]["entries"]:
-    cfg["plugins"]["entries"]["openclaw-weixin"] = {{"enabled": True}}
-    changed = True
-if changed:
-    with open("{CONFIG_PATH}", "w") as f:
-        json.dump(cfg, f, indent=2)
-        f.write("\\n")
-    print("config updated")
-else:
-    print("config already ok")
+cfg["plugins"]["entries"]["openclaw-weixin"] = {{"enabled": True}}
+# Must have installs record — OpenClaw 3.24+ validates channel id against installed plugins
+if "installs" not in cfg["plugins"]:
+    cfg["plugins"]["installs"] = {{}}
+now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+cfg["plugins"]["installs"]["openclaw-weixin"] = {{
+    "source": "npm",
+    "spec": "@tencent-weixin/openclaw-weixin@{PLUGIN_VERSION}",
+    "installPath": "{EXT_DIR}",
+    "version": "{PLUGIN_VERSION}",
+    "resolvedName": "@tencent-weixin/openclaw-weixin",
+    "resolvedVersion": "{PLUGIN_VERSION}",
+    "resolvedSpec": "@tencent-weixin/openclaw-weixin@{PLUGIN_VERSION}",
+    "resolvedAt": now,
+    "installedAt": now,
+}}
+with open("{CONFIG_PATH}", "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\\n")
+print("config updated")
 """
     rc, out = _exec(["python3", "-c", config_script])
     _log(out)
