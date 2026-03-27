@@ -506,9 +506,6 @@ def weixin_login_log(
     host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
     try:
         content = open(host_log, "r", errors="replace").read()
-        # Clean ANSI escape sequences but keep QR box-drawing chars
-        import re
-        content = re.sub(r'\x1b\[[0-9;]*m', '', content)
         content = content.replace('\r\n', '\n').replace('\r', '')
     except FileNotFoundError:
         content = ""
