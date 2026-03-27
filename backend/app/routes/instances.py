@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import threading
 import urllib.request
@@ -394,32 +395,44 @@ async def upgrade_instance(
     import asyncio, subprocess
     loop = asyncio.get_event_loop()
 
+    env_file = os.path.join(runtime_dir, ".env")
+
     def _do_upgrade():
-        # npm i -g openclaw@latest inside container (as root)
-        result = subprocess.run(
-            ["docker", "exec", "-u", "root", container, "npm", "i", "-g", "--force", "openclaw@latest"],
-            capture_output=True, text=True, timeout=120,
-        )
-        # Fix npm cache ownership (root install leaves root-owned files)
-        subprocess.run(
-            ["docker", "exec", "-u", "root", container, "chown", "-R", "1000:1000", "/home/node/.npm"],
-            capture_output=True, timeout=15,
-        )
-        return result.returncode, result.stdout + result.stderr
+        logs = []
+        # Step 1: docker compose pull (pulls latest image)
+        pull_cmd = ["docker", "compose", "-f", compose_file, "-p", project]
+        if os.path.exists(env_file):
+            pull_cmd += ["--env-file", env_file]
+        r1 = subprocess.run(pull_cmd + ["pull"], capture_output=True, text=True, timeout=180, cwd=runtime_dir)
+        logs.append("=== pull ===\n" + (r1.stdout + r1.stderr).strip())
+        if r1.returncode != 0:
+            return r1.returncode, "\n".join(logs)
+
+        # Step 2: docker compose up -d (recreates containers with new image)
+        up_cmd = ["docker", "compose", "-f", compose_file, "-p", project]
+        if os.path.exists(env_file):
+            up_cmd += ["--env-file", env_file]
+        r2 = subprocess.run(up_cmd + ["up", "-d"], capture_output=True, text=True, timeout=120, cwd=runtime_dir)
+        logs.append("\n=== up -d ===\n" + (r2.stdout + r2.stderr).strip())
+
+        return r2.returncode, "\n".join(logs)
 
     try:
         rc, output = await loop.run_in_executor(None, _do_upgrade)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    if rc != 0:
-        return {"ok": False, "output": output[-2000:]}
+    # Get new version
+    try:
+        vr = subprocess.run(
+            ["docker", "exec", f"{project}-openclaw-gateway-1", "openclaw", "--version"],
+            capture_output=True, text=True, timeout=10,
+        )
+        new_ver = vr.stdout.strip() if vr.returncode == 0 else ""
+    except Exception:
+        new_ver = ""
 
-    # Restart container to pick up new version
-    from ..services.install_service import restart_instance as _restart
-    ok, restart_out = restart_instance(instance_id, compose_file, project, runtime_dir)
-
-    return {"ok": True, "output": output[-2000:], "restarted": ok}
+    return {"ok": rc == 0, "output": output[-3000:], "new_version": new_ver}
 
 
 @router.post("/{instance_id}/weixin-login")

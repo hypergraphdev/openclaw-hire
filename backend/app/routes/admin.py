@@ -598,17 +598,20 @@ def instance_control(
     if action == "upgrade":
         if product != "openclaw":
             return {"ok": False, "action": action, "detail": "Upgrade only supported for OpenClaw."}
-        rc, out = _docker_run(["docker", "exec", "-u", "root", container_name, "npm", "i", "-g", "--force", "openclaw@latest"], timeout=120)
+        import os as _os
+        env_file = _os.path.join(runtime_dir, ".env") if runtime_dir else ""
+        # docker compose pull + up -d (proper image upgrade, not npm i -g)
+        base_cmd = ["docker", "compose", "-f", compose_file, "-p", project]
+        if env_file and _os.path.exists(env_file):
+            base_cmd += ["--env-file", env_file]
+        rc, out = _docker_run(base_cmd + ["pull"], timeout=180, cwd=runtime_dir)
         if rc != 0:
             return {"ok": False, "action": action, "detail": out[-2000:]}
-        # Fix npm cache ownership (root install leaves root-owned files)
-        _docker_run(["docker", "exec", "-u", "root", container_name, "chown", "-R", "1000:1000", "/home/node/.npm"], timeout=15)
-        # Restart after upgrade
-        _docker_run(["docker", "restart", container_name])
+        rc2, out2 = _docker_run(base_cmd + ["up", "-d"], timeout=120, cwd=runtime_dir)
         # Get new version
-        rc2, ver = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
-        new_ver = ver.strip() if rc2 == 0 else "unknown"
-        return {"ok": True, "action": action, "detail": out[-2000:], "new_version": new_ver}
+        rc3, ver = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
+        new_ver = ver.strip() if rc3 == 0 else "unknown"
+        return {"ok": rc2 == 0, "action": action, "detail": (out + "\n" + out2)[-2000:], "new_version": new_ver}
 
     if action == "restart_hxa":
         # Restart hxa-connect to make bot online in Hub

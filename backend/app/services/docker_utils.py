@@ -5,11 +5,11 @@ import subprocess
 import time
 
 
-def docker_run(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
-    """Run a subprocess command with timeout, return (returncode, stdout)."""
+def docker_run(cmd: list[str], timeout: int = 10, cwd: str | None = None) -> tuple[int, str]:
+    """Run a subprocess command with timeout, return (returncode, stdout+stderr)."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return proc.returncode, (proc.stdout or "").strip()
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd or None)
+        return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
     except subprocess.TimeoutExpired:
         return -1, "timeout"
     except Exception as e:
