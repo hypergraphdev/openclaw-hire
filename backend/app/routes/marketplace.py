@@ -271,6 +271,9 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
         _log("请先在实例详情页升级 OpenClaw 版本。")
         return False, "".join(logs)
 
+    # Step 1.5: Fix npm cache permissions (may be root-owned after upgrade)
+    _exec(["chown", "-R", "1000:1000", "/home/node/.npm"], user="root", timeout=15)
+
     # Step 2: Download and extract plugin
     _log("\n=== 安装微信插件 %s ===" % PLUGIN_VERSION)
     _flush()

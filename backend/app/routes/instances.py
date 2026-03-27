@@ -386,6 +386,11 @@ async def upgrade_instance(
             ["docker", "exec", "-u", "root", container, "npm", "i", "-g", "--force", "openclaw@latest"],
             capture_output=True, text=True, timeout=120,
         )
+        # Fix npm cache ownership (root install leaves root-owned files)
+        subprocess.run(
+            ["docker", "exec", "-u", "root", container, "chown", "-R", "1000:1000", "/home/node/.npm"],
+            capture_output=True, timeout=15,
+        )
         return result.returncode, result.stdout + result.stderr
 
     try:

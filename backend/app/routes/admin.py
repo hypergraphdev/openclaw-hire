@@ -601,6 +601,8 @@ def instance_control(
         rc, out = _docker_run(["docker", "exec", "-u", "root", container_name, "npm", "i", "-g", "--force", "openclaw@latest"], timeout=120)
         if rc != 0:
             return {"ok": False, "action": action, "detail": out[-2000:]}
+        # Fix npm cache ownership (root install leaves root-owned files)
+        _docker_run(["docker", "exec", "-u", "root", container_name, "chown", "-R", "1000:1000", "/home/node/.npm"], timeout=15)
         # Restart after upgrade
         _docker_run(["docker", "restart", container_name])
         # Get new version
