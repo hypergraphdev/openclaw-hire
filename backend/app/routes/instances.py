@@ -437,7 +437,7 @@ def weixin_login(
     container = f"{project}-openclaw-gateway-1"
 
     # Write log to host-accessible file
-    import os, pty, select, threading
+    import os, pty, select, subprocess, threading
     host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
 
     def _run_login():
