@@ -255,22 +255,21 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
         except subprocess.TimeoutExpired:
             return 1, "timeout"
 
-    # Step 1: Check OpenClaw version
+    # Step 1: Check OpenClaw version (use `openclaw --version`, not package.json)
     _log("=== 检查 OpenClaw 版本 ===")
-    rc, ver_out = _exec(["sh", "-c", "cat /app/package.json 2>/dev/null | grep '\"version\"' | head -1"])
+    rc, ver_out = _exec(["openclaw", "--version"])
     _log(ver_out)
     _flush()
-    if "2026.3.24" not in ver_out and "2026.3.25" not in ver_out and "2026.4" not in ver_out and "2027" not in ver_out:
-        # Try to detect actual version number
-        ver_match = ""
-        for part in ver_out.split('"'):
-            if part.startswith("2026.") or part.startswith("2027."):
-                ver_match = part
-                break
-        if ver_match and ver_match < "2026.3.24":
-            _log(f"⚠️  当前版本 {ver_match} 过低，微信插件 2.0.x 需要 >= 2026.3.24")
-            _log("请先在实例详情页升级 OpenClaw 版本。")
-            return False, "".join(logs)
+    # Parse version from "OpenClaw 2026.3.24 (cff6dc9)" format
+    ver_match = ""
+    for word in ver_out.split():
+        if word.startswith("2026.") or word.startswith("2027."):
+            ver_match = word
+            break
+    if ver_match and ver_match < "2026.3.24":
+        _log(f"⚠️  当前版本 {ver_match} 过低，微信插件 2.0.x 需要 >= 2026.3.24")
+        _log("请先在实例详情页升级 OpenClaw 版本。")
+        return False, "".join(logs)
 
     # Step 2: Download and extract plugin
     _log("\n=== 安装微信插件 %s ===" % PLUGIN_VERSION)
