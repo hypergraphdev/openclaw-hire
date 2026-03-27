@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -331,26 +332,29 @@ else:
     _flush()
 
     try:
+        import pty as _pty, select
+        # Use PTY so docker client sees a real terminal → zero buffering
+        master_fd, slave_fd = _pty.openpty()
         proc = subprocess.Popen(
             ["docker", "exec", "-t", container,
              "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
+            stdout=slave_fd, stderr=slave_fd, stdin=subprocess.DEVNULL,
         )
+        os.close(slave_fd)  # Close slave in parent — only master reads
+
         deadline = _time.time() + 600  # 10 min for user to scan QR
         last_flush_t = 0.0
         qr_found = False
-        import select
-        buf = b""
 
         while _time.time() < deadline:
-            # Use select to check if data available (non-blocking)
-            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+            ready, _, _ = select.select([master_fd], [], [], 0.5)
             if ready:
-                chunk = proc.stdout.read1(4096) if hasattr(proc.stdout, 'read1') else proc.stdout.read(4096)
+                try:
+                    chunk = os.read(master_fd, 8192)
+                except OSError:
+                    break
                 if not chunk:
-                    if proc.poll() is not None:
-                        break
-                    continue
+                    break
                 # Decode, strip TTY carriage returns
                 text = chunk.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "")
                 logs.append(text)
@@ -362,7 +366,20 @@ else:
                     last_flush_t = now
             else:
                 if proc.poll() is not None:
+                    # Process exited — drain remaining
+                    try:
+                        while True:
+                            r, _, _ = select.select([master_fd], [], [], 0.1)
+                            if not r:
+                                break
+                            tail = os.read(master_fd, 8192)
+                            if not tail:
+                                break
+                            logs.append(tail.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", ""))
+                    except OSError:
+                        pass
                     break
+        os.close(master_fd)
 
         if proc.poll() is None:
             proc.kill()
