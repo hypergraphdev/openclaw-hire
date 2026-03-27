@@ -332,54 +332,77 @@ else:
     _flush()
 
     try:
-        import pty as _pty, select
-        # Use PTY so docker client sees a real terminal → zero buffering
-        master_fd, slave_fd = _pty.openpty()
+        # Write output to a file inside the container (volume-mapped to host).
+        # Read directly from host filesystem — zero buffering, no pipe issues.
+        container_log = "/home/node/.openclaw/weixin-login.log"
+        # Volume: container /home/node/.openclaw ↔ host runtime/{id}/openclaw-config
+        from ..database import get_connection as _gc
+        _conn = _gc()
+        _cur = _conn.cursor(dictionary=True)
+        _cur.execute("SELECT runtime_dir FROM instances WHERE id=%s", (instance_id,))
+        _row = _cur.fetchone()
+        _cur.close()
+        _conn.close()
+        host_log = os.path.join(_row["runtime_dir"], "openclaw-config", "weixin-login.log") if _row else ""
+
+        # Clear any previous log
+        subprocess.run(["docker", "exec", container, "sh", "-c", f"rm -f {container_log}; touch {container_log}"],
+                        capture_output=True, timeout=10)
+
+        # Start login process in background, writing to the log file via script (PTY for unbuffered)
         proc = subprocess.Popen(
-            ["docker", "exec", "-t", container,
-             "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
-            stdout=slave_fd, stderr=slave_fd, stdin=subprocess.DEVNULL,
+            ["docker", "exec", container, "script", "-qc",
+             f"openclaw channels login --channel openclaw-weixin 2>&1 | tee {container_log}",
+             "/dev/null"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
         )
-        os.close(slave_fd)  # Close slave in parent — only master reads
 
         deadline = _time.time() + 600  # 10 min for user to scan QR
         last_flush_t = 0.0
         qr_found = False
+        last_size = 0
 
         while _time.time() < deadline:
-            ready, _, _ = select.select([master_fd], [], [], 0.5)
-            if ready:
-                try:
-                    chunk = os.read(master_fd, 8192)
-                except OSError:
+            _time.sleep(0.5)
+            # Read new content from host file
+            try:
+                with open(host_log, "r", errors="replace") as f:
+                    content = f.read()
+            except FileNotFoundError:
+                if proc.poll() is not None:
                     break
-                if not chunk:
-                    break
-                # Decode, strip TTY carriage returns
-                text = chunk.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "")
-                logs.append(text)
-                if "▄" in text or "█" in text or "二维码" in text or "扫描" in text:
+                continue
+
+            if len(content) > last_size:
+                new_text = content[last_size:]
+                last_size = len(content)
+                # Clean TTY artifacts
+                new_text = new_text.replace("\r\n", "\n").replace("\r", "")
+                logs.append(new_text)
+                if "▄" in new_text or "█" in new_text or "二维码" in new_text:
                     qr_found = True
                 now = _time.time()
-                if now - last_flush_t > 0.5:
+                if now - last_flush_t > 0.3:
                     _flush()
                     last_flush_t = now
-            else:
-                if proc.poll() is not None:
-                    # Process exited — drain remaining
-                    try:
-                        while True:
-                            r, _, _ = select.select([master_fd], [], [], 0.1)
-                            if not r:
-                                break
-                            tail = os.read(master_fd, 8192)
-                            if not tail:
-                                break
-                            logs.append(tail.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", ""))
-                    except OSError:
-                        pass
-                    break
-        os.close(master_fd)
+
+            if proc.poll() is not None:
+                # Process exited — read final content
+                _time.sleep(0.5)
+                try:
+                    with open(host_log, "r", errors="replace") as f:
+                        final = f.read()
+                    if len(final) > last_size:
+                        logs.append(final[last_size:].replace("\r\n", "\n").replace("\r", ""))
+                except FileNotFoundError:
+                    pass
+                break
+
+        # Cleanup log file
+        try:
+            os.unlink(host_log)
+        except OSError:
+            pass
 
         if proc.poll() is None:
             proc.kill()
