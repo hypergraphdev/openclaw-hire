@@ -1,0 +1,15 @@
+[Unit]
+Description=Whisper Transcription Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/wwwroot/openclaw-hire/backend
+ExecStart=/usr/bin/python3 whisper_service.py --model small --preload --host 127.0.0.1 --port 8019
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
