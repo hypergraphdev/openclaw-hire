@@ -75,6 +75,12 @@ export const api = {
   upgradeInstance: (id: string) =>
     request<{ ok: boolean; output: string; restarted?: boolean }>(`/api/instances/${id}/upgrade`, { method: "POST" }),
 
+  weixinLogin: (id: string) =>
+    request<{ ok: boolean; message: string }>(`/api/instances/${id}/weixin-login`, { method: "POST" }),
+
+  weixinLoginLog: (id: string) =>
+    request<{ log: string; status: string }>(`/api/instances/${id}/weixin-login-log`),
+
   deleteInstance: (id: string) =>
     request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
 

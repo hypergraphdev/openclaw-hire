@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
@@ -36,6 +36,7 @@ function timelineCollapseKey(id: string) {
 
 export function InstanceDetailPage() {
   const { instanceId } = useParams<{ instanceId: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const t = useT();
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
@@ -55,6 +56,10 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
+  const [weixinLogging, setWeixinLogging] = useState(false);
+  const [weixinLog, setWeixinLog] = useState("");
+  const [weixinLogStatus, setWeixinLogStatus] = useState("");
+  const weixinPollRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState<"info" | "chat" | "monitor">(() => {
     const hash = window.location.hash.replace("#", "");
     if (hash === "chat" || hash === "monitor") return hash;
@@ -152,6 +157,38 @@ export function InstanceDetailPage() {
     } finally {
       setConfiguring(false);
     }
+  }
+
+  async function handleWeixinLogin() {
+    if (!instanceId) return;
+    setWeixinLogging(true);
+    setWeixinLog("");
+    setWeixinLogStatus("");
+    try {
+      await api.weixinLogin(instanceId);
+      // Poll log for QR code
+      const poll = async () => {
+        try {
+          const data = await api.weixinLoginLog(instanceId);
+          setWeixinLog(data.log);
+          setWeixinLogStatus(data.status);
+          if (data.status === "waiting" || data.status === "qr_ready") {
+            weixinPollRef.current = window.setTimeout(poll, 1000);
+          }
+        } catch { /* */ }
+      };
+      poll();
+    } catch (err: unknown) {
+      setWeixinLog(`ERROR: ${err instanceof Error ? err.message : "Failed"}`);
+      setWeixinLogStatus("failed");
+    }
+  }
+
+  function closeWeixinLog() {
+    clearTimeout(weixinPollRef.current);
+    setWeixinLogging(false);
+    setWeixinLog("");
+    setWeixinLogStatus("");
   }
 
   async function handleJoinOrg() {
@@ -468,6 +505,58 @@ export function InstanceDetailPage() {
               )}
             </div>
           </div>
+
+          {/* WeChat Integration — OpenClaw only */}
+          {instance.product === "openclaw" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
+              <h2 className="text-sm font-medium text-gray-300 mb-3">💬 微信绑定</h2>
+              {(detail as Record<string, unknown>)?.is_weixin_installed ? (
+                <div className="space-y-3">
+                  <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
+                    微信插件已安装
+                  </div>
+                  <button onClick={handleWeixinLogin} className="text-xs text-blue-400 hover:text-blue-300 underline">
+                    重新绑定微信
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500">将此实例连接微信，扫码绑定后可通过微信与 AI Agent 对话。</p>
+                  <button
+                    onClick={() => navigate("/marketplace")}
+                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md"
+                  >
+                    前往插件市场安装
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* WeChat Login QR Modal */}
+          {weixinLogging && (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+              <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-white">微信扫码登录</h3>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    weixinLogStatus === "success" ? "bg-green-900/40 text-green-400" :
+                    weixinLogStatus === "failed" ? "bg-red-900/40 text-red-400" :
+                    "bg-yellow-900/40 text-yellow-400"
+                  }`}>
+                    {weixinLogStatus === "success" ? "绑定成功" :
+                     weixinLogStatus === "failed" ? "绑定失败" : "等待扫码..."}
+                  </span>
+                </div>
+                <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre">
+                  {weixinLog || "正在启动..."}
+                </pre>
+                <button onClick={closeWeixinLog} className="mt-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-lg">
+                  {weixinLogStatus === "waiting" || weixinLogStatus === "qr_ready" ? "关闭（后台继续）" : "关闭"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Telegram Integration */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">

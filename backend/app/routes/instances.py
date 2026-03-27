@@ -274,11 +274,25 @@ def get_instance(
             configured_at=c.get("configured_at"),
         )
 
-    return InstanceDetailResponse(
+    # Check WeChat plugin install status
+    cursor2 = db.cursor(dictionary=True)
+    cursor2.execute(
+        "SELECT status FROM marketplace_installs WHERE instance_id = %s AND item_id = 'weixin-plugin'",
+        (instance_id,),
+    )
+    weixin_row = cursor2.fetchone()
+    cursor2.close()
+    is_weixin_installed = weixin_row["status"] == "installed" if weixin_row else False
+
+    resp = InstanceDetailResponse(
         instance=_row_to_instance(inst),
         install_timeline=[InstallEventResponse(**dict(e)) for e in events],
         config=config,
     )
+    # Attach extra fields not in the Pydantic model
+    resp_dict = resp.dict() if hasattr(resp, "dict") else resp.model_dump()
+    resp_dict["is_weixin_installed"] = is_weixin_installed
+    return resp_dict
 
 
 @router.post("/{instance_id}/install", response_model=InstanceResponse)
@@ -406,6 +420,107 @@ async def upgrade_instance(
     ok, restart_out = restart_instance(instance_id, compose_file, project, runtime_dir)
 
     return {"ok": True, "output": output[-2000:], "restarted": ok}
+
+
+@router.post("/{instance_id}/weixin-login")
+def weixin_login(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Start WeChat login (channels login) and stream output to a log file.
+    Frontend polls GET /weixin-login-log to read QR code output."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    if inst["product"] != "openclaw":
+        raise HTTPException(status_code=400, detail="WeChat login only for OpenClaw instances.")
+    compose_file, project, runtime_dir = _require_compose(inst)
+    container = f"{project}-openclaw-gateway-1"
+
+    # Write log to host-accessible file
+    import os, pty, select, threading
+    host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
+
+    def _run_login():
+        try:
+            # Clear previous log
+            open(host_log, "w").close()
+            master, slave = pty.openpty()
+            proc = subprocess.Popen(
+                ["docker", "exec", "-t", container, "openclaw", "channels", "login", "--channel", "openclaw-weixin"],
+                stdout=slave, stderr=slave, stdin=subprocess.DEVNULL,
+            )
+            os.close(slave)
+            import time
+            deadline = time.time() + 600  # 10 min
+            with open(host_log, "ab") as f:
+                while time.time() < deadline:
+                    if proc.poll() is not None:
+                        # Read remaining
+                        try:
+                            while True:
+                                ready, _, _ = select.select([master], [], [], 0.1)
+                                if not ready:
+                                    break
+                                chunk = os.read(master, 4096)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                f.flush()
+                        except OSError:
+                            pass
+                        break
+                    try:
+                        ready, _, _ = select.select([master], [], [], 1.0)
+                        if ready:
+                            chunk = os.read(master, 4096)
+                            if chunk:
+                                f.write(chunk)
+                                f.flush()
+                            else:
+                                break
+                    except OSError:
+                        break
+            os.close(master)
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+        except Exception as e:
+            with open(host_log, "a") as f:
+                f.write(f"\nERROR: {e}\n")
+
+    thread = threading.Thread(target=_run_login, daemon=True)
+    thread.start()
+    return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
+
+
+@router.get("/{instance_id}/weixin-login-log")
+def weixin_login_log(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Read WeChat login log (QR code output)."""
+    import os
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    runtime_dir = inst.get("runtime_dir", f"/home/wwwroot/openclaw-hire/runtime/{instance_id}")
+    host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
+    try:
+        content = open(host_log, "r", errors="replace").read()
+        # Clean ANSI escape sequences but keep QR box-drawing chars
+        import re
+        content = re.sub(r'\x1b\[[0-9;]*m', '', content)
+        content = content.replace('\r\n', '\n').replace('\r', '')
+    except FileNotFoundError:
+        content = ""
+    # Detect status
+    status = "waiting"
+    if "扫码成功" in content or "登录成功" in content or "connected" in content.lower():
+        status = "success"
+    elif "ERROR" in content or "失败" in content:
+        status = "failed"
+    elif "二维码" in content or "扫描" in content:
+        status = "qr_ready"
+    return {"log": content[-50000:], "status": status}
 
 
 @router.get("/{instance_id}/logs", response_model=InstanceLogsResponse)
