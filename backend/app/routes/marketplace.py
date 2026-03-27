@@ -536,7 +536,7 @@ def _update_install(instance_id: str, item_id: str, status: str, log: str):
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE marketplace_installs SET status=%s, install_log=%s WHERE instance_id=%s AND item_id=%s",
-            (status, log[:10000], instance_id, item_id),
+            (status, log[-50000:], instance_id, item_id),
         )
         cursor.close()
     finally:
