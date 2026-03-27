@@ -14,7 +14,8 @@ API:
         - multipart/form-data with 'file' field (audio file)
         - optional 'language' field (e.g., 'zh', 'en', 'ja')
         - optional 'model' field to override (tiny/base/small)
-        - returns JSON: {"text": "...", "language": "...", "duration": 1.23}
+        - optional 'word_timestamps' field ("true" for word-level timestamps)
+        - returns JSON: {"text": "...", "language": "...", "duration": 1.23, "segments": [...]}
 
     GET /health
         - returns model info and status
@@ -119,8 +120,13 @@ async def transcribe(
     file: UploadFile = File(...),
     language: str = Form(default=""),
     model: str = Form(default=""),
+    word_timestamps: str = Form(default=""),
 ):
-    """Transcribe an audio file using Whisper."""
+    """Transcribe an audio file using Whisper.
+
+    Optional fields:
+        - word_timestamps: "true" to include word-level timestamps in segments
+    """
     # Validate file extension
     ext = Path(file.filename or "audio.mp3").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -154,6 +160,9 @@ async def transcribe(
         kwargs: dict = {}
         if language.strip():
             kwargs["language"] = language.strip()
+        want_words = word_timestamps.strip().lower() in ("true", "1", "yes")
+        if want_words:
+            kwargs["word_timestamps"] = True
 
         result = m.transcribe(tmp_path, **kwargs)
         elapsed = time.time() - t0
@@ -163,7 +172,7 @@ async def transcribe(
 
         log.info("Done in %.1fs, language=%s, text_len=%d", elapsed, detected_lang, len(text))
 
-        return {
+        resp_data: dict = {
             "text": text,
             "language": detected_lang,
             "duration": round(elapsed, 2),
@@ -171,6 +180,28 @@ async def transcribe(
             "file_name": file.filename,
             "file_size": len(content),
         }
+
+        # Always include segments (for callers that need timestamps)
+        raw_segments = result.get("segments") or []
+        resp_data["segments"] = [
+            {
+                "start": float(seg.get("start", 0) or 0),
+                "end": float(seg.get("end", 0) or 0),
+                "text": str(seg.get("text") or "").strip(),
+                **({"words": [
+                    {
+                        "start": float(w.get("start", 0) or 0),
+                        "end": float(w.get("end", 0) or 0),
+                        "word": str(w.get("word") or "").strip(),
+                    }
+                    for w in (seg.get("words") or [])
+                    if str(w.get("word") or "").strip()
+                ]} if want_words else {}),
+            }
+            for seg in raw_segments
+        ]
+
+        return resp_data
     except Exception as e:
         log.error("Transcription failed: %s", e)
         raise HTTPException(500, f"Transcription failed: {e}")
