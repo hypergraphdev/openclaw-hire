@@ -46,8 +46,8 @@ MARKETPLACE_ITEMS = [
         "product": "all",
         "tags": ["AI", "Speech", "Transcription"],
         "version": "latest",
-        "install_time": "~3min",
-        "models": ["tiny (~75MB)", "base (~140MB)"],
+        "install_time": "~5s",
+        "models": ["tiny", "base", "small (默认，宿主机共享服务)"],
     },
 ]
 
@@ -422,141 +422,94 @@ else:
 
 
 def _install_whisper(container: str) -> tuple[bool, str]:
-    """Install Whisper + download tiny and base models. Returns (success, log)."""
-    logs = []
-    ok = True
+    """Write Whisper skill file to container. No software install needed —
+    the shared Whisper Web Service on the host handles all transcription."""
+    import tempfile
 
-    # Step 0: ensure pip + ffmpeg are available
+    logs: list[str] = []
+
+    # Step 1: Verify host Whisper service is reachable from container
+    logs.append("=== 检查 Whisper 服务连通性 ===")
     try:
-        r0 = subprocess.run(
-            ["docker", "exec", "-u", "root", container, "sh", "-c",
-             "apt-get update -qq && apt-get install -y -qq ffmpeg python3-pip 2>&1 | tail -5 && pip3 --version && ffmpeg -version | head -1"],
-            capture_output=True, text=True, timeout=180,
+        r = subprocess.run(
+            ["docker", "exec", container, "node", "-e",
+             'fetch("http://172.17.0.1:8019/health").then(r=>r.json()).then(d=>{console.log("OK model="+d.default_model+" loaded="+d.loaded_models.join(","))}).catch(e=>console.log("FAIL:"+e.message))'],
+            capture_output=True, text=True, timeout=15,
         )
-        logs.append("=== ensure pip + ffmpeg ===")
-        logs.append(r0.stdout.strip()[-400:])
-        if r0.returncode != 0:
-            logs.append(r0.stderr[-300:])
+        output = r.stdout.strip()
+        logs.append(output)
+        if "FAIL" in output or r.returncode != 0:
+            logs.append("\n⚠️  容器无法访问宿主机 Whisper 服务 (172.17.0.1:8019)")
+            logs.append("请确认 whisper.service 已启动: systemctl status whisper")
             return False, "\n".join(logs)
     except subprocess.TimeoutExpired:
-        return False, "ERROR: dependency install timed out."
+        logs.append("连接超时")
+        return False, "\n".join(logs)
 
-    # Step 1: pip install
-    try:
-        r1 = subprocess.run(
-            ["docker", "exec", "-u", "root", container, "pip3", "install", "-U", "--break-system-packages", "openai-whisper"],
-            capture_output=True, text=True, timeout=300,
-        )
-        logs.append("=== pip install openai-whisper ===")
-        logs.append(r1.stdout[-500:] if len(r1.stdout) > 500 else r1.stdout)
-        if r1.returncode != 0:
-            logs.append(r1.stderr[-500:])
-            return False, "\n".join(logs)
-    except subprocess.TimeoutExpired:
-        return False, "ERROR: pip install timed out."
+    # Step 2: Write skill file
+    logs.append("\n=== 写入技能文件 ===")
+    skill_content = """# Whisper 语音转文本技能
 
-    # Step 2: Download tiny model
-    try:
-        r2 = subprocess.run(
-            ["docker", "exec", container, "python3", "-c", "import whisper; whisper.load_model('tiny'); print('tiny model OK')"],
-            capture_output=True, text=True, timeout=180,
-        )
-        logs.append("\n=== Download tiny model ===")
-        logs.append(r2.stdout.strip())
-        if r2.returncode != 0:
-            logs.append(r2.stderr[-300:])
-            ok = False
-    except subprocess.TimeoutExpired:
-        logs.append("\nWARNING: tiny model download timed out.")
-        ok = False
+## 能力说明
+宿主机运行了共享的 Whisper 转录服务，通过 HTTP API 调用，模型常驻内存，响应快速。
 
-    # Step 3: Download base model
-    try:
-        r3 = subprocess.run(
-            ["docker", "exec", container, "python3", "-c", "import whisper; whisper.load_model('base'); print('base model OK')"],
-            capture_output=True, text=True, timeout=300,
-        )
-        logs.append("\n=== Download base model ===")
-        logs.append(r3.stdout.strip())
-        if r3.returncode != 0:
-            logs.append(r3.stderr[-300:])
-            ok = False
-    except subprocess.TimeoutExpired:
-        logs.append("\nWARNING: base model download timed out.")
-        ok = False
+## 使用方式
+**不要在本地运行 whisper 命令**，通过 HTTP API 调用宿主机服务：
 
-    # Step 4: Write skill file so the AI agent knows about Whisper capability
-    if ok:
-        skill_lines = [
-            "# Whisper 语音转文本技能",
-            "",
-            "## 能力说明",
-            "你的系统已安装 OpenAI Whisper 和 FFmpeg，具备本地语音转文字能力。",
-            "",
-            "## 可用模型（仅限以下两个，禁止使用其他模型）",
-            "- **tiny** - 速度最快，适合简短语音",
-            "- **base** - 平衡速度和准确度，推荐日常使用",
-            "",
-            "## 重要限制",
-            "- **严禁使用 small/medium/large 等未安装的模型**，系统只安装了 tiny 和 base",
-            "- 使用未安装的模型会导致自动下载数百MB甚至数GB文件，严重浪费资源",
-            "- 默认使用 base 模型，用户要求快速时用 tiny",
-            "",
-            "## 命令行调用（推荐）",
-            "```bash",
-            "whisper audio_file.mp3 --model base --language zh --output_format txt --output_dir .",
-            "```",
-            "",
-            "## Python 调用",
-            "```python",
-            "import whisper",
-            "model = whisper.load_model('base')  # 只能用 'base' 或 'tiny'",
-            "result = model.transcribe('audio_file.mp3', language='zh')",
-            "print(result['text'])",
-            "```",
-            "",
-            "## 支持的音频格式",
-            "mp3, wav, m4a, ogg, flac, webm 等（FFmpeg 支持的所有格式）",
-            "",
-            "## 注意事项",
-            "- 当用户发送音频文件时，直接用 Whisper 在本地转录，无需调用外部 API",
-            "- 转录完成后直接展示文字结果",
-        ]
-        skill_content = "\n".join(skill_lines)
-        # Write skill file using docker cp (most reliable, no shell escaping issues)
-        import tempfile
-        skill_written = False
-        for skill_dir in [
-            "/home/node/.openclaw/skills/whisper-transcription",
-            "/home/zylos/zylos/.claude/skills/whisper-transcription",
-        ]:
-            try:
-                subprocess.run(
-                    ["docker", "exec", container, "mkdir", "-p", skill_dir],
-                    capture_output=True, timeout=10,
-                )
-                # Write to temp file on host, then docker cp into container
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-                    f.write(skill_content)
-                    tmp_path = f.name
-                r = subprocess.run(
-                    ["docker", "cp", tmp_path, f"{container}:{skill_dir}/SKILL.md"],
-                    capture_output=True, text=True, timeout=10,
-                )
-                os.unlink(tmp_path)
-                if r.returncode == 0:
-                    logs.append(f"\n=== 技能文件已写入 {skill_dir}/SKILL.md ===")
-                    skill_written = True
-                else:
-                    logs.append(f"\n=== 技能文件写入失败: {r.stderr[:200]} ===")
-            except Exception as e:
-                logs.append(f"\n=== 技能文件写入异常: {e} ===")
-        if skill_written:
-            logs.append("AI Agent 现在知道自己有 Whisper 语音转文字能力了。")
-        else:
-            logs.append("警告：技能文件写入失败，AI Agent 可能不知道自己有 Whisper 能力。")
+```bash
+curl -s -X POST http://172.17.0.1:8019/transcribe \\
+  -F "file=@音频文件路径" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['text'])"
+```
 
-    return ok, "\n".join(logs)
+## 语言检测规则
+- **默认不指定 language 参数**，让 Whisper 自动检测语言
+- 只有用户明确要求特定语言输出时，才加 `-F "language=zh"` 或 `-F "language=en"`
+- 输出语言与音频语言一致（英文音频输出英文，中文音频输出中文）
+
+## 可用参数
+- `file` (必须) — 音频文件
+- `language` (可选) — zh/en/ja 等，默认自动检测
+- `model` (可选) — tiny/base/small，默认 small
+
+## 支持的音频格式
+mp3, wav, m4a, ogg, flac, webm, mp4, aac 等
+
+## 注意事项
+- 当用户发送音频文件时，先下载到本地，再通过 API 转录
+- 转录完成后直接展示文字结果
+- 如需更快速度，指定 model=tiny
+"""
+    skill_written = False
+    for skill_dir in [
+        "/home/node/.openclaw/skills/whisper-transcription",
+        "/home/zylos/zylos/.claude/skills/whisper-transcription",
+    ]:
+        try:
+            subprocess.run(
+                ["docker", "exec", container, "mkdir", "-p", skill_dir],
+                capture_output=True, timeout=10,
+            )
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+                f.write(skill_content)
+                tmp_path = f.name
+            r = subprocess.run(
+                ["docker", "cp", tmp_path, f"{container}:{skill_dir}/SKILL.md"],
+                capture_output=True, text=True, timeout=10,
+            )
+            os.unlink(tmp_path)
+            if r.returncode == 0:
+                logs.append(f"✅ 技能文件已写入 {skill_dir}/SKILL.md")
+                skill_written = True
+        except Exception as e:
+            logs.append(f"写入异常: {e}")
+
+    if skill_written:
+        logs.append("\n✅ 安装完成！AI Agent 现在可以通过 Whisper 服务转录语音了。")
+        logs.append("无需安装任何软件，所有转录由宿主机共享服务处理。")
+        return True, "\n".join(logs)
+    else:
+        logs.append("\n❌ 技能文件写入失败")
+        return False, "\n".join(logs)
 
 
 def _update_install(instance_id: str, item_id: str, status: str, log: str):
