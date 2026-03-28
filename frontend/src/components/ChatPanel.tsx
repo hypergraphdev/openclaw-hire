@@ -108,7 +108,19 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               return;
             }
             if (data.type === "message" && data.message) {
-              const msg: ChatMessage = data.message;
+              const raw = data.message;
+              // Normalize content fields from Hub (may be objects)
+              if (raw.content && typeof raw.content !== "string") {
+                raw.content = typeof raw.content === "object" && raw.content.text ? raw.content.text : JSON.stringify(raw.content);
+              }
+              if (raw.parts) {
+                for (const p of raw.parts) {
+                  if (p.content && typeof p.content !== "string") {
+                    p.content = typeof p.content === "object" && p.content.text ? p.content.text : JSON.stringify(p.content);
+                  }
+                }
+              }
+              const msg: ChatMessage = raw;
               // Only stop typing when the BOT replies (not our own echo)
               if (msg.sender_id !== adminBotIdRef.current) {
                 setBotTyping(false);
@@ -527,12 +539,24 @@ function parseImageContent(content: string): { imageUrl: string | null; text: st
 }
 
 /** Extract displayable content from a message. */
+function safeStr(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v == null) return "";
+  if (typeof v === "object") {
+    // Hub may send content as {text: "..."} object
+    const obj = v as Record<string, unknown>;
+    if (typeof obj.text === "string") return obj.text;
+    try { return JSON.stringify(v); } catch { return ""; }
+  }
+  return String(v);
+}
+
 function extractContent(msg: ChatMessage): string {
   if (msg.parts && msg.parts.length > 0) {
     const texts = msg.parts
       .filter((p) => p.type === "text" || p.type === "markdown")
-      .map((p) => p.content ?? "");
+      .map((p) => safeStr(p.content));
     if (texts.length > 0) return texts.join("\n");
   }
-  return msg.content || "";
+  return safeStr(msg.content) || "";
 }
