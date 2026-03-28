@@ -49,6 +49,21 @@ MARKETPLACE_ITEMS = [
         "install_time": "~5s",
     },
     {
+        "id": "weixin-zylos-plugin",
+        "type": "plugin",
+        "name": "WeChat Integration (Zylos)",
+        "name_zh": "微信插件 Zylos版",
+        "description": "Connect your Zylos instance to WeChat. QR code login, long-poll messaging, media support.",
+        "description_zh": "将 Zylos 实例连接微信。支持扫码登录、长轮询收消息、图片/文件/语音。",
+        "icon": "💬",
+        "product": "zylos",
+        "tags": ["微信", "聊天", "社交"],
+        "version": "1.0.0",
+        "install_time": "~30s",
+        "note": "After install, the plugin will display a QR code. Scan it with WeChat to complete binding.",
+        "note_zh": "安装后插件会输出二维码，请用微信扫码完成绑定。可在日志中查看扫码链接。",
+    },
+    {
         "id": "edge-tts-skill",
         "type": "skill",
         "name": "Text to Speech",
@@ -211,6 +226,9 @@ def _run_install(instance_id: str, item_id: str, container: str):
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "whisper-skill":
             ok, log = _install_whisper(container)
+            _update_install(instance_id, item_id, "installed" if ok else "failed", log)
+        elif item_id == "weixin-zylos-plugin":
+            ok, log = _install_weixin_zylos(container, instance_id, item_id)
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "edge-tts-skill":
             ok, log = _install_edge_tts(container)
@@ -700,3 +718,107 @@ edge-tts --list-voices | head -50
     else:
         logs.append("\n❌ 技能文件写入失败")
         return False, "\n".join(logs)
+
+
+# ── Zylos WeChat Plugin ──────────────────────────────────────────────────────
+
+def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = "") -> tuple[bool, str]:
+    """Install WeChat plugin for Zylos via tarball + PM2."""
+    import time as _time
+    logs: list[str] = []
+    SKILL_DIR = "/home/zylos/zylos/.claude/skills/weixin"
+    DATA_DIR = "/home/zylos/zylos/components/weixin"
+    TARBALL_HOST = "/home/wwwroot/openclaw-hire/backend/data/zylos-weixin.tgz"
+
+    def _log(msg: str):
+        logs.append(msg + "\n")
+
+    def _flush():
+        if instance_id and item_id:
+            _update_install(instance_id, item_id, "installing", "".join(logs))
+
+    def _exec(cmd: list[str], timeout: int = 60, user: str = "") -> tuple[int, str]:
+        full_cmd = ["docker", "exec"]
+        if user:
+            full_cmd += ["-u", user]
+        full_cmd += [container] + cmd
+        try:
+            r = subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
+            return r.returncode, (r.stdout + r.stderr).strip()
+        except subprocess.TimeoutExpired:
+            return 1, "timeout"
+
+    # Step 1: Copy tarball into container
+    _log("=== 安装微信插件 Zylos版 ===")
+    _flush()
+
+    if not os.path.exists(TARBALL_HOST):
+        _log(f"❌ 找不到安装包: {TARBALL_HOST}")
+        return False, "".join(logs)
+
+    rc = subprocess.run(
+        ["docker", "cp", TARBALL_HOST, f"{container}:/tmp/zylos-weixin.tgz"],
+        capture_output=True, text=True, timeout=30,
+    ).returncode
+    if rc != 0:
+        _log("❌ 拷贝安装包到容器失败")
+        return False, "".join(logs)
+    _log("安装包已拷入容器")
+
+    # Step 2: Extract
+    _log("\n=== 解压插件 ===")
+    _flush()
+    rc, out = _exec(["sh", "-c", f"mkdir -p {SKILL_DIR} && cd {SKILL_DIR} && tar xzf /tmp/zylos-weixin.tgz --strip-components=1"])
+    if rc != 0:
+        _log(f"❌ 解压失败: {out}")
+        return False, "".join(logs)
+    _log("解压完成")
+
+    # Clean up tarball (as root since docker cp creates root-owned file)
+    _exec(["rm", "-f", "/tmp/zylos-weixin.tgz"], user="root", timeout=10)
+
+    # Step 3: Create data directories
+    rc, out = _exec(["sh", "-c", f"mkdir -p {DATA_DIR}/logs {DATA_DIR}/accounts {DATA_DIR}/sync-buffers"])
+    _log("数据目录已创建")
+
+    # Step 4: Install dependencies
+    _log("\n=== 安装依赖 ===")
+    _flush()
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install --production 2>&1 | tail -5"], timeout=120)
+    _log(out)
+    if rc != 0:
+        _log("❌ npm install 失败")
+        return False, "".join(logs)
+
+    # Step 5: Start PM2 process
+    _log("\n=== 启动插件 ===")
+    _flush()
+    # Try restart first (if already in PM2), otherwise start
+    rc, out = _exec(["pm2", "restart", "zylos-weixin"], timeout=15)
+    if rc != 0:
+        rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && pm2 start ecosystem.config.cjs"], timeout=15)
+    if rc != 0:
+        _log(f"❌ PM2 启动失败: {out}")
+        return False, "".join(logs)
+    _log("PM2 进程已启动")
+
+    # Save PM2 state
+    _exec(["pm2", "save"], timeout=10)
+
+    # Step 6: Wait a moment and check logs for QR code
+    _log("\n=== 等待初始化 ===")
+    _flush()
+    _time.sleep(5)
+    rc, out = _exec(["sh", "-c", f"tail -30 {DATA_DIR}/logs/out.log 2>/dev/null"])
+    if out:
+        _log(out)
+    _flush()
+
+    # Check PM2 status
+    rc, out = _exec(["pm2", "show", "zylos-weixin", "--no-color"], timeout=10)
+    if "online" in out.lower():
+        _log("\n✅ 微信插件已安装并启动。请查看日志中的二维码链接完成绑定。")
+        return True, "".join(logs)
+    else:
+        _log(f"\n⚠️ 插件已安装但状态异常:\n{out}")
+        return False, "".join(logs)
