@@ -1424,7 +1424,8 @@ def restart_plugins(
     container_name = _get_container_name(instance_id, product)
 
     if product == "zylos":
-        rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"], timeout=15)
+        # HXA is handled by c4-dispatcher (comm-bridge); restart all PM2 processes
+        rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "all"], timeout=15)
     else:
         rc, out = _docker_run(["docker", "restart", container_name], timeout=30)
 
