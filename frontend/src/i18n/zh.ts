@@ -276,6 +276,12 @@ export const zh: Record<string, string> = {
   // Chat
   "chat.tab": "聊天",
   "chat.infoTab": "详情",
+  "files.tab": "文件",
+  "files.name": "名称",
+  "files.size": "大小",
+  "files.modified": "修改时间",
+  "files.loading": "加载文件列表...",
+  "files.empty": "空目录",
   "chat.selectBot": "选择一个 Bot 开始对话",
   "chat.inputPlaceholder": "输入消息...",
   "chat.send": "发送",

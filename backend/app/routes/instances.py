@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
 from ..deps import get_current_user, get_db
@@ -1466,3 +1467,112 @@ def restart_plugins(
         rc, out = _docker_run(["docker", "restart", container_name], timeout=30)
 
     return {"ok": rc == 0, "detail": out or "Plugins restarted."}
+
+
+# ── File Browser ─────────────────────────────────────────────────────────────
+
+def _workspace_root(product: str) -> str:
+    if product == "zylos":
+        return "/home/zylos/zylos"
+    return "/home/node/.openclaw/workspace"
+
+
+def _safe_path(root: str, rel: str) -> str:
+    """Resolve path safely within root. Rejects traversal."""
+    import posixpath
+    clean = posixpath.normpath("/" + rel).lstrip("/")
+    if ".." in clean.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return f"{root}/{clean}" if clean else root
+
+
+@router.get("/{instance_id}/files")
+def list_files(
+    instance_id: str,
+    path: str = Query(default="/"),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """List files in the instance workspace."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    product = inst.get("product", "openclaw")
+    container = _get_container_name(instance_id, product)
+    root = _workspace_root(product)
+    target = _safe_path(root, path)
+
+    rc, out = _docker_run(
+        ["docker", "exec", container, "ls", "-la", "--time-style=+%Y-%m-%d %H:%M", target],
+        timeout=10,
+    )
+    if rc != 0:
+        raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+
+    files = []
+    for line in out.splitlines()[1:]:  # skip "total N" line
+        parts = line.split(None, 7)
+        if len(parts) < 8:
+            continue
+        perms, _, _, _, size_str, date_str, time_str, name = parts
+        if name in (".", ".."):
+            continue
+        is_dir = perms.startswith("d")
+        is_link = perms.startswith("l")
+        display_name = name.split(" -> ")[0] if is_link else name
+        files.append({
+            "name": display_name,
+            "type": "dir" if is_dir else "file",
+            "size": int(size_str) if not is_dir else None,
+            "modified": f"{date_str} {time_str}",
+        })
+    return {"path": path, "files": files}
+
+
+@router.get("/{instance_id}/files/download")
+def download_file(
+    instance_id: str,
+    path: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Download a file from the instance workspace."""
+    import subprocess
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    product = inst.get("product", "openclaw")
+    container = _get_container_name(instance_id, product)
+    root = _workspace_root(product)
+    target = _safe_path(root, path)
+
+    # Verify it's a file (not directory)
+    rc, out = _docker_run(["docker", "exec", container, "test", "-f", target], timeout=5)
+    if rc != 0:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    filename = os.path.basename(target)
+
+    def stream():
+        proc = subprocess.Popen(
+            ["docker", "cp", f"{container}:{target}", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        # docker cp outputs a tar stream; extract the single file
+        import tarfile, io
+        try:
+            tar = tarfile.open(fileobj=proc.stdout, mode="r|")
+            for member in tar:
+                f = tar.extractfile(member)
+                if f:
+                    while True:
+                        chunk = f.read(65536)
+                        if not chunk:
+                            break
+                        yield chunk
+                    break
+            tar.close()
+        finally:
+            proc.wait()
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

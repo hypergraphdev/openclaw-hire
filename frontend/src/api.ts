@@ -84,6 +84,11 @@ export const api = {
   weixinLoginLog: (id: string) =>
     request<{ log: string; status: string }>(`/api/instances/${id}/weixin-login-log`),
 
+  instanceFiles: (id: string, path: string = "/") =>
+    request<{ path: string; files: Array<{ name: string; type: "file" | "dir"; size: number | null; modified: string }> }>(
+      `/api/instances/${id}/files?path=${encodeURIComponent(path)}`
+    ),
+
   deleteInstance: (id: string) =>
     request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
 

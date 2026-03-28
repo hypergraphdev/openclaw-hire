@@ -64,19 +64,37 @@ export function InstanceDetailPage() {
   const [weixinLog, setWeixinLog] = useState("");
   const [weixinLogStatus, setWeixinLogStatus] = useState("");
   const weixinPollRef = useRef<number>(0);
-  const [activeTab, setActiveTab] = useState<"info" | "chat" | "monitor">(() => {
+  const [activeTab, setActiveTab] = useState<"info" | "chat" | "files" | "monitor">(() => {
     const hash = window.location.hash.replace("#", "");
-    if (hash === "chat" || hash === "monitor") return hash;
+    if (hash === "chat" || hash === "files" || hash === "monitor") return hash;
     return "info";
   });
   const [chatExpanded, setChatExpanded] = useState(() => localStorage.getItem("chat_expanded") === "1");
   const [monitorExpanded, setMonitorExpanded] = useState(() => localStorage.getItem("monitor_expanded") === "1");
 
+  // File browser state
+  type FileEntry = { name: string; type: "file" | "dir"; size: number | null; modified: string };
+  const [filePath, setFilePath] = useState("/");
+  const [files, setFiles] = useState<FileEntry[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState("");
+
   // Sync hash with tab
-  function switchTab(tab: "info" | "chat" | "monitor") {
+  function switchTab(tab: "info" | "chat" | "files" | "monitor") {
     setActiveTab(tab);
     window.location.hash = tab === "info" ? "" : tab;
   }
+  // Load files when tab is active or path changes
+  useEffect(() => {
+    if (activeTab !== "files" || !instanceId) return;
+    setFilesLoading(true);
+    setFilesError("");
+    api.instanceFiles(instanceId, filePath)
+      .then((res) => setFiles(res.files))
+      .catch((err: unknown) => setFilesError(err instanceof Error ? err.message : "Failed to load files"))
+      .finally(() => setFilesLoading(false));
+  }, [activeTab, filePath, instanceId]);
+
   const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
     if (!instanceId) return false;
     return localStorage.getItem(timelineCollapseKey(instanceId)) === "1";
@@ -378,6 +396,16 @@ export function InstanceDetailPage() {
                 {t("chat.tab")}
               </button>
               <button
+                onClick={() => { switchTab("files"); setFilePath("/"); }}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "files"
+                    ? "text-blue-400 border-b-2 border-blue-400"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {t("files.tab")}
+              </button>
+              <button
                 onClick={() => switchTab("monitor")}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${
                   activeTab === "monitor"
@@ -405,6 +433,85 @@ export function InstanceDetailPage() {
                 <div className="text-gray-400 text-sm">{isOwner ? "请先配置 HXA 组织后再使用聊天" : "管理员模式下聊天不可用"}</div>
               </div>
             )
+          )}
+
+          {/* Files Tab */}
+          {activeTab === "files" && instanceId && (
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1 text-sm text-gray-400 mb-3 flex-wrap">
+                <button onClick={() => setFilePath("/")} className="hover:text-blue-400">/</button>
+                {filePath !== "/" && filePath.split("/").filter(Boolean).map((seg, i, arr) => (
+                  <span key={i} className="flex items-center gap-1">
+                    <span className="text-gray-600">/</span>
+                    <button
+                      onClick={() => setFilePath("/" + arr.slice(0, i + 1).join("/"))}
+                      className={i === arr.length - 1 ? "text-gray-200" : "hover:text-blue-400"}
+                    >
+                      {seg}
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {filesError && <div className="text-sm text-red-400 mb-2">{filesError}</div>}
+
+              {filesLoading ? (
+                <div className="text-sm text-gray-500 py-8 text-center">{t("files.loading")}</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800 text-left">
+                      <th className="py-2 px-2 text-gray-400 font-medium">{t("files.name")}</th>
+                      <th className="py-2 px-2 text-gray-400 font-medium text-right">{t("files.size")}</th>
+                      <th className="py-2 px-2 text-gray-400 font-medium">{t("files.modified")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filePath !== "/" && (
+                      <tr
+                        className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer"
+                        onClick={() => setFilePath("/" + filePath.split("/").filter(Boolean).slice(0, -1).join("/"))}
+                      >
+                        <td className="py-1.5 px-2 text-gray-400" colSpan={3}>
+                          <span className="mr-2">{"📁"}</span> ..
+                        </td>
+                      </tr>
+                    )}
+                    {files.map((f) => (
+                      <tr
+                        key={f.name}
+                        className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer"
+                        onClick={() => {
+                          if (f.type === "dir") {
+                            setFilePath((filePath === "/" ? "/" : filePath + "/") + f.name);
+                          } else {
+                            const base = import.meta.env.VITE_API_BASE || "";
+                            window.open(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent((filePath === "/" ? "/" : filePath + "/") + f.name)}`, "_blank");
+                          }
+                        }}
+                      >
+                        <td className="py-1.5 px-2 text-gray-200">
+                          <span className="mr-2">{f.type === "dir" ? "📁" : "📄"}</span>
+                          {f.name}
+                        </td>
+                        <td className="py-1.5 px-2 text-gray-500 text-right text-xs font-mono">
+                          {f.type === "file" && f.size != null
+                            ? f.size > 1048576 ? `${(f.size / 1048576).toFixed(1)} MB`
+                              : f.size > 1024 ? `${(f.size / 1024).toFixed(1)} KB`
+                              : `${f.size} B`
+                            : ""}
+                        </td>
+                        <td className="py-1.5 px-2 text-gray-500 text-xs">{f.modified}</td>
+                      </tr>
+                    ))}
+                    {files.length === 0 && !filesLoading && (
+                      <tr><td colSpan={3} className="py-4 text-center text-gray-600">{t("files.empty")}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
           )}
 
           {/* Monitor Tab */}

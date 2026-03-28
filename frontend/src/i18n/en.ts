@@ -276,6 +276,12 @@ export const en: Record<string, string> = {
   // Chat
   "chat.tab": "Chat",
   "chat.infoTab": "Info",
+  "files.tab": "Files",
+  "files.name": "Name",
+  "files.size": "Size",
+  "files.modified": "Modified",
+  "files.loading": "Loading files...",
+  "files.empty": "Empty directory",
   "chat.selectBot": "Select a bot to chat",
   "chat.inputPlaceholder": "Type a message...",
   "chat.send": "Send",
