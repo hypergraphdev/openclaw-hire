@@ -548,8 +548,8 @@ export function InstanceDetailPage() {
             </div>
           </div>
 
-          {/* WeChat Integration — OpenClaw only */}
-          {instance.product === "openclaw" && (
+          {/* WeChat Integration */}
+          {(instance.product === "openclaw" || instance.product === "zylos") && (
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
               <h2 className="text-sm font-medium text-gray-300 mb-3">💬 微信绑定</h2>
               {(detail as Record<string, unknown>)?.is_weixin_installed ? (

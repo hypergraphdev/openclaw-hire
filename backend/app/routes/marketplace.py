@@ -728,7 +728,7 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
     logs: list[str] = []
     SKILL_DIR = "/home/zylos/zylos/.claude/skills/weixin"
     DATA_DIR = "/home/zylos/zylos/components/weixin"
-    TARBALL_HOST = "/home/wwwroot/openclaw-hire/backend/data/zylos-weixin.tgz"
+    TARBALL_HOST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "zylos-weixin.tgz")
 
     def _log(msg: str):
         logs.append(msg + "\n")

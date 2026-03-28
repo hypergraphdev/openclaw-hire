@@ -277,10 +277,10 @@ def get_instance(
             configured_at=c.get("configured_at"),
         )
 
-    # Check WeChat plugin install status
+    # Check WeChat plugin install status (OpenClaw or Zylos)
     cursor2 = db.cursor(dictionary=True)
     cursor2.execute(
-        "SELECT status FROM marketplace_installs WHERE instance_id = %s AND item_id = 'weixin-plugin'",
+        "SELECT status FROM marketplace_installs WHERE instance_id = %s AND item_id IN ('weixin-plugin', 'weixin-zylos-plugin')",
         (instance_id,),
     )
     weixin_row = cursor2.fetchone()
@@ -443,16 +443,37 @@ def weixin_login(
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
-    """Start WeChat login (channels login) and stream output to a log file.
+    """Start WeChat login and stream output to a log file.
     Frontend polls GET /weixin-login-log to read QR code output."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
-    if inst["product"] != "openclaw":
-        raise HTTPException(status_code=400, detail="WeChat login only for OpenClaw instances.")
+    product = inst.get("product", "openclaw")
+
+    import os, subprocess, threading
+
+    if product == "zylos":
+        container = f"zylos_{instance_id}"
+        # Clear accounts so plugin re-generates QR on restart
+        subprocess.run(
+            ["docker", "exec", container, "sh", "-c",
+             "rm -f /home/zylos/zylos/components/weixin/accounts.json; "
+             "truncate -s 0 /home/zylos/zylos/components/weixin/logs/out.log 2>/dev/null; "
+             "rm -f /home/zylos/zylos/components/weixin/accounts/*.json"],
+            capture_output=True, timeout=10,
+        )
+        # Restart PM2 process to trigger new QR code
+        subprocess.run(
+            ["docker", "exec", container, "pm2", "restart", "zylos-weixin"],
+            capture_output=True, timeout=15,
+        )
+        return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
+
+    if product != "openclaw":
+        raise HTTPException(status_code=400, detail="WeChat login not supported for this product.")
+
     compose_file, project, runtime_dir = _require_compose(inst)
     container = f"{project}-openclaw-gateway-1"
 
     # Write log to host-accessible file (same approach as marketplace: script + tee inside container)
-    import os, subprocess, threading
     container_log = "/home/node/.openclaw/weixin-login.log"
     host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
 
@@ -496,22 +517,34 @@ def weixin_login_log(
     db = Depends(get_db),
 ):
     """Read WeChat login log (QR code output)."""
-    import os
+    import os, subprocess
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
-    runtime_dir = inst.get("runtime_dir", f"/home/wwwroot/openclaw-hire/runtime/{instance_id}")
-    host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
-    try:
-        content = open(host_log, "r", errors="replace").read()
-        content = content.replace('\r\n', '\n').replace('\r', '')
-    except FileNotFoundError:
-        content = ""
+    product = inst.get("product", "openclaw")
+
+    if product == "zylos":
+        # Read PM2 log via docker exec
+        container = f"zylos_{instance_id}"
+        r = subprocess.run(
+            ["docker", "exec", container, "tail", "-200", "/home/zylos/zylos/components/weixin/logs/out.log"],
+            capture_output=True, text=True, timeout=10,
+        )
+        content = r.stdout if r.returncode == 0 else ""
+    else:
+        runtime_dir = inst.get("runtime_dir", f"/home/wwwroot/openclaw-hire/runtime/{instance_id}")
+        host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
+        try:
+            content = open(host_log, "r", errors="replace").read()
+        except FileNotFoundError:
+            content = ""
+
+    content = content.replace('\r\n', '\n').replace('\r', '')
     # Detect status
     status = "waiting"
     if "扫码成功" in content or "登录成功" in content or "connected" in content.lower():
         status = "success"
     elif "ERROR" in content or "失败" in content:
         status = "failed"
-    elif "二维码" in content or "扫描" in content:
+    elif "二维码" in content or "扫描" in content or "liteapp.weixin" in content:
         status = "qr_ready"
     return {"log": content[-50000:], "status": status}
 
