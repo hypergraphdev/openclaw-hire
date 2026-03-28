@@ -617,6 +617,11 @@ export function InstanceDetailPage() {
                 <>
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
                     {configResult?.message || t("telegram.alreadyConfigured")}
+                    {!configResult && instance.telegram_token_hint && (
+                      <span className="ml-2 text-green-400/70">
+                        (Token: ****{instance.telegram_token_hint})
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={() => {

@@ -48,8 +48,10 @@ def _utc_now() -> str:
 
 def _row_to_instance(row) -> InstanceResponse:
     d = dict(row)
-    # Convert raw token fields to safe boolean - never expose token values
-    d["is_telegram_configured"] = bool(d.pop("telegram_bot_token", None))
+    # Convert raw token fields to safe boolean + hint - never expose full token
+    token = d.pop("telegram_bot_token", None)
+    d["is_telegram_configured"] = bool(token)
+    d["telegram_token_hint"] = token[-4:] if token else None
     d.pop("org_token", None)  # remove sensitive field entirely
     return InstanceResponse(**d)
 

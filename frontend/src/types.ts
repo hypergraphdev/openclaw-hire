@@ -34,6 +34,7 @@ export type Instance = {
   web_console_url?: string | null;
   http_port?: number | null;
   is_telegram_configured?: boolean;
+  telegram_token_hint?: string | null;
   // org_token removed - sensitive
   agent_name?: string | null;
   org_id?: string | null;
