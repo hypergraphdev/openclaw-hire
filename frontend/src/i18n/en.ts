@@ -196,6 +196,15 @@ export const en: Record<string, string> = {
   "admin.loadInstancesFailed": "Failed to load user instances",
   "admin.orgBound": "Org",
   "admin.telegramBound": "TG",
+  "admin.instancesTab": "Instance Management",
+  "admin.usersTab": "User Management",
+  "admin.management": "Management",
+  "admin.userName": "Name",
+  "admin.role": "Role",
+  "admin.instanceCount": "Instances",
+  "admin.runningCount": "Running",
+  "admin.lastLogin": "Last Login",
+  "admin.registered": "Registered",
 
   // Admin Settings
   "adminSettings.title": "Admin Settings",

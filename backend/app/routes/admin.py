@@ -40,6 +40,28 @@ def list_users(
     return [_row_to_user(row) for row in rows]
 
 
+@router.get("/users/stats")
+def users_stats(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """User list with instance counts for user management tab."""
+    _require_admin(current_user)
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT u.id, u.name, u.email, u.is_admin, u.created_at, u.last_login_at,
+               COUNT(i.id) AS instance_count,
+               SUM(CASE WHEN i.status = 'active' THEN 1 ELSE 0 END) AS running_count
+        FROM users u
+        LEFT JOIN instances i ON u.id = i.owner_id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
+
+
 @router.get("/users/{user_id}/instances", response_model=AdminUserInstancesResponse)
 def list_user_instances(
     user_id: str,

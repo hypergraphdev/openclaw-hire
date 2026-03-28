@@ -141,10 +141,17 @@ export function AdminPage() {
   const [controlLoading, setControlLoading] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "docker">(() => {
+  const [activeTab, setActiveTab] = useState<"instances" | "docker" | "users">(() => {
     const hash = window.location.hash;
-    return hash === "#docker" ? "docker" : "users";
+    if (hash === "#docker") return "docker";
+    if (hash === "#users") return "users";
+    return "instances";
   });
+
+  // User management tab
+  type UserStat = { id: string; name: string; email: string; is_admin: number; created_at: string; last_login_at: string | null; instance_count: number; running_count: number };
+  const [userStats, setUserStats] = useState<UserStat[]>([]);
+  const [userStatsLoading, setUserStatsLoading] = useState(false);
 
   // HXA online status
   const [hxaStatus, setHxaStatus] = useState<Record<string, { online: boolean; org_id: string; agent_name: string }>>({});
@@ -192,6 +199,16 @@ export function AdminPage() {
     api.hxaOrgs().then((r) => setOrgs(r.orgs || [])).catch(() => {});
     api.adminHxaStatus().then(setHxaStatus).catch(() => {});
   }, [t]);
+
+  // Load user stats for user management tab
+  useEffect(() => {
+    if (activeTab !== "users") return;
+    setUserStatsLoading(true);
+    api.adminUsersStats()
+      .then(setUserStats)
+      .catch(() => {})
+      .finally(() => setUserStatsLoading(false));
+  }, [activeTab]);
 
   useEffect(() => {
     if (!selectedUserId) return;
@@ -342,13 +359,17 @@ export function AdminPage() {
         </div>
         {/* Tab bar */}
         <div className="flex gap-1 mt-3 border-b border-gray-800">
-          <button onClick={() => { setActiveTab("users"); window.location.hash = ""; }}
-            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "users" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
-            用户管理
+          <button onClick={() => { setActiveTab("instances"); window.location.hash = ""; }}
+            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "instances" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
+            {t("admin.instancesTab")}
           </button>
           <button onClick={() => { setActiveTab("docker"); window.location.hash = "docker"; }}
             className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "docker" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
-            Docker 管理
+            Docker {t("admin.management")}
+          </button>
+          <button onClick={() => { setActiveTab("users"); window.location.hash = "users"; }}
+            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "users" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
+            {t("admin.usersTab")}
           </button>
         </div>
       </div>
@@ -582,8 +603,8 @@ export function AdminPage() {
         </div>
       )}
 
-      {/* ── Users Tab ── */}
-      {activeTab === "users" && <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      {/* ── Instances Tab (was Users Tab) ── */}
+      {activeTab === "instances" && <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* User list - narrower */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
           <h2 className="text-sm font-medium text-gray-300 mb-2">{t("admin.users")}</h2>
@@ -958,6 +979,55 @@ export function AdminPage() {
               <div className="text-sm text-gray-500 text-center py-8">无数据</div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Users Management Tab ── */}
+      {activeTab === "users" && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <h2 className="text-sm font-medium text-gray-300 mb-3">{t("admin.usersTab")}</h2>
+          {userStatsLoading ? (
+            <div className="text-sm text-gray-500 py-8 text-center">{t("admin.loadingUsers")}</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-left">
+                  <th className="py-2 px-2 text-gray-400 font-medium">{t("admin.userName")}</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium">Email</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium text-center">{t("admin.role")}</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium text-center">{t("admin.instanceCount")}</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium text-center">{t("admin.runningCount")}</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium">{t("admin.lastLogin")}</th>
+                  <th className="py-2 px-2 text-gray-400 font-medium">{t("admin.registered")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userStats.map((u) => (
+                  <tr key={u.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <td className="py-2 px-2 text-gray-200">{u.name || u.email.split("@")[0]}</td>
+                    <td className="py-2 px-2 text-gray-400 text-xs">{u.email}</td>
+                    <td className="py-2 px-2 text-center">
+                      {u.is_admin ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-700/50 text-amber-200">Admin</span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/50 text-gray-400">User</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-center text-gray-300">{u.instance_count}</td>
+                    <td className="py-2 px-2 text-center">
+                      {u.running_count > 0 ? (
+                        <span className="text-green-400">{u.running_count}</span>
+                      ) : (
+                        <span className="text-gray-600">0</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-gray-400 text-xs">{u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "-"}</td>
+                    <td className="py-2 px-2 text-gray-500 text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

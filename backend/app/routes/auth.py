@@ -75,6 +75,13 @@ def login(payload: LoginRequest, db=Depends(get_db)) -> TokenResponse:
     if not pw_hash or not verify_password(payload.password, pw_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
 
+    # Record last login time
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    cur2 = db.cursor()
+    cur2.execute("UPDATE users SET last_login_at = %s WHERE id = %s", (now, row["id"]))
+    cur2.close()
+
     token = create_access_token(row["id"])
     return TokenResponse(access_token=token, user=_row_to_user(row))
 

@@ -196,6 +196,15 @@ export const zh: Record<string, string> = {
   "admin.loadInstancesFailed": "加载用户实例失败",
   "admin.orgBound": "组织",
   "admin.telegramBound": "TG",
+  "admin.instancesTab": "实例管理",
+  "admin.usersTab": "用户管理",
+  "admin.management": "管理",
+  "admin.userName": "用户名",
+  "admin.role": "角色",
+  "admin.instanceCount": "实例数",
+  "admin.runningCount": "运行中",
+  "admin.lastLogin": "最近登录",
+  "admin.registered": "注册时间",
 
   // Admin Settings
   "adminSettings.title": "管理设置",

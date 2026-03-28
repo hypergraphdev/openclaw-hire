@@ -66,9 +66,18 @@ def set_setting(key: str, value: str) -> None:
             "ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)",
             (key, value, now),
         )
+        # Migrations
+        _safe_add_column(cursor, "users", "last_login_at", "VARCHAR(64) DEFAULT NULL")
         cursor.close()
     finally:
         conn.close()
+
+
+def _safe_add_column(cursor, table: str, column: str, definition: str) -> None:
+    """Add a column if it doesn't exist (idempotent)."""
+    cursor.execute(f"SHOW COLUMNS FROM `{table}` LIKE %s", (column,))
+    if not cursor.fetchone():
+        cursor.execute(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
 
 
 def init_db() -> None:

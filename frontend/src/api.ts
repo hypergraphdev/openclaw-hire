@@ -132,6 +132,9 @@ export const api = {
 
   adminUsers: () => request<User[]>("/api/admin/users"),
 
+  adminUsersStats: () =>
+    request<Array<{ id: string; name: string; email: string; is_admin: number; created_at: string; last_login_at: string | null; instance_count: number; running_count: number }>>("/api/admin/users/stats"),
+
   adminUserInstances: (userId: string) =>
     request<AdminUserInstances>(`/api/admin/users/${userId}/instances`),
 
