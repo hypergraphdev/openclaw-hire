@@ -287,7 +287,7 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
     tgz_file = ""
     for line in out.strip().split("\n"):
         line = line.strip()
-        if line.endswith(".tgz"):
+        if line.endswith(".tgz") and not line.startswith("npm"):
             tgz_file = line
             break
     if not tgz_file:
