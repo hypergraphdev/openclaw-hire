@@ -284,8 +284,20 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
         _log("❌ 下载插件包失败")
         return False, "".join(logs)
 
-    tgz_file = out.strip().split("\n")[-1].strip()
+    tgz_file = ""
+    for line in out.strip().split("\n"):
+        line = line.strip()
+        if line.endswith(".tgz"):
+            tgz_file = line
+            break
+    if not tgz_file:
+        _log("❌ 未找到 tgz 文件名，npm pack 输出:\n" + out)
+        return False, "".join(logs)
+
     rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && tar xzf {tgz_file} --strip-components=1 && rm -f {tgz_file}"])
+    if rc != 0:
+        _log(f"❌ 解压失败: {out}")
+        return False, "".join(logs)
     _log("解压完成")
 
     _log("安装依赖...")
