@@ -69,6 +69,9 @@ export const api = {
   restartInstance: (id: string) =>
     request<Instance>(`/api/instances/${id}/restart`, { method: "POST" }),
 
+  restartPlugins: (id: string) =>
+    request<{ ok: boolean; detail: string }>(`/api/instances/${id}/restart-plugins`, { method: "POST" }),
+
   uninstallInstance: (id: string) =>
     request<Instance>(`/api/instances/${id}/uninstall`, { method: "POST" }),
 

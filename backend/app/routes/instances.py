@@ -1410,3 +1410,22 @@ def clear_sessions(
     if errors:
         return {"ok": False, "detail": "; ".join(errors)}
     return {"ok": True, "detail": "All Claude sessions cleared."}
+
+
+@router.post("/{instance_id}/restart-plugins")
+def restart_plugins(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Restart HXA/Telegram plugins for an instance."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    product = inst.get("product", "openclaw")
+    container_name = _get_container_name(instance_id, product)
+
+    if product == "zylos":
+        rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"], timeout=15)
+    else:
+        rc, out = _docker_run(["docker", "restart", container_name], timeout=30)
+
+    return {"ok": rc == 0, "detail": out or "Plugins restarted."}

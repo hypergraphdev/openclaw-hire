@@ -56,6 +56,8 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
+  const [pluginRestarting, setPluginRestarting] = useState(false);
+  const [pluginRestartMsg, setPluginRestartMsg] = useState("");
   const [weixinRestarting, setWeixinRestarting] = useState(false);
   const [weixinRestartMsg, setWeixinRestartMsg] = useState("");
   const [weixinLogging, setWeixinLogging] = useState(false);
@@ -498,6 +500,29 @@ export function InstanceDetailPage() {
                   >
                     {hxaConfiguring ? t("org.reconnecting") : t("org.reconnect")}
                   </button>
+                  <button
+                    onClick={async () => {
+                      if (!instanceId) return;
+                      setPluginRestarting(true);
+                      setPluginRestartMsg("");
+                      try {
+                        const res = await api.restartPlugins(instanceId);
+                        setPluginRestartMsg(res.ok ? t("org.pluginRestarted") : res.detail);
+                        if (res.ok) setTimeout(() => fetchDetail(), 5000);
+                      } catch (err: unknown) {
+                        setPluginRestartMsg(err instanceof Error ? err.message : t("org.pluginRestartFailed"));
+                      } finally {
+                        setPluginRestarting(false);
+                      }
+                    }}
+                    disabled={pluginRestarting}
+                    className="text-xs text-gray-500 hover:text-gray-300 underline ml-3"
+                  >
+                    {pluginRestarting ? t("org.pluginRestarting") : t("org.pluginRestart")}
+                  </button>
+                  {pluginRestartMsg && (
+                    <p className="text-xs text-yellow-400 mt-1">{pluginRestartMsg}</p>
+                  )}
                 </>
               )}
               {!hxaResult?.ok && !config?.agent_name && (
