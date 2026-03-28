@@ -371,6 +371,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
                 key={msg.id}
                 message={msg}
                 isSelf={msg.sender_id === adminBotId}
+                instanceId={instanceId}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -493,9 +494,75 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
   );
 }
 
+// ─── File Path Links ────────────────────────────────────────────────
+
+const FILE_PATH_ROOTS: Record<string, string> = {
+  "/home/node/.openclaw/workspace/": "/",
+  "/home/zylos/zylos/": "/",
+};
+
+function RenderTextWithFileLinks({ text, instanceId }: { text: string; instanceId: string }) {
+  // Match container file paths and make them downloadable
+  const regex = /(?:`)?(\/(home\/node\/\.openclaw\/workspace|home\/zylos\/zylos)\/[^\s`'",)]+)(?:`)?/g;
+  const parts: (string | { path: string; display: string })[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const fullPath = m[1];
+    // Convert container path to relative path for download API
+    let relPath = fullPath;
+    for (const [prefix, root] of Object.entries(FILE_PATH_ROOTS)) {
+      if (fullPath.startsWith(prefix)) {
+        relPath = root + fullPath.slice(prefix.length);
+        break;
+      }
+    }
+    parts.push({ path: relPath, display: fullPath });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  if (parts.length === 1 && typeof parts[0] === "string") return <span>{text}</span>;
+
+  return (
+    <span>
+      {parts.map((p, i) =>
+        typeof p === "string" ? (
+          <span key={i}>{p}</span>
+        ) : (
+          <a
+            key={i}
+            className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
+            onClick={(e) => {
+              e.preventDefault();
+              const token = localStorage.getItem("token") || "";
+              const base = import.meta.env.VITE_API_BASE || "";
+              fetch(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent(p.path)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+                .then((r) => { if (!r.ok) throw new Error("Download failed"); return r.blob(); })
+                .then((blob) => {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = p.path.split("/").pop() || "file";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                })
+                .catch(() => alert("Download failed"));
+            }}
+          >
+            {p.display}
+          </a>
+        ),
+      )}
+    </span>
+  );
+}
+
 // ─── Message Bubble ─────────────────────────────────────────────────
 
-function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: boolean }) {
+function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; isSelf: boolean; instanceId: string }) {
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const content = extractContent(message);
   const { imageUrl, text } = parseImageContent(content);
@@ -523,7 +590,7 @@ function MessageBubble({ message, isSelf }: { message: ChatMessage; isSelf: bool
             onClick={() => window.open(imageUrl, "_blank")}
           />
         )}
-        {text && <span>{text}</span>}
+        {text && <RenderTextWithFileLinks text={text} instanceId={instanceId} />}
       </div>
     </div>
   );
