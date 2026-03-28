@@ -535,7 +535,7 @@ function RenderTextWithFileLinks({ text, instanceId }: { text: string; instanceI
             className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
             onClick={(e) => {
               e.preventDefault();
-              const token = localStorage.getItem("token") || "";
+              const token = localStorage.getItem("openclaw_token") || "";
               const base = import.meta.env.VITE_API_BASE || "";
               fetch(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent(p.path)}`, {
                 headers: { Authorization: `Bearer ${token}` },

@@ -488,7 +488,7 @@ export function InstanceDetailPage() {
                           } else {
                             // Download with auth token via fetch + Blob
                             const dlPath = (filePath === "/" ? "/" : filePath + "/") + f.name;
-                            const token = localStorage.getItem("token") || "";
+                            const token = localStorage.getItem("openclaw_token") || "";
                             const base = import.meta.env.VITE_API_BASE || "";
                             fetch(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent(dlPath)}`, {
                               headers: { Authorization: `Bearer ${token}` },
