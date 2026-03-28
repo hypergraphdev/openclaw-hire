@@ -540,7 +540,7 @@ def weixin_login_log(
     content = content.replace('\r\n', '\n').replace('\r', '')
     # Detect status
     status = "waiting"
-    if "扫码成功" in content or "登录成功" in content or "connected" in content.lower():
+    if "扫码成功" in content or "登录成功" in content or "连接成功" in content or "connected" in content.lower():
         status = "success"
     elif "ERROR" in content or "失败" in content:
         status = "failed"
