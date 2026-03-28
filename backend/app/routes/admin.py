@@ -616,8 +616,10 @@ def instance_control(
     if action == "restart_hxa":
         # Restart hxa-connect to make bot online in Hub
         if product == "zylos":
-            # HXA is handled by c4-dispatcher (comm-bridge); restart all PM2 processes
-            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "all"])
+            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"])
+            if rc != 0 and "not found" in out.lower():
+                eco = "/home/zylos/zylos/.claude/skills/hxa-connect/ecosystem.config.cjs"
+                rc, out = _docker_run(["docker", "exec", container_name, "pm2", "start", eco])
         else:
             # OpenClaw gateway embeds hxa-connect — restart the whole container
             rc, out = _docker_run(["docker", "restart", container_name])

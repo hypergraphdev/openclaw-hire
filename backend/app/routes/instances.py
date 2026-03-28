@@ -1424,8 +1424,11 @@ def restart_plugins(
     container_name = _get_container_name(instance_id, product)
 
     if product == "zylos":
-        # HXA is handled by c4-dispatcher (comm-bridge); restart all PM2 processes
-        rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "all"], timeout=15)
+        # Try restarting zylos-hxa-connect; if not in PM2 yet, start it from ecosystem config
+        rc, out = _docker_run(["docker", "exec", container_name, "pm2", "restart", "zylos-hxa-connect"], timeout=15)
+        if rc != 0 and "not found" in out.lower():
+            eco = "/home/zylos/zylos/.claude/skills/hxa-connect/ecosystem.config.cjs"
+            rc, out = _docker_run(["docker", "exec", container_name, "pm2", "start", eco], timeout=15)
     else:
         rc, out = _docker_run(["docker", "restart", container_name], timeout=30)
 
