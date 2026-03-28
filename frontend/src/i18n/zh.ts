@@ -198,6 +198,8 @@ export const zh: Record<string, string> = {
   "admin.telegramBound": "TG",
   "admin.instancesTab": "实例管理",
   "admin.usersTab": "用户管理",
+  "admin.hxaTab": "HXA 组织",
+  "admin.settingsTab": "全局配置",
   "admin.management": "管理",
   "admin.userName": "用户名",
   "admin.role": "角色",

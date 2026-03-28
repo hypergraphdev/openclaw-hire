@@ -1,8 +1,12 @@
+import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import type { AdminUserInstances, DockerContainerGroup, HxaOrg, Instance, User } from "../types";
+
+const AdminHXAPage = lazy(() => import("./AdminHXAPage"));
+const AdminSettingsPage = lazy(() => import("./AdminSettingsPage"));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DiagData = Record<string, any>;
@@ -141,10 +145,12 @@ export function AdminPage() {
   const [controlLoading, setControlLoading] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"instances" | "docker" | "users">(() => {
+  const [activeTab, setActiveTab] = useState<"instances" | "docker" | "hxa" | "users" | "settings">(() => {
     const hash = window.location.hash;
     if (hash === "#docker") return "docker";
+    if (hash === "#hxa") return "hxa";
     if (hash === "#users") return "users";
+    if (hash === "#settings") return "settings";
     return "instances";
   });
 
@@ -353,24 +359,20 @@ export function AdminPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-white">{t("admin.title")}</h1>
-        <div className="flex gap-3 mt-2">
-          <Link to="/admin/settings" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.settingsLink")}</Link>
-          <Link to="/admin/hxa" className="text-xs text-blue-400 hover:text-blue-300">{t("admin.hxaLink")}</Link>
-        </div>
         {/* Tab bar */}
         <div className="flex gap-1 mt-3 border-b border-gray-800">
-          <button onClick={() => { setActiveTab("instances"); window.location.hash = ""; }}
-            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "instances" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
-            {t("admin.instancesTab")}
-          </button>
-          <button onClick={() => { setActiveTab("docker"); window.location.hash = "docker"; }}
-            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "docker" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
-            Docker {t("admin.management")}
-          </button>
-          <button onClick={() => { setActiveTab("users"); window.location.hash = "users"; }}
-            className={`px-4 py-1.5 text-sm rounded-t ${activeTab === "users" ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
-            {t("admin.usersTab")}
-          </button>
+          {([
+            ["instances", t("admin.instancesTab")],
+            ["docker", "Docker " + t("admin.management")],
+            ["hxa", t("admin.hxaTab")],
+            ["users", t("admin.usersTab")],
+            ["settings", t("admin.settingsTab")],
+          ] as const).map(([key, label]) => (
+            <button key={key} onClick={() => { setActiveTab(key); window.location.hash = key === "instances" ? "" : key; }}
+              className={`px-4 py-1.5 text-sm rounded-t ${activeTab === key ? "bg-gray-800 text-white border border-gray-700 border-b-0" : "text-gray-500 hover:text-gray-300"}`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1029,6 +1031,20 @@ export function AdminPage() {
             </table>
           )}
         </div>
+      )}
+
+      {/* ── HXA Orgs Tab ── */}
+      {activeTab === "hxa" && (
+        <Suspense fallback={<div className="text-sm text-gray-500 py-8 text-center">Loading...</div>}>
+          <AdminHXAPage />
+        </Suspense>
+      )}
+
+      {/* ── Settings Tab ── */}
+      {activeTab === "settings" && (
+        <Suspense fallback={<div className="text-sm text-gray-500 py-8 text-center">Loading...</div>}>
+          <AdminSettingsPage />
+        </Suspense>
       )}
     </div>
   );

@@ -486,8 +486,23 @@ export function InstanceDetailPage() {
                           if (f.type === "dir") {
                             setFilePath((filePath === "/" ? "/" : filePath + "/") + f.name);
                           } else {
+                            // Download with auth token via fetch + Blob
+                            const dlPath = (filePath === "/" ? "/" : filePath + "/") + f.name;
+                            const token = localStorage.getItem("token") || "";
                             const base = import.meta.env.VITE_API_BASE || "";
-                            window.open(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent((filePath === "/" ? "/" : filePath + "/") + f.name)}`, "_blank");
+                            fetch(`${base}/api/instances/${instanceId}/files/download?path=${encodeURIComponent(dlPath)}`, {
+                              headers: { Authorization: `Bearer ${token}` },
+                            }).then(r => {
+                              if (!r.ok) throw new Error("Download failed");
+                              return r.blob();
+                            }).then(blob => {
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement("a");
+                              a.href = url;
+                              a.download = f.name;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }).catch(() => alert("Download failed"));
                           }
                         }}
                       >

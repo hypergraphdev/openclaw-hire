@@ -198,6 +198,8 @@ export const en: Record<string, string> = {
   "admin.telegramBound": "TG",
   "admin.instancesTab": "Instance Management",
   "admin.usersTab": "User Management",
+  "admin.hxaTab": "HXA Orgs",
+  "admin.settingsTab": "Global Settings",
   "admin.management": "Management",
   "admin.userName": "Name",
   "admin.role": "Role",
