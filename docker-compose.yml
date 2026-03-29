@@ -1,0 +1,51 @@
+# OpenClaw Hire Console — Docker Compose
+# Quick start: docker compose up -d
+# Then visit http://localhost:3000
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: openclaw-root-password
+      MYSQL_DATABASE: openclaw_hire
+      MYSQL_USER: openclaw
+      MYSQL_PASSWORD: openclaw-password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8012:8012"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: dev-secret-change-in-production
+      DB_HOST: mysql
+      DB_NAME: openclaw_hire
+      DB_USER: openclaw
+      DB_PASSWORD: openclaw-password
+      SITE_BASE_URL: http://localhost:3000
+      HXA_HUB_URL: https://www.ucai.net/connect
+    volumes:
+      - runtime_data:/app/runtime
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
+  runtime_data:

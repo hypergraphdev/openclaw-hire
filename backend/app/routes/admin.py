@@ -10,10 +10,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from ..database import runtime_root
 from ..deps import get_current_user, get_db
 from ..schemas import AdminUserInstancesResponse, InstanceResponse, UserResponse
 
-RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+RUNTIME_ROOT = Path(runtime_root())
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

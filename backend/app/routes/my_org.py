@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 
-from ..database import get_setting, get_connection
+from ..database import get_setting, get_connection, site_base_url, runtime_root
 from ..deps import get_current_user, get_db
 from ..services.install_service import _get_hub_url
 from .admin_hxa import _get_agent_token, _hub_admin_request, _hub_org_admin_request, _cleanup_bot_and_tombstone, _write_new_token, _restart_hxa_connect
@@ -595,7 +595,7 @@ def org_chat_ws_ticket(
     return {"ticket": result.get("ticket", ""), "ws_url": ws_url}
 
 
-_UPLOAD_DIR = Path("/home/wwwroot/openclaw-hire/frontend/dist/uploads")
+_UPLOAD_DIR = Path(runtime_root()).parent / "frontend" / "dist" / "uploads"
 _ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _ALLOWED_FILE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".csv", ".zip", ".tar", ".gz", ".json", ".xml", ".mp3", ".mp4", ".wav"}
 _MAX_IMAGE_SIZE = 10 * 1024 * 1024
@@ -617,7 +617,7 @@ async def org_chat_upload(
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex[:16]}{ext}"
     (_UPLOAD_DIR / filename).write_bytes(data)
-    return {"url": f"https://www.ucai.net/uploads/{filename}", "filename": filename}
+    return {"url": f"{site_base_url()}/uploads/{filename}", "filename": filename}
 
 
 @router.post("/file/upload")
@@ -638,7 +638,7 @@ async def org_file_upload(
     (_UPLOAD_DIR / safe_name).write_bytes(data)
     size_kb = round(len(data) / 1024, 1)
     return {
-        "url": f"https://www.ucai.net/uploads/{safe_name}",
+        "url": f"{site_base_url()}/uploads/{safe_name}",
         "filename": original_name,
         "size_kb": size_kb,
     }

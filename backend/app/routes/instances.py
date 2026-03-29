@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
+from ..database import site_base_url, runtime_root
 from ..deps import get_current_user, get_db
 from ..schemas import (
     PRODUCT_MAP,
@@ -531,7 +532,7 @@ def weixin_login_log(
         )
         content = r.stdout if r.returncode == 0 else ""
     else:
-        runtime_dir = inst.get("runtime_dir", f"/home/wwwroot/openclaw-hire/runtime/{instance_id}")
+        runtime_dir = inst.get("runtime_dir", f"{runtime_root()}/{instance_id}")
         host_log = os.path.join(runtime_dir, "openclaw-config", "weixin-login.log")
         try:
             content = open(host_log, "r", errors="replace").read()
@@ -781,7 +782,7 @@ def delete_instance(
 
 # ─── Chat proxy helpers ─────────────────────────────────────────────
 
-RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+RUNTIME_ROOT = Path(runtime_root())
 
 
 def _read_runtime_agent_name(instance_id: str) -> str:
@@ -949,7 +950,7 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "", target_
     if not org_secret:
         return ""
 
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
 
     try:
         # Admin login (for cleanup if needed)
@@ -1024,7 +1025,7 @@ def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | 
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "Origin": "https://www.ucai.net",
+            "Origin": site_base_url(),
         },
         method=method,
     )
@@ -1091,7 +1092,7 @@ class _ChatSendRequest(_BaseModel):
 
 
 # Upload directory served by nginx at /openclaw/uploads/
-_UPLOAD_DIR = Path("/home/wwwroot/openclaw-hire/frontend/dist/uploads")
+_UPLOAD_DIR = Path(runtime_root()).parent / "frontend" / "dist" / "uploads"
 _MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 _ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
@@ -1120,7 +1121,7 @@ async def chat_upload(
     dest = _UPLOAD_DIR / filename
     dest.write_bytes(data)
 
-    url = f"https://www.ucai.net/uploads/{filename}"
+    url = f"{site_base_url()}/uploads/{filename}"
     return {"url": url, "filename": filename}
 
 

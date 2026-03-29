@@ -10,14 +10,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..database import get_setting, set_setting, get_connection
+from ..database import get_setting, set_setting, get_connection, site_base_url, runtime_root
 from ..deps import get_current_user
 from ..services.install_service import _get_hub_url
 from .admin import _require_admin
 
 router = APIRouter(prefix="/api/admin/hxa", tags=["admin-hxa"])
 
-RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
+RUNTIME_ROOT = Path(runtime_root())
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ def _hub_admin_request(method: str, path: str, body: dict | None = None, timeout
 def _hub_org_admin_request(method: str, path: str, org_id: str, org_secret: str, body: dict | None = None, timeout: int = 15) -> dict | list | None:
     """Call HXA Hub API as org admin (login with org_secret, use session cookie)."""
     hub = _get_hub_url().rstrip("/")
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
 
     # Login
     login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
@@ -528,7 +528,7 @@ def delete_org_bot(org_id: str, bot_id: str, current_user: dict = Depends(get_cu
         raise HTTPException(status_code=400, detail="Org secret not found.")
 
     # Login as org admin
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
     login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
     try:
         login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
@@ -574,7 +574,7 @@ def _get_org_secret_for(org_id: str) -> str:
 
 def _cleanup_bot_and_tombstone(hub_url: str, org_id: str, org_secret: str, bot_name: str) -> None:
     """Delete existing bot with same name + tombstone in an org. Best-effort."""
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
     try:
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
         login_req = urllib.request.Request(

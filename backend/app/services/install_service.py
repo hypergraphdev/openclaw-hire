@@ -10,21 +10,21 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..database import get_connection, get_setting
+from ..database import get_connection, get_setting, hxa_hub_url, runtime_root, site_base_url
 
-RUNTIME_ROOT = Path("/home/wwwroot/openclaw-hire/runtime")
 
-_HUB_URL_DEFAULT = "https://www.ucai.net/connect"
+def _runtime_root_path() -> Path:
+    """Return runtime root as a Path, resolved from DB/env config."""
+    return Path(runtime_root())
 
 
 def _get_hub_url() -> str:
     """Read HXA hub URL from DB settings (fall back to default)."""
-    from_db = get_setting("hxa_hub_url", "")
-    return from_db or _HUB_URL_DEFAULT
+    return hxa_hub_url()
 
 
 # Backward-compat alias for import
-_HUB_URL = _HUB_URL_DEFAULT
+_HUB_URL = hxa_hub_url()
 
 
 def _get_org_id() -> str:
@@ -354,7 +354,7 @@ def _run_install(instance_id: str) -> None:
     repo_url = row["repo_url"]
 
     try:
-        RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+        _runtime_root_path().mkdir(parents=True, exist_ok=True)
         _ensure_auth_env()
 
         _set_instance_state(instance_id, "pulling", status="installing")
@@ -363,7 +363,8 @@ def _run_install(instance_id: str) -> None:
         _add_install_event(instance_id, "configuring", "Running installer script and detecting compose file...")
         _set_instance_state(instance_id, "starting")
 
-        script = Path("/home/wwwroot/openclaw-hire/scripts/install_instance.sh")
+        _openclaw_home = Path(os.getenv("OPENCLAW_HOME", str(Path(__file__).resolve().parent.parent.parent)))
+        script = _openclaw_home / "scripts" / "install_instance.sh"
         # Inject admin-configurable settings from DB into installer env
         db_anthropic_base = get_setting("anthropic_base_url", "")
         db_anthropic_token = get_setting("anthropic_auth_token", "")
@@ -379,7 +380,7 @@ def _run_install(instance_id: str) -> None:
         if db_hxa_org_secret:
             install_extra_env["HXA_CONNECT_ORG_SECRET"] = db_hxa_org_secret
             install_extra_env["ORG_SECRET"] = db_hxa_org_secret
-        rc, out = _run([str(script), instance_id, product, repo_url, str(RUNTIME_ROOT)], clean_env=True, extra_env=install_extra_env)
+        rc, out = _run([str(script), instance_id, product, repo_url, str(_runtime_root_path())], clean_env=True, extra_env=install_extra_env)
         if rc != 0:
             raise RuntimeError(out[:2000])
 
@@ -575,7 +576,7 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
         return False, "Server missing ORG_SECRET."
 
     hub = _get_hub_url().rstrip("/")
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
 
     # Step 1: Admin login to get session cookie
     try:
@@ -651,19 +652,19 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
         # Login as org admin
         login_url = f"{_get_hub_url().rstrip('/')}/api/auth/login"
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
-        req = urllib.request.Request(login_url, data=login_data, headers={"Content-Type": "application/json", "Origin": "https://www.ucai.net"}, method="POST")
+        req = urllib.request.Request(login_url, data=login_data, headers={"Content-Type": "application/json", "Origin": site_base_url()}, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
             cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 
         # List bots
-        list_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"})
+        list_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": site_base_url()})
         with urllib.request.urlopen(list_req, timeout=10) as resp:
             bots = json.loads(resp.read().decode())
 
         # Find and delete matching bot
         for bot in (bots if isinstance(bots, list) else []):
             if bot.get("name") == agent_name:
-                del_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": "https://www.ucai.net"}, method="DELETE")
+                del_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": site_base_url()}, method="DELETE")
                 urllib.request.urlopen(del_req, timeout=10)
                 break
     except Exception:
@@ -1262,7 +1263,7 @@ def _configure_openclaw_hxa_only(
     agent_name = _safe_agent_name(instance_id)
     _live_org_secret = _get_org_secret()
     _live_org_id = _get_org_id()
-    origin = "https://www.ucai.net"
+    origin = site_base_url()
 
     if not _live_org_secret:
         return False, "Server missing ORG_SECRET."

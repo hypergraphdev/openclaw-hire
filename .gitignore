@@ -8,3 +8,4 @@ runtime
 .env
 backend/.env
 *.env.local
+*.db

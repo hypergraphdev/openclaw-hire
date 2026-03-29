@@ -8,6 +8,8 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+from .database import site_base_url
+
 from .database import get_connection, get_setting, set_setting
 
 
@@ -40,7 +42,7 @@ def _hub_get(hub_url: str, token: str, path: str) -> dict | list:
     """Simple Hub GET request."""
     req = urllib.request.Request(
         f"{hub_url}{path}",
-        headers={"Authorization": f"Bearer {token}", "Origin": "https://www.ucai.net"},
+        headers={"Authorization": f"Bearer {token}", "Origin": site_base_url()},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())

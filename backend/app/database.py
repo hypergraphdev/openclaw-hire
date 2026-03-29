@@ -54,6 +54,38 @@ def get_setting(key: str, default: str = "") -> str:
         conn.close()
 
 
+def get_config(key: str, default: str = "") -> str:
+    """Read a config value: DB setting > env var > default."""
+    db_val = get_setting(key, "")
+    if db_val:
+        return db_val
+    env_val = os.getenv(key.upper().replace(".", "_"), "")
+    return env_val or default
+
+
+# Common config accessors (cached at module level after first call)
+_config_cache: dict[str, str] = {}
+
+
+def site_base_url() -> str:
+    if "site_base_url" not in _config_cache:
+        _config_cache["site_base_url"] = get_config("site_base_url", "https://www.ucai.net").rstrip("/")
+    return _config_cache["site_base_url"]
+
+
+def hxa_hub_url() -> str:
+    if "hxa_hub_url" not in _config_cache:
+        _config_cache["hxa_hub_url"] = get_config("hxa_hub_url", "https://www.ucai.net/connect").rstrip("/")
+    return _config_cache["hxa_hub_url"]
+
+
+def runtime_root() -> str:
+    if "runtime_root" not in _config_cache:
+        home = os.getenv("OPENCLAW_HOME", str(Path(__file__).resolve().parent.parent.parent))
+        _config_cache["runtime_root"] = os.path.join(home, "runtime")
+    return _config_cache["runtime_root"]
+
+
 def set_setting(key: str, value: str) -> None:
     """Upsert a value in server_settings table."""
     import datetime

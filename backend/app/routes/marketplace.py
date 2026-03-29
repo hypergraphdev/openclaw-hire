@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..database import get_connection
+from ..database import get_connection, get_config
 from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
@@ -483,17 +483,18 @@ def _install_whisper(container: str) -> tuple[bool, str]:
     logs: list[str] = []
 
     # Step 1: Verify host Whisper service is reachable from container
+    whisper_url = get_config("whisper_service_url", "http://172.17.0.1:8019")
     logs.append("=== 检查 Whisper 服务连通性 ===")
     try:
         r = subprocess.run(
             ["docker", "exec", container, "node", "-e",
-             'fetch("http://172.17.0.1:8019/health").then(r=>r.json()).then(d=>{console.log("OK model="+d.default_model+" loaded="+d.loaded_models.join(","))}).catch(e=>console.log("FAIL:"+e.message))'],
+             f'fetch("{whisper_url}/health").then(r=>r.json()).then(d=>{{console.log("OK model="+d.default_model+" loaded="+d.loaded_models.join(","))}}).catch(e=>console.log("FAIL:"+e.message))'],
             capture_output=True, text=True, timeout=15,
         )
         output = r.stdout.strip()
         logs.append(output)
         if "FAIL" in output or r.returncode != 0:
-            logs.append("\n⚠️  容器无法访问宿主机 Whisper 服务 (172.17.0.1:8019)")
+            logs.append(f"\n⚠️  容器无法访问宿主机 Whisper 服务 ({whisper_url})")
             logs.append("请确认 whisper.service 已启动: systemctl status whisper")
             return False, "\n".join(logs)
     except subprocess.TimeoutExpired:
@@ -502,7 +503,7 @@ def _install_whisper(container: str) -> tuple[bool, str]:
 
     # Step 2: Write skill file
     logs.append("\n=== 写入技能文件 ===")
-    skill_content = """# Whisper 语音转文本技能
+    skill_content = f"""# Whisper 语音转文本技能
 
 ## 能力说明
 宿主机运行了共享的 Whisper 转录服务，通过 HTTP API 调用，模型常驻内存，响应快速。
@@ -511,7 +512,7 @@ def _install_whisper(container: str) -> tuple[bool, str]:
 **不要在本地运行 whisper 命令**，通过 HTTP API 调用宿主机服务：
 
 ```bash
-curl -s -X POST http://172.17.0.1:8019/transcribe \\
+curl -s -X POST {whisper_url}/transcribe \\
   -F "file=@音频文件路径" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['text'])"
 ```
 
