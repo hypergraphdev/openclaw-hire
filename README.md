@@ -34,6 +34,8 @@ Visit `http://localhost:3000` — register an account and start deploying AI age
 - MySQL 8.0
 - Docker (for running AI agent instances)
 
+> **Windows users:** Use WSL2 (recommended) or Docker Desktop. The instance install scripts require a Linux/macOS shell. With `docker compose up` (containerized backend), everything works on Windows natively.
+
 ### Backend
 
 ```bash
