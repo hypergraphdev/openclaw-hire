@@ -63,12 +63,11 @@ EOF
 
 # ── Org / auth constants ──────────────────────────────────────────────────────
 _HXA_HUB_URL="https://www.ucai.net/connect"
-_HXA_ORG_ID="${HXA_CONNECT_ORG_ID:-123cd566-c2ea-409f-8f7e-4fa9f5296dd1}"
+_HXA_ORG_ID="${HXA_CONNECT_ORG_ID:-}"
 _HXA_ORG_SECRET="${HXA_CONNECT_ORG_SECRET:-${ORG_SECRET:-}}"
-# ANTHROPIC_AUTH_TOKEN  = Bearer token for sub2api gateway (what openclaw sends as apiKey to 172.17.0.1:18080)
-# ANTHROPIC_BASE_URL    = URL of sub2api gateway inside Docker network
-# ANTHROPIC_API_KEY     = NOT USED — real sk-ant-api* key is not required when routing through sub2api
-_ANTHROPIC_BASE="http://172.17.0.1:18080"  # Always use Docker-accessible address, never localhost
+# ANTHROPIC_BASE_URL: set in admin settings (e.g. https://api.anthropic.com or your proxy)
+# ANTHROPIC_AUTH_TOKEN: Anthropic API key or proxy bearer token
+_ANTHROPIC_BASE="${ANTHROPIC_BASE_URL:-}"
 _ANTHROPIC_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
 _DEFAULT_MODEL="${OPENCLAW_MODEL:-claude-sonnet-4-5}"
 _TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"

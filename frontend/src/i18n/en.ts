@@ -280,6 +280,8 @@ export const en: Record<string, string> = {
   // Chat
   "chat.tab": "Chat",
   "chat.infoTab": "Info",
+  "chat.noApiKey": "No AI model API Key configured. Bot may not respond to messages.",
+  "chat.goSettings": "Go to Settings",
   "files.tab": "Files",
   "files.name": "Name",
   "files.size": "Size",

@@ -297,6 +297,11 @@ def get_instance(
     # Attach extra fields not in the Pydantic model
     resp_dict = resp.dict() if hasattr(resp, "dict") else resp.model_dump()
     resp_dict["is_weixin_installed"] = is_weixin_installed
+    # Check if any AI provider API key is configured
+    from ..database import get_setting
+    has_anthropic = bool(get_setting("anthropic_auth_token", ""))
+    has_openai = bool(get_setting("openai_api_key", ""))
+    resp_dict["api_key_configured"] = has_anthropic or has_openai
     return resp_dict
 
 

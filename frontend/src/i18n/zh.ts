@@ -280,6 +280,8 @@ export const zh: Record<string, string> = {
   // Chat
   "chat.tab": "聊天",
   "chat.infoTab": "详情",
+  "chat.noApiKey": "尚未配置 AI 大模型 API Key。Bot 可能无法回复消息。",
+  "chat.goSettings": "前往全局配置",
   "files.tab": "文件",
   "files.name": "名称",
   "files.size": "大小",

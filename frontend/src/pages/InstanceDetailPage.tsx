@@ -256,6 +256,7 @@ export function InstanceDetailPage() {
   }
 
   const { instance, install_timeline, config } = detail;
+  const apiKeyConfigured = (detail as Record<string, unknown>).api_key_configured !== false;
   const isInstalling = ["pulling", "configuring", "starting"].includes(instance.install_state);
   const canInstall = instance.install_state === "idle" || instance.install_state === "failed";
 
@@ -421,12 +422,20 @@ export function InstanceDetailPage() {
           {/* Chat Panel */}
           {activeTab === "chat" && instanceId && (
             isOwner && detail?.config?.agent_name ? (
-              <ChatPanel
-                instanceId={instanceId}
-                agentName={detail.config.agent_name}
-                expanded={chatExpanded}
-                onToggleExpand={() => setChatExpanded((v) => { const n = !v; localStorage.setItem("chat_expanded", n ? "1" : "0"); return n; })}
-              />
+              <>
+                {!apiKeyConfigured && (
+                  <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg px-4 py-3 mb-3 text-sm text-yellow-300">
+                    ⚠️ {t("chat.noApiKey")}
+                    <button onClick={() => navigate("/admin#settings")} className="ml-2 text-blue-400 hover:text-blue-300 underline">{t("chat.goSettings")}</button>
+                  </div>
+                )}
+                <ChatPanel
+                  instanceId={instanceId}
+                  agentName={detail.config.agent_name}
+                  expanded={chatExpanded}
+                  onToggleExpand={() => setChatExpanded((v) => { const n = !v; localStorage.setItem("chat_expanded", n ? "1" : "0"); return n; })}
+                />
+              </>
             ) : (
               <div className="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center">
                 <div className="text-gray-600 text-3xl mb-3">💬</div>
