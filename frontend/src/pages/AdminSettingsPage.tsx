@@ -87,10 +87,7 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="max-w-xl mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-200 text-sm">{t("common.back")}</button>
-        <h1 className="text-lg font-semibold text-white">{t("adminSettings.title")}</h1>
-      </div>
+      <h1 className="text-lg font-semibold text-white">{t("adminSettings.title")}</h1>
 
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
         <h2 className="text-sm font-medium text-gray-300">{t("adminSettings.llm")}</h2>

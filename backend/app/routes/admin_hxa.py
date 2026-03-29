@@ -316,19 +316,44 @@ def get_hxa_agents(current_user: dict = Depends(get_current_user)):
 
 @router.get("/orgs")
 def list_orgs(current_user: dict = Depends(get_current_user)):
-    """List all organizations from HXA Hub."""
+    """List organizations. Uses Hub admin API if available, otherwise local org_secrets table."""
     _require_admin(current_user)
-    orgs = _hub_admin_request("GET", "/api/orgs")
     default_org_id = get_setting("hxa_org_id", "")
+
+    # Try Hub admin API first (lists all orgs)
+    admin_secret = _get_admin_secret()
+    if admin_secret:
+        orgs = _hub_admin_request("GET", "/api/orgs")
+        result = []
+        for o in (orgs or []):
+            result.append({
+                "id": o.get("id", ""),
+                "name": o.get("name", ""),
+                "status": o.get("status", "active"),
+                "bot_count": o.get("bot_count", 0),
+                "created_at": o.get("created_at", 0),
+                "is_default": o.get("id") == default_org_id,
+            })
+        return {"orgs": result}
+
+    # Fallback: list from local org_secrets table (orgs created via invite code)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT org_id, org_name, created_at FROM org_secrets ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        cursor.close()
+    finally:
+        conn.close()
     result = []
-    for o in (orgs or []):
+    for r in rows:
         result.append({
-            "id": o.get("id", ""),
-            "name": o.get("name", ""),
-            "status": o.get("status", "active"),
-            "bot_count": o.get("bot_count", 0),
-            "created_at": o.get("created_at", 0),
-            "is_default": o.get("id") == default_org_id,
+            "id": r["org_id"],
+            "name": r.get("org_name", ""),
+            "status": "active",
+            "bot_count": 0,
+            "created_at": r.get("created_at", ""),
+            "is_default": r["org_id"] == default_org_id,
         })
     return {"orgs": result}
 
