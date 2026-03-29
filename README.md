@@ -23,6 +23,13 @@ cp .env.example .env
 docker compose up -d
 ```
 
+> **China users:** If Docker Hub is blocked, configure a mirror first:
+> ```bash
+> sudo mkdir -p /etc/docker
+> echo '{"registry-mirrors":["https://docker.1ms.run"]}' | sudo tee /etc/docker/daemon.json
+> sudo systemctl restart docker
+> ```
+
 Visit `http://localhost:3000` — register an account and start deploying AI agents.
 
 ## Manual Setup

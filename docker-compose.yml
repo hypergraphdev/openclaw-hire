@@ -1,6 +1,11 @@
 # OpenClaw Hire Console — Docker Compose
 # Quick start: docker compose up -d
 # Then visit http://localhost:3000
+#
+# China users: if Docker Hub is blocked, configure a mirror first:
+#   sudo mkdir -p /etc/docker
+#   echo '{"registry-mirrors":["https://docker.1ms.run"]}' | sudo tee /etc/docker/daemon.json
+#   sudo systemctl restart docker
 
 services:
   mysql:
