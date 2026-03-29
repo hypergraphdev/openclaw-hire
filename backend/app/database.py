@@ -161,7 +161,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS install_events (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 instance_id VARCHAR(64) NOT NULL,
-                status VARCHAR(32) NOT NULL,
+                state VARCHAR(32) NOT NULL,
                 message TEXT,
                 created_at VARCHAR(64) NOT NULL,
                 INDEX idx_instance (instance_id)
@@ -236,6 +236,7 @@ def init_db() -> None:
                 mem_used_mb FLOAT DEFAULT 0,
                 mem_total_mb FLOAT DEFAULT 0,
                 claude_running TINYINT DEFAULT 0,
+                claude_mem_mb FLOAT DEFAULT 0,
                 collected_at VARCHAR(64) NOT NULL,
                 INDEX idx_instance_time (instance_id, collected_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
