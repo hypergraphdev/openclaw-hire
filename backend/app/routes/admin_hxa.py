@@ -442,13 +442,6 @@ def set_default_org(org_id: str, current_user: dict = Depends(get_current_user))
 def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user)):
     """List agents (bots) in a specific organization."""
     _require_admin(current_user)
-    # Need org_secret to login as org admin and list bots
-    # For default org, use stored secret; for others, we need admin API
-    # Use admin secret to get bots via admin API
-    orgs = _hub_admin_request("GET", "/api/orgs")
-    org = next((o for o in (orgs or []) if o.get("id") == org_id), None)
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found.")
 
     # Get all local agents and match with this org
     local_agents = _get_agents()
