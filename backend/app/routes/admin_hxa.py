@@ -52,7 +52,7 @@ def _hub_admin_request(method: str, path: str, body: dict | None = None, timeout
 def _hub_org_admin_request(method: str, path: str, org_id: str, org_secret: str, body: dict | None = None, timeout: int = 15) -> dict | list | None:
     """Call HXA Hub API as org admin (login with org_secret, use session cookie)."""
     hub = _get_hub_url().rstrip("/")
-    origin = site_base_url()
+    from urllib.parse import urlparse as _up; _ph = _up(_get_hub_url()); origin = f"{_ph.scheme}://{_ph.netloc}"
 
     # Login
     login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
@@ -528,7 +528,7 @@ def delete_org_bot(org_id: str, bot_id: str, current_user: dict = Depends(get_cu
         raise HTTPException(status_code=400, detail="Org secret not found.")
 
     # Login as org admin
-    origin = site_base_url()
+    from urllib.parse import urlparse as _up; _ph = _up(_get_hub_url()); origin = f"{_ph.scheme}://{_ph.netloc}"
     login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
     try:
         login_req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data,
@@ -574,7 +574,7 @@ def _get_org_secret_for(org_id: str) -> str:
 
 def _cleanup_bot_and_tombstone(hub_url: str, org_id: str, org_secret: str, bot_name: str) -> None:
     """Delete existing bot with same name + tombstone in an org. Best-effort."""
-    origin = site_base_url()
+    from urllib.parse import urlparse as _up; _ph = _up(_get_hub_url()); origin = f"{_ph.scheme}://{_ph.netloc}"
     try:
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
         login_req = urllib.request.Request(

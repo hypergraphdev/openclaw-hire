@@ -1006,7 +1006,9 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "", target_
     if not org_secret:
         return ""
 
-    origin = site_base_url()
+    from urllib.parse import urlparse as _up2
+    _ph2 = _up2(_get_hub_url())
+    origin = f"{_ph2.scheme}://{_ph2.netloc}"
 
     try:
         # Admin login (for cleanup if needed)

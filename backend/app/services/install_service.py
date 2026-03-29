@@ -1276,7 +1276,11 @@ def _configure_openclaw_hxa_only(
     agent_name = _safe_agent_name(instance_id)
     _live_org_secret = _get_org_secret()
     _live_org_id = _get_org_id()
-    origin = site_base_url()
+    # Origin must match Hub's domain for CSRF check (not our site URL)
+    hub_url = _get_hub_url()
+    from urllib.parse import urlparse
+    _parsed = urlparse(hub_url)
+    origin = f"{_parsed.scheme}://{_parsed.netloc}"
 
     if not _live_org_secret:
         return False, "Server missing ORG_SECRET."
