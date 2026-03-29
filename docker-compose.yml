@@ -41,6 +41,7 @@ services:
       HXA_HUB_URL: https://www.ucai.net/connect
     volumes:
       - runtime_data:/app/runtime
+      - ./scripts:/app/scripts:ro  # Install scripts needed by backend
       - /var/run/docker.sock:/var/run/docker.sock  # Access host Docker for agent containers
 
   frontend:
