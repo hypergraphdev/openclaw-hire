@@ -154,7 +154,7 @@ def _get_agents() -> list[dict]:
 def get_hxa_config(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
     return {
-        "org_id": get_setting("hxa_org_id", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"),
+        "org_id": get_setting("hxa_org_id"),
         "org_secret": get_setting("hxa_org_secret"),
         "hub_url": get_setting("hxa_hub_url", "https://www.ucai.net/connect"),
     }

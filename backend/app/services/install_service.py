@@ -30,7 +30,7 @@ _HUB_URL = hxa_hub_url()
 def _get_org_id() -> str:
     """Read HXA org ID from DB settings (fall back to env)."""
     from_db = get_setting("hxa_org_id", "")
-    return from_db or os.getenv("HXA_CONNECT_ORG_ID", "123cd566-c2ea-409f-8f7e-4fa9f5296dd1")
+    return from_db or os.getenv("HXA_CONNECT_ORG_ID", "")
 
 
 def _get_org_secret() -> str:
@@ -40,7 +40,7 @@ def _get_org_secret() -> str:
 
 
 # Backward-compat aliases (read at import time as fallback only)
-_ORG_ID = "123cd566-c2ea-409f-8f7e-4fa9f5296dd1"
+_ORG_ID = ""
 _ORG_SECRET = os.getenv("HXA_CONNECT_ORG_SECRET") or os.getenv("ORG_SECRET") or ""
 _AGENT_PREFIX = os.getenv("HXA_CONNECT_AGENT_PREFIX", "hire")
 _PLUGIN_MAP = {
