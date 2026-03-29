@@ -210,7 +210,8 @@ export const zh: Record<string, string> = {
 
   // Admin Settings
   "adminSettings.title": "管理设置",
-  "adminSettings.llm": "Anthropic / LLM",
+  "adminSettings.llm": "Anthropic / Claude",
+  "adminSettings.openai": "OpenAI / GPT",
   "adminSettings.hxa": "默认 HXA Connect 组织",
   "adminSettings.saving": "保存中...",
   "adminSettings.save": "保存设置",

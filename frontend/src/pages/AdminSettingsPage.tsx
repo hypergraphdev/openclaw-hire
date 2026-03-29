@@ -6,6 +6,8 @@ import { useT } from "../contexts/LanguageContext";
 interface Settings {
   anthropic_base_url: string;
   anthropic_auth_token: string;
+  openai_base_url: string;
+  openai_api_key: string;
   hxa_org_id: string;
   hxa_org_secret: string;
   hxa_admin_secret: string;
@@ -17,6 +19,8 @@ export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     anthropic_base_url: "",
     anthropic_auth_token: "",
+    openai_base_url: "",
+    openai_api_key: "",
     hxa_org_id: "",
     hxa_org_secret: "",
     hxa_admin_secret: "",
@@ -25,6 +29,7 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [showAdminSecret, setShowAdminSecret] = useState(false);
 
@@ -93,6 +98,17 @@ export default function AdminSettingsPage() {
           field="anthropic_auth_token"
           show={showToken}
           onToggle={() => setShowToken((v) => !v)}
+        />
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+        <h2 className="text-sm font-medium text-gray-300">{t("adminSettings.openai")}</h2>
+        <Field label="Base URL (OPENAI_BASE_URL)" field="openai_base_url" />
+        <Field
+          label="API Key (OPENAI_API_KEY)"
+          field="openai_api_key"
+          show={showOpenaiKey}
+          onToggle={() => setShowOpenaiKey((v) => !v)}
         />
       </div>
 

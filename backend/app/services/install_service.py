@@ -368,6 +368,8 @@ def _run_install(instance_id: str) -> None:
         # Inject admin-configurable settings from DB into installer env
         db_anthropic_base = get_setting("anthropic_base_url", "")
         db_anthropic_token = get_setting("anthropic_auth_token", "")
+        db_openai_base = get_setting("openai_base_url", "")
+        db_openai_key = get_setting("openai_api_key", "")
         db_hxa_org_id = get_setting("hxa_org_id", "")
         db_hxa_org_secret = get_setting("hxa_org_secret", "")
         install_extra_env: dict[str, str] = {}
@@ -375,6 +377,11 @@ def _run_install(instance_id: str) -> None:
             install_extra_env["ANTHROPIC_BASE_URL"] = db_anthropic_base
         if db_anthropic_token:
             install_extra_env["ANTHROPIC_AUTH_TOKEN"] = db_anthropic_token
+        if db_openai_base:
+            install_extra_env["OPENAI_BASE_URL"] = db_openai_base
+        if db_openai_key:
+            install_extra_env["OPENAI_API_KEY"] = db_openai_key
+            install_extra_env["CODEX_API_KEY"] = db_openai_key
         if db_hxa_org_id:
             install_extra_env["HXA_CONNECT_ORG_ID"] = db_hxa_org_id
         if db_hxa_org_secret:
