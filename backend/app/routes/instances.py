@@ -709,11 +709,16 @@ async def configure_hxa_endpoint(
 
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
     import asyncio
+    from pathlib import Path
+    # runtime_dir from DB may be host path; convert to container-internal path if needed
+    _app_runtime = str(Path(__file__).resolve().parent.parent.parent / "runtime")
+    container_runtime_dir = os.path.join(_app_runtime, instance_id) if not os.path.exists(runtime_dir) else runtime_dir
+
     loop = asyncio.get_event_loop()
     ok, message = await loop.run_in_executor(
         None,
         lambda: configure_hxa_only(
-            instance_id, runtime_dir, project,
+            instance_id, container_runtime_dir, project,
             product=inst["product"], compose_file=compose_file,
         ),
     )
