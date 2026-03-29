@@ -1,0 +1,54 @@
+From: wuxing <web8stars@gmail.com>
+Subject: [PATCH] fix: handle non-string and media payloads in deliver callback
+
+The `deliver` callback in `dispatchInbound` assumed payload was either
+a string or an object with `.text`/`.body` fields. However, the OpenClaw
+gateway may pass:
+
+1. Objects with `.content` field instead of `.text` (e.g. `{content: "..."}`)
+2. Media-only payloads with no text at all (e.g. TTS voice responses:
+   `{mediaUrl: "/tmp/.../voice.mp3", audioAsVoice: true}`)
+
+In both cases, `String(payload)` produced `"[object Object]"` which was
+sent to HXA Hub and displayed in chat.
+
+Fix: robustly extract text from multiple possible fields, handle nested
+objects, and fall back to `[media] <url>` for media-only payloads.
+
+---
+ index.ts | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/index.ts b/index.ts
+index d9e8962..3b33e1e 100644
+--- a/index.ts
++++ b/index.ts
+@@ -1109,10 +1109,24 @@ async function dispatchInbound(params: InboundParams) {
+     cfg,
+     dispatcherOptions: {
+       deliver: async (payload: any) => {
+-        const text =
+-          typeof payload === "string"
+-            ? payload
+-            : payload?.text ?? payload?.body ?? String(payload);
++        let text: string;
++        if (typeof payload === "string") {
++          text = payload;
++        } else if (typeof payload === "object" && payload !== null) {
++          // Extract text from various payload formats
++          text = payload.text ?? payload.content ?? payload.body ?? payload.message ?? "";
++          if (typeof text !== "string") {
++            text = text?.text ?? text?.content ?? "";
++          }
++          if (typeof text !== "string") text = "";
++          // Handle media payloads (TTS voice, images, etc.)
++          const mediaUrl = payload.mediaUrl || (payload.mediaUrls && payload.mediaUrls[0]) || "";
++          if (mediaUrl && !text) {
++            text = "[media] " + mediaUrl;
++          }
++        } else {
++          text = String(payload ?? "");
++        }
+         if (!text?.trim()) return;
+
+         try {

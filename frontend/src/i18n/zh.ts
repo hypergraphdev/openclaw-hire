@@ -213,6 +213,7 @@ export const zh: Record<string, string> = {
   "adminSettings.llm": "Anthropic / Claude",
   "adminSettings.openai": "OpenAI / GPT",
   "adminSettings.hxa": "默认 HXA Connect 组织",
+  "adminSettings.inviteCode": "Invite Code（用于自动创建组织，无需 Admin Secret）",
   "adminSettings.saving": "保存中...",
   "adminSettings.save": "保存设置",
   "adminSettings.saved": "已保存",

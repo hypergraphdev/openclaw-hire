@@ -213,6 +213,7 @@ export const en: Record<string, string> = {
   "adminSettings.llm": "Anthropic / Claude",
   "adminSettings.openai": "OpenAI / GPT",
   "adminSettings.hxa": "HXA Connect Organization",
+  "adminSettings.inviteCode": "Invite Code (auto-creates org without Admin Secret)",
   "adminSettings.saving": "Saving...",
   "adminSettings.save": "Save Settings",
   "adminSettings.saved": "Saved",

@@ -11,6 +11,7 @@ interface Settings {
   hxa_org_id: string;
   hxa_org_secret: string;
   hxa_admin_secret: string;
+  hxa_invite_code: string;
 }
 
 export default function AdminSettingsPage() {
@@ -24,6 +25,7 @@ export default function AdminSettingsPage() {
     hxa_org_id: "",
     hxa_org_secret: "",
     hxa_admin_secret: "",
+    hxa_invite_code: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -127,6 +129,7 @@ export default function AdminSettingsPage() {
           show={showAdminSecret}
           onToggle={() => setShowAdminSecret((v) => !v)}
         />
+        <Field label={t("adminSettings.inviteCode")} field="hxa_invite_code" />
       </div>
 
       {message && (

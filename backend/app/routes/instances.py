@@ -656,22 +656,32 @@ async def configure_hxa_endpoint(
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
 
-    # Check if HXA org is configured; give clear guidance if not
-    from ..database import get_setting, set_setting, hxa_hub_url, get_connection
+    # Check if HXA org is configured; auto-create via invite code if not
+    from ..database import get_setting, set_setting, get_config, hxa_hub_url, get_connection
     org_secret = get_setting("hxa_org_secret", "")
-    org_id = get_setting("hxa_org_id", "")
-    admin_secret = get_setting("hxa_admin_secret", "")
 
     if not org_secret:
-        # Auto-bootstrap: if admin has admin_secret but no org yet, create one
-        if admin_secret and current_user.get("is_admin"):
+        # Try auto-bootstrap: create org via platform invite code (no admin_secret needed)
+        invite_code = get_config("hxa_invite_code", "")
+        hub = hxa_hub_url()
+        if invite_code and hub:
             try:
-                from .admin_hxa import _hub_admin_request
-                org_name = current_user.get("name", "default") + "'s Organization"
-                result = _hub_admin_request("POST", "/api/orgs", {"name": org_name})
-                if result and result.get("id") and result.get("org_secret"):
-                    set_setting("hxa_org_id", result["id"])
-                    set_setting("hxa_org_secret", result["org_secret"])
+                org_name = (current_user.get("name") or "default") + "'s Organization"
+                import urllib.request
+                req_data = json.dumps({"invite_code": invite_code, "name": org_name}).encode()
+                req = urllib.request.Request(
+                    f"{hub}/api/platform/orgs",
+                    data=req_data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+                new_org_id = result.get("org_id", "")
+                new_org_secret = result.get("org_secret", "")
+                if new_org_id and new_org_secret:
+                    set_setting("hxa_org_id", new_org_id)
+                    set_setting("hxa_org_secret", new_org_secret)
                     import datetime
                     now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
                     conn2 = get_connection()
@@ -679,17 +689,17 @@ async def configure_hxa_endpoint(
                         cur2 = conn2.cursor()
                         cur2.execute(
                             "REPLACE INTO org_secrets (org_id, org_secret, org_name, created_at) VALUES (%s, %s, %s, %s)",
-                            (result["id"], result["org_secret"], org_name, now_ts),
+                            (new_org_id, new_org_secret, org_name, now_ts),
                         )
                         cur2.close()
                     finally:
                         conn2.close()
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"自动创建组织失败: {e}. 请先在管理 → 全局配置中设置 HXA Admin Secret，然后在 HXA 组织中手动创建。")
+                raise HTTPException(status_code=400, detail=f"自动创建组织失败: {e}")
         else:
             raise HTTPException(
                 status_code=400,
-                detail="HXA 组织尚未配置。请先在管理 → 全局配置中设置 Admin Secret，然后在 HXA 组织标签页创建一个组织。",
+                detail="HXA 组织尚未配置。请在管理 → 全局配置中设置 Invite Code 或 Admin Secret，然后创建组织。",
             )
 
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
