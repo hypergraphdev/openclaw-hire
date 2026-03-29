@@ -42,16 +42,19 @@ def execute_query(conn, sql, params=None):
 
 
 def get_setting(key: str, default: str = "") -> str:
-    """Read a value from server_settings table."""
-    conn = get_connection()
+    """Read a value from server_settings table. Returns default if table doesn't exist yet."""
     try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT value FROM server_settings WHERE `key` = %s", (key,))
-        row = cursor.fetchone()
-        cursor.close()
-        return row["value"] if row else default
-    finally:
-        conn.close()
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT value FROM server_settings WHERE `key` = %s", (key,))
+            row = cursor.fetchone()
+            cursor.close()
+            return row["value"] if row else default
+        finally:
+            conn.close()
+    except Exception:
+        return default
 
 
 def get_config(key: str, default: str = "") -> str:
@@ -113,10 +116,91 @@ def _safe_add_column(cursor, table: str, column: str, definition: str) -> None:
 
 
 def init_db() -> None:
-    """Ensure new tables exist (idempotent)."""
+    """Create all tables if they don't exist (idempotent). Safe for fresh installs."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(64) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL DEFAULT '',
+                email VARCHAR(255) NOT NULL UNIQUE,
+                company_name VARCHAR(255) DEFAULT NULL,
+                password_hash VARCHAR(512) DEFAULT NULL,
+                is_admin TINYINT NOT NULL DEFAULT 0,
+                last_login_at VARCHAR(64) DEFAULT NULL,
+                created_at VARCHAR(64) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS instances (
+                id VARCHAR(64) PRIMARY KEY,
+                owner_id VARCHAR(64) NOT NULL,
+                name VARCHAR(255) NOT NULL DEFAULT '',
+                product VARCHAR(64) NOT NULL DEFAULT 'openclaw',
+                repo_url VARCHAR(512) DEFAULT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                install_state VARCHAR(32) NOT NULL DEFAULT 'pending',
+                compose_project VARCHAR(128) DEFAULT NULL,
+                compose_file VARCHAR(512) DEFAULT NULL,
+                runtime_dir VARCHAR(512) DEFAULT NULL,
+                web_console_url VARCHAR(512) DEFAULT NULL,
+                web_console_port INT DEFAULT NULL,
+                http_port INT DEFAULT NULL,
+                telegram_bot_token VARCHAR(512) DEFAULT NULL,
+                agent_name VARCHAR(255) DEFAULT NULL,
+                org_id VARCHAR(128) DEFAULT NULL,
+                created_at VARCHAR(64) NOT NULL,
+                updated_at VARCHAR(64) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS install_events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                instance_id VARCHAR(64) NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                message TEXT,
+                created_at VARCHAR(64) NOT NULL,
+                INDEX idx_instance (instance_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS instance_configs (
+                instance_id VARCHAR(64) PRIMARY KEY,
+                telegram_bot_token VARCHAR(512) DEFAULT NULL,
+                plugin_name VARCHAR(128) DEFAULT NULL,
+                hub_url VARCHAR(512) DEFAULT NULL,
+                org_id VARCHAR(128) DEFAULT NULL,
+                org_token VARCHAR(512) DEFAULT NULL,
+                allow_group TINYINT DEFAULT 1,
+                allow_dm TINYINT DEFAULT 1,
+                agent_name VARCHAR(255) DEFAULT NULL,
+                configured_at VARCHAR(64) DEFAULT NULL,
+                updated_at VARCHAR(64) DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS server_settings (
+                `key` VARCHAR(128) PRIMARY KEY,
+                value TEXT,
+                updated_at VARCHAR(64) DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS org_secrets (
+                org_id VARCHAR(128) PRIMARY KEY,
+                org_secret VARCHAR(512) DEFAULT NULL,
+                org_name VARCHAR(255) DEFAULT NULL,
+                created_at VARCHAR(64) DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS marketplace_installs (
                 id INT AUTO_INCREMENT PRIMARY KEY,
