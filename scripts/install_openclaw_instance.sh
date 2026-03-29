@@ -67,7 +67,7 @@ _HXA_ORG_ID="${HXA_CONNECT_ORG_ID:-}"
 _HXA_ORG_SECRET="${HXA_CONNECT_ORG_SECRET:-${ORG_SECRET:-}}"
 # ANTHROPIC_BASE_URL: set in admin settings (e.g. https://api.anthropic.com or your proxy)
 # ANTHROPIC_AUTH_TOKEN: Anthropic API key or proxy bearer token
-_ANTHROPIC_BASE="${ANTHROPIC_BASE_URL:-}"
+_ANTHROPIC_BASE="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
 _ANTHROPIC_TOKEN="${ANTHROPIC_AUTH_TOKEN:-}"
 _DEFAULT_MODEL="${OPENCLAW_MODEL:-claude-sonnet-4-5}"
 _TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
