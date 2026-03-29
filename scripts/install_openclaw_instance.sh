@@ -289,6 +289,7 @@ if [[ "$ok" -ne 1 ]]; then
 fi
 
 CONTAINER_CLI="${PROJECT}-openclaw-cli-1"
+CONTAINER_GW="${PROJECT}-openclaw-gateway-1"
 
 # ── Fix ownership/permissions post-start (workspace mounted separately, may be root-owned) ──
 # OpenClaw writes AGENTS.md etc on first run; node user (uid 1000) must own them.
@@ -305,8 +306,9 @@ find "$CONFIG_DIR/extensions" -type f -exec chmod 644 {} + 2>/dev/null || true
 find "$WORKSPACE_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
 find "$WORKSPACE_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
 
-# ── npm install plugin inside container (in case host npm wasn't available) ──
-docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/openclaw-hxa-connect ] && cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --silent 2>/dev/null || true' 2>/dev/null || true
+# ── npm install plugin inside container (gateway is long-running, cli may have exited) ──
+docker exec "$CONTAINER_GW" sh -c '[ -d /home/node/.openclaw/extensions/openclaw-hxa-connect ] && cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --production --silent 2>&1 || true' || \
+docker exec "$CONTAINER_CLI" sh -lc '[ -d /home/node/.openclaw/extensions/openclaw-hxa-connect ] && cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --production --silent 2>&1 || true' 2>/dev/null || true
 
 # ── Telegram channel ──────────────────────────────────────────────────────────
 TG_TOKEN_VAL="${TELEGRAM_BOT_TOKEN:-}"
