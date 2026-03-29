@@ -9,3 +9,4 @@ runtime
 backend/.env
 *.env.local
 *.db
+CLAUDE.md
