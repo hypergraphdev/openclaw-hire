@@ -102,6 +102,17 @@ fi
 # ── Per-instance config / workspace dirs ─────────────────────────────────────
 CONFIG_DIR="$WORKDIR/openclaw-config"
 WORKSPACE_DIR="$WORKDIR/openclaw-workspace"
+
+# HOST_RUNTIME_ROOT: if set, use host paths for docker compose volume mounts
+# (needed when this script runs inside a container with host docker socket)
+if [[ -n "${HOST_RUNTIME_ROOT:-}" ]]; then
+  HOST_WORKDIR="$HOST_RUNTIME_ROOT/$INSTANCE_ID"
+  HOST_CONFIG_DIR="$HOST_WORKDIR/openclaw-config"
+  HOST_WORKSPACE_DIR="$HOST_WORKDIR/openclaw-workspace"
+else
+  HOST_CONFIG_DIR="$CONFIG_DIR"
+  HOST_WORKSPACE_DIR="$WORKSPACE_DIR"
+fi
 EXTENSIONS_DIR="$CONFIG_DIR/extensions"
 mkdir -p "$CONFIG_DIR" "$WORKSPACE_DIR" "$EXTENSIONS_DIR"
 mkdir -p "$CONFIG_DIR/identity" "$CONFIG_DIR/agents/main/agent" "$CONFIG_DIR/agents/main/sessions"
@@ -185,17 +196,18 @@ chmod 600 "$OPENCLAW_JSON"
 # Must run before compose up. Tolerates image not yet pulled (skips if it fails).
 _OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}"
 docker run --rm \
-  -v "$CONFIG_DIR:/home/node/.openclaw" \
+  -v "$HOST_CONFIG_DIR:/home/node/.openclaw" \
   --user root \
   --entrypoint sh \
   "$_OPENCLAW_IMAGE" \
   -c 'chown -R 1000:1000 /home/node/.openclaw && echo owner_ok' 2>/dev/null || true
 
 # ── .env for compose ──────────────────────────────────────────────────────────
+# Use HOST paths for volume mounts (docker compose runs on host via socket)
 cat > "$WORKDIR/.env" <<EOF
 OPENCLAW_IMAGE=${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
-OPENCLAW_CONFIG_DIR=$CONFIG_DIR
-OPENCLAW_WORKSPACE_DIR=$WORKSPACE_DIR
+OPENCLAW_CONFIG_DIR=$HOST_CONFIG_DIR
+OPENCLAW_WORKSPACE_DIR=$HOST_WORKSPACE_DIR
 OPENCLAW_GATEWAY_PORT=$OPENCLAW_GATEWAY_PORT
 OPENCLAW_BRIDGE_PORT=$OPENCLAW_BRIDGE_PORT
 OPENCLAW_GATEWAY_BIND=lan

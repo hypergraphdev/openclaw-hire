@@ -388,7 +388,12 @@ def _run_install(instance_id: str) -> None:
         if db_hxa_org_secret:
             install_extra_env["HXA_CONNECT_ORG_SECRET"] = db_hxa_org_secret
             install_extra_env["ORG_SECRET"] = db_hxa_org_secret
-        rc, out = _run([str(script), instance_id, product, repo_url, str(_runtime_root_path())], clean_env=True, extra_env=install_extra_env)
+        # Container uses /app/runtime internally; HOST_RUNTIME_ROOT tells install script
+        # what path to use for docker compose volume mounts (must be valid on host)
+        container_runtime = str(Path(__file__).resolve().parent.parent.parent / "runtime")
+        host_runtime = str(_runtime_root_path())  # From OPENCLAW_HOME (host path)
+        install_extra_env["HOST_RUNTIME_ROOT"] = host_runtime
+        rc, out = _run([str(script), instance_id, product, repo_url, container_runtime], clean_env=True, extra_env=install_extra_env)
         if rc != 0:
             raise RuntimeError(out[:2000])
 
