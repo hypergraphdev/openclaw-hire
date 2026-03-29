@@ -12,3 +12,4 @@ backend/.env
 CLAUDE.md
 .DS_Store
 openclaw-hire-open-source-readiness*.md
+docs/
