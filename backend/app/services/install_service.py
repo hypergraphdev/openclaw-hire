@@ -1297,6 +1297,24 @@ def _configure_openclaw_hxa_only(
     if not openclaw_json.exists():
         return False, f"Missing config file: {openclaw_json}"
 
+    # Sync API keys from admin settings into openclaw.json (in case they were set after install)
+    try:
+        _cfg = json.loads(openclaw_json.read_text())
+        _anthropic = _cfg.get("models", {}).get("providers", {}).get("anthropic", {})
+        _db_base = get_setting("anthropic_base_url", "")
+        _db_token = get_setting("anthropic_auth_token", "")
+        _changed = False
+        if _db_base and _anthropic.get("baseUrl") != _db_base:
+            _anthropic["baseUrl"] = _db_base
+            _changed = True
+        if _db_token and _anthropic.get("apiKey") != _db_token:
+            _anthropic["apiKey"] = _db_token
+            _changed = True
+        if _changed:
+            openclaw_json.write_text(json.dumps(_cfg, indent=2) + "\n")
+    except Exception:
+        pass  # Non-fatal
+
     def _do_register() -> tuple[str, str, str]:
         """Create ticket then register as member. Returns (token, agentId, error_msg)."""
         js = f"""
