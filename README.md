@@ -19,7 +19,11 @@ A self-hosted web console for deploying and managing AI agent instances. Support
 git clone https://github.com/hypergraphdev/openclaw-hire.git
 cd openclaw-hire
 cp .env.example .env
-# Edit .env with your settings (SECRET_KEY is required)
+
+# Edit .env — at minimum set these two:
+#   SECRET_KEY=your-random-secret
+#   OPENCLAW_HOME=/full/path/to/openclaw-hire  (must be HOST path, not container path)
+
 docker compose up -d
 ```
 

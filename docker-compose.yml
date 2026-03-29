@@ -39,8 +39,14 @@ services:
       DB_PASSWORD: openclaw-password
       SITE_BASE_URL: http://localhost:3000
       HXA_HUB_URL: https://www.ucai.net/connect
+      # OPENCLAW_HOME MUST be the HOST path to this project directory.
+      # Backend creates agent containers via host Docker socket — those
+      # containers mount runtime dirs from the HOST filesystem, not the
+      # backend container's filesystem.
+      # Set in your .env file: OPENCLAW_HOME=/path/to/openclaw-hire
+      OPENCLAW_HOME: ${OPENCLAW_HOME:?Set OPENCLAW_HOME in .env to the HOST path of this project}
     volumes:
-      - runtime_data:/app/runtime
+      - ./runtime:/app/runtime
       - uploads_data:/app/frontend/dist/uploads  # Shared upload directory
       - ./scripts:/app/scripts:ro  # Install scripts needed by backend
       - /var/run/docker.sock:/var/run/docker.sock  # Access host Docker for agent containers
