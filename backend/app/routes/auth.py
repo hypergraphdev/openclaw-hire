@@ -43,12 +43,18 @@ def register(payload: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
             detail="该用户名已被使用，请换一个。建议使用企业邮箱用户名。",
         )
 
-    # New users are always regular (is_admin=0). Admin role assigned via admin panel.
+    # First user becomes admin automatically; subsequent users are regular
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT COUNT(*) as cnt FROM users")
+    user_count = cursor.fetchone()["cnt"]
+    cursor.close()
+    is_admin = 1 if user_count == 0 else 0
+
     try:
         cursor = db.cursor(dictionary=True)
         cursor.execute(
             "INSERT INTO users (id, name, email, company_name, password_hash, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (user_id, name, payload.email.lower(), payload.company_name, pw_hash, 0, now),
+            (user_id, name, payload.email.lower(), payload.company_name, pw_hash, is_admin, now),
         )
         cursor.close()
     except mysql.connector.IntegrityError:
