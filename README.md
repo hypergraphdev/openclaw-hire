@@ -1,6 +1,6 @@
 # OpenClaw Hire Console
 
-A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/nicepkg/openclaw) and [Zylos](https://github.com/nicepkg/zylos) products with real-time chat, organization management, and plugin marketplace.
+A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw) and [Zylos](https://github.com/zylos-ai/zylos-core) products with real-time chat, organization management, and plugin marketplace.
 
 ## Features
 
@@ -16,7 +16,7 @@ A self-hosted web console for deploying and managing AI agent instances. Support
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/nicepkg/openclaw-hire.git
+git clone https://github.com/hypergraphdev/openclaw-hire.git
 cd openclaw-hire
 cp .env.example .env
 # Edit .env with your settings (SECRET_KEY is required)
