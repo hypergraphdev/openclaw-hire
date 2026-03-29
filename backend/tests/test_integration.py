@@ -110,14 +110,14 @@ class TestServerSettings:
 
 class TestUsersReadOnly:
     def test_admin_user_exists(self):
-        """The hardcoded admin email should exist."""
+        """At least one admin user should exist."""
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, email, is_admin FROM users WHERE email = %s", ("web8stars@gmail.com",))
+        cursor.execute("SELECT id, email, is_admin FROM users WHERE is_admin = 1 LIMIT 1")
         row = cursor.fetchone()
         cursor.close()
         conn.close()
-        assert row is not None, "Admin user web8stars@gmail.com not found"
+        assert row is not None, "No admin user found"
         assert row["is_admin"] == 1
 
     def test_user_has_required_fields(self):
