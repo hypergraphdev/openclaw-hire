@@ -656,33 +656,41 @@ async def configure_hxa_endpoint(
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     compose_file, project, runtime_dir = _require_compose(inst)
 
-    # Auto-bootstrap: if admin has no default org yet, create one automatically
+    # Check if HXA org is configured; give clear guidance if not
     from ..database import get_setting, set_setting, hxa_hub_url, get_connection
     org_secret = get_setting("hxa_org_secret", "")
+    org_id = get_setting("hxa_org_id", "")
     admin_secret = get_setting("hxa_admin_secret", "")
-    if not org_secret and admin_secret and current_user.get("is_admin"):
-        try:
-            from .admin_hxa import _hub_admin_request
-            hub = hxa_hub_url()
-            org_name = current_user.get("name", "default") + "'s Organization"
-            result = _hub_admin_request("POST", "/api/orgs", {"name": org_name})
-            if result and result.get("id") and result.get("org_secret"):
-                set_setting("hxa_org_id", result["id"])
-                set_setting("hxa_org_secret", result["org_secret"])
-                import datetime
-                now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                conn2 = get_connection()
-                try:
-                    cur2 = conn2.cursor()
-                    cur2.execute(
-                        "REPLACE INTO org_secrets (org_id, org_secret, org_name, created_at) VALUES (%s, %s, %s, %s)",
-                        (result["id"], result["org_secret"], org_name, now_ts),
-                    )
-                    cur2.close()
-                finally:
-                    conn2.close()
-        except Exception:
-            pass  # Non-fatal: admin can create org manually later
+
+    if not org_secret:
+        # Auto-bootstrap: if admin has admin_secret but no org yet, create one
+        if admin_secret and current_user.get("is_admin"):
+            try:
+                from .admin_hxa import _hub_admin_request
+                org_name = current_user.get("name", "default") + "'s Organization"
+                result = _hub_admin_request("POST", "/api/orgs", {"name": org_name})
+                if result and result.get("id") and result.get("org_secret"):
+                    set_setting("hxa_org_id", result["id"])
+                    set_setting("hxa_org_secret", result["org_secret"])
+                    import datetime
+                    now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    conn2 = get_connection()
+                    try:
+                        cur2 = conn2.cursor()
+                        cur2.execute(
+                            "REPLACE INTO org_secrets (org_id, org_secret, org_name, created_at) VALUES (%s, %s, %s, %s)",
+                            (result["id"], result["org_secret"], org_name, now_ts),
+                        )
+                        cur2.close()
+                    finally:
+                        conn2.close()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"自动创建组织失败: {e}. 请先在管理 → 全局配置中设置 HXA Admin Secret，然后在 HXA 组织中手动创建。")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="HXA 组织尚未配置。请先在管理 → 全局配置中设置 Admin Secret，然后在 HXA 组织标签页创建一个组织。",
+            )
 
     # Run blocking docker/compose/registration ops in thread pool so other requests aren't blocked
     import asyncio
