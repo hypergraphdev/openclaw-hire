@@ -213,6 +213,63 @@ def init_db() -> None:
                 UNIQUE KEY uq_inst_item (instance_id, item_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id VARCHAR(64) PRIMARY KEY,
+                instance_id VARCHAR(64) NOT NULL,
+                alert_type VARCHAR(64) NOT NULL,
+                severity VARCHAR(32) NOT NULL DEFAULT 'warning',
+                message TEXT,
+                is_read TINYINT NOT NULL DEFAULT 0,
+                created_at VARCHAR(64) NOT NULL,
+                INDEX idx_instance (instance_id),
+                INDEX idx_unread (is_read, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS instance_metrics (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                instance_id VARCHAR(64) NOT NULL,
+                cpu_percent FLOAT DEFAULT 0,
+                mem_used_mb FLOAT DEFAULT 0,
+                mem_total_mb FLOAT DEFAULT 0,
+                claude_running TINYINT DEFAULT 0,
+                collected_at VARCHAR(64) NOT NULL,
+                INDEX idx_instance_time (instance_id, collected_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                id VARCHAR(64) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL DEFAULT '',
+                role VARCHAR(128) DEFAULT NULL,
+                user_id VARCHAR(64) DEFAULT NULL,
+                stack VARCHAR(64) DEFAULT NULL,
+                repo_url VARCHAR(512) DEFAULT NULL,
+                current_state VARCHAR(32) NOT NULL DEFAULT 'pending',
+                template_id VARCHAR(64) DEFAULT NULL,
+                created_at VARCHAR(64) NOT NULL,
+                updated_at VARCHAR(64) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS employee_status_events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                employee_id VARCHAR(64) NOT NULL,
+                state VARCHAR(32) NOT NULL,
+                message TEXT,
+                created_at VARCHAR(64) NOT NULL,
+                INDEX idx_employee (employee_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        # Migrations
+        _safe_add_column(cursor, "users", "last_login_at", "VARCHAR(64) DEFAULT NULL")
+
         cursor.close()
     finally:
         conn.close()
