@@ -1233,6 +1233,12 @@ def _configure_zylos_hxa_only(
         return False, "Server missing ORG_SECRET."
 
     env = _read_env_file(env_path)
+
+    # Sync latest API keys from admin settings into instance .env
+    _db_anthropic_base = get_setting("anthropic_base_url", "")
+    _db_anthropic_token = get_setting("anthropic_auth_token", "")
+    _db_openai_key = get_setting("openai_api_key", "")
+
     updates = {
         "HUB_URL": _get_hub_url(),
         "HXA_CONNECT_HUB_URL": _get_hub_url(),
@@ -1245,6 +1251,14 @@ def _configure_zylos_hxa_only(
         "HXA_PLUGIN": plugin,
         "PLUGIN_NAME": plugin,
     }
+    if _db_anthropic_base:
+        updates["ANTHROPIC_BASE_URL"] = _db_anthropic_base
+    if _db_anthropic_token:
+        updates["ANTHROPIC_AUTH_TOKEN"] = _db_anthropic_token
+        updates["ANTHROPIC_API_KEY"] = _db_anthropic_token
+    if _db_openai_key:
+        updates["OPENAI_API_KEY"] = _db_openai_key
+        updates["CODEX_API_KEY"] = _db_openai_key
     env.update(updates)
     _write_env_file(env_path, env)
     _sync_instance_runtime_env(runtime_dir, updates)
