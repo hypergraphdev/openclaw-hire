@@ -416,6 +416,41 @@ JS" || true
   fi
 fi
 
+# ── Auto-initialize AI runtime (Claude via Anthropic-compatible API) ──────────
+# Patch zylos init to accept non-sk-ant- API keys (e.g. DeepSeek)
+docker exec "zylos_${INSTANCE_ID}" sh -c "
+  INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js
+  if [ -f \"\$INIT_JS\" ] && grep -q \"startsWith('sk-ant-')\" \"\$INIT_JS\"; then
+    sed -i \"s|if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-'))|if (false \&\& opts.apiKey)|\" \"\$INIT_JS\"
+  fi
+" 2>/dev/null || true
+
+# Read API credentials from .env
+_ANTH_TOKEN="$(grep '^ANTHROPIC_AUTH_TOKEN=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+_ANTH_BASE="$(grep '^ANTHROPIC_BASE_URL=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+_OAI_KEY="$(grep '^OPENAI_API_KEY=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+_OAI_BASE="$(grep '^OPENAI_BASE_URL=' "$WORKDIR/.env" | cut -d= -f2- || true)"
+
+if [[ -n "$_ANTH_TOKEN" ]]; then
+  # Use Claude runtime with Anthropic-compatible API
+  docker exec -e ANTHROPIC_API_KEY="" \
+    "zylos_${INSTANCE_ID}" sh -lc "
+      /home/zylos/.npm-global/bin/zylos init --yes --runtime claude \
+        --api-key '$_ANTH_TOKEN' \
+        ${_ANTH_BASE:+--base-url '$_ANTH_BASE'} \
+        --no-caddy 2>&1 || true
+    " || true
+elif [[ -n "$_OAI_KEY" ]]; then
+  # Use Codex runtime with OpenAI-compatible API
+  docker exec -e ANTHROPIC_API_KEY="" -e ANTHROPIC_AUTH_TOKEN="" \
+    "zylos_${INSTANCE_ID}" sh -lc "
+      /home/zylos/.npm-global/bin/zylos init --yes --runtime codex \
+        --codex-api-key '$_OAI_KEY' \
+        ${_OAI_BASE:+--codex-base-url '$_OAI_BASE'} \
+        --no-caddy 2>&1 || true
+    " || true
+fi
+
 # machine-readable output for caller
 printf 'COMPOSE_PROJECT=%s\n' "$PROJECT"
 printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"

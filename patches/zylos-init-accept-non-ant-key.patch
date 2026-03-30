@@ -1,0 +1,30 @@
+From: openclaw-hire <web8stars@gmail.com>
+Subject: [PATCH] fix: allow non-sk-ant- API keys in zylos init
+
+zylos init validates that --api-key starts with "sk-ant-", but this
+prevents using Anthropic-compatible providers (DeepSeek, etc.) that
+issue keys in different formats.
+
+When --runtime claude is specified with a custom --base-url, the key
+format should not be restricted since it's not going to Anthropic's
+official API.
+
+Proposed fix: skip the sk-ant- prefix check when a custom --base-url
+is also provided, or make the check a warning instead of an error.
+
+---
+ cli/commands/init.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/cli/commands/init.js b/cli/commands/init.js
+--- a/cli/commands/init.js
++++ b/cli/commands/init.js
+@@ -1711,7 +1711,8 @@ export function validateInitOptions(opts) {
+   }
+
+-  // API key format (reject setup tokens — they start with sk-ant-oat)
+-  if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-')) {
++  // API key format — skip check when custom base-url is provided (compatible providers)
++  if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-') && !opts.baseUrl) {
+     return 'Invalid API key. It should start with "sk-ant-".\n  Get your key at: https://console.anthropic.com/settings/keys\n  Then run: zylos init --api-key <key>';
+   }
