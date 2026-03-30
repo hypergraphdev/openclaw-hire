@@ -81,6 +81,17 @@ def _require_compose(inst: dict) -> tuple[str, str, str]:
     runtime_dir = inst.get("runtime_dir")
     if not compose_file or not project or not runtime_dir:
         raise HTTPException(status_code=409, detail="Instance has not completed initial install; compose metadata missing.")
+    # Convert host paths to container paths if running in Docker
+    if not os.path.exists(runtime_dir):
+        from ..database import runtime_root
+        _rt = runtime_root()  # Container-internal runtime root (e.g. /app/runtime)
+        inst_id = inst.get("id", "")
+        container_rt = os.path.join(_rt, inst_id)
+        if os.path.exists(container_rt):
+            runtime_dir = container_rt
+            # Also fix compose_file path
+            compose_basename = os.path.basename(compose_file)
+            compose_file = os.path.join(container_rt, compose_basename)
     return compose_file, project, runtime_dir
 
 
