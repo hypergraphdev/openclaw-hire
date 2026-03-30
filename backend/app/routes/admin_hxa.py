@@ -529,7 +529,19 @@ def list_org_agents(org_id: str, current_user: dict = Depends(get_current_user))
     except Exception:
         pass  # Best effort
 
-    return {"agents": enriched, "org_name": org.get("name", "")}
+    # Get org name from local DB
+    org_name = ""
+    conn3 = get_connection()
+    try:
+        cur3 = conn3.cursor(dictionary=True)
+        cur3.execute("SELECT org_name FROM org_secrets WHERE org_id = %s", (org_id,))
+        r3 = cur3.fetchone()
+        if r3:
+            org_name = r3["org_name"] or ""
+        cur3.close()
+    finally:
+        conn3.close()
+    return {"agents": enriched, "org_name": org_name}
 
 
 # ---------------------------------------------------------------------------
