@@ -791,17 +791,31 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
         _log("❌ npm install 失败")
         return False, "".join(logs)
 
-    # Create scripts/send.js wrapper for C4 compatibility
-    # C4 comm-bridge looks for skills/{channel}/scripts/send.js but package has dist/scripts/send.js
-    _exec(["sh", "-c", f"""mkdir -p {SKILL_DIR}/scripts && cat > {SKILL_DIR}/scripts/send.js << 'WRAPPER'
+    # Ensure C4 send adapter exists (package should include scripts/send.js,
+    # but create fallback if missing for older tgz versions)
+    rc, _ = _exec(["test", "-f", f"{SKILL_DIR}/scripts/send.js"], timeout=5)
+    if rc != 0:
+        _exec(["sh", "-c", f"""mkdir -p {SKILL_DIR}/scripts && cat > {SKILL_DIR}/scripts/send.js << 'WRAPPER'
 #!/usr/bin/env node
-const path = require("path");
-const {{ execFileSync }} = require("child_process");
+// ESM adapter: package has "type":"module"
+import {{ execFileSync }} from "node:child_process";
+import path from "node:path";
+import {{ fileURLToPath }} from "node:url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const args = process.argv.slice(2);
+if (args.length < 2) {{ console.error("Usage: send.js <endpoint> <message>"); process.exit(1); }}
 try {{
-  execFileSync("node", [path.join(__dirname, "..", "dist", "scripts", "send.js"), ...process.argv.slice(2)], {{ stdio: "inherit" }});
+  execFileSync("node", [
+    path.join(__dirname, "..", "dist", "scripts", "send.js"),
+    "--channel", "weixin",
+    "--endpoint", args[0],
+    "--content", args[1]
+  ], {{ stdio: "inherit" }});
 }} catch (e) {{ process.exit(e.status || 1); }}
 WRAPPER"""], timeout=10)
-    _log("C4 send wrapper 已创建")
+        _log("C4 send adapter 已创建（fallback）")
+    else:
+        _log("C4 send adapter 已就绪")
 
     # Step 5: Start PM2 process
     _log("\n=== 启动插件 ===")
@@ -814,6 +828,18 @@ WRAPPER"""], timeout=10)
         _log(f"❌ PM2 启动失败: {out}")
         return False, "".join(logs)
     _log("PM2 进程已启动")
+
+    # Setup cleanup cron for stale send.js processes
+    # (send.js imports bot.js which starts a long-poll loop, causing zombie processes)
+    cleanup_script = "/home/zylos/zylos/cleanup-stale-sends.sh"
+    _exec(["sh", "-c", f"""cat > {cleanup_script} << 'CLEANUP'
+#!/bin/sh
+ps -eo pid,etimes,cmd | grep "dist/scripts/send.js" | grep -v grep | while read pid etime cmd; do
+  if [ "$etime" -gt 30 ] 2>/dev/null; then kill "$pid" 2>/dev/null; fi
+done
+CLEANUP
+chmod +x {cleanup_script}"""], timeout=10)
+    _exec(["sh", "-c", f"pm2 delete cleanup-sends 2>/dev/null; pm2 start {cleanup_script} --name cleanup-sends --cron-restart '* * * * *' --no-autorestart 2>/dev/null"], timeout=10)
 
     # Save PM2 state
     _exec(["pm2", "save"], timeout=10)
