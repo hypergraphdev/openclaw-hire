@@ -63,6 +63,16 @@ export const api = {
   startInstall: (id: string) =>
     request<Instance>(`/api/instances/${id}/install`, { method: "POST" }),
 
+  selfCheck: (id: string) =>
+    request<{ checks: Array<{ name: string; label: string; status: string; detail: string; fixable: boolean }>; overall: string; fixable_count: number }>(
+      `/api/instances/${id}/self-check`, { method: "POST" }
+    ),
+
+  selfCheckRepair: (id: string) =>
+    request<{ repairs: Array<{ name: string; action: string }>; count: number }>(
+      `/api/instances/${id}/self-check/repair`, { method: "POST" }
+    ),
+
   stopInstance: (id: string) =>
     request<Instance>(`/api/instances/${id}/stop`, { method: "POST" }),
 

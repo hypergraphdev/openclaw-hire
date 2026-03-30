@@ -56,6 +56,13 @@ export function InstanceDetailPage() {
   const [hxaConfiguring, setHxaConfiguring] = useState(false);
   const [hxaResult, setHxaResult] = useState<{ ok: boolean; message: string; agent_name?: string } | null>(null);
   const [hxaError, setHxaError] = useState("");
+  // Self-check state
+  type CheckItem = { name: string; label: string; status: string; detail: string; fixable: boolean };
+  const [selfCheckResult, setSelfCheckResult] = useState<{ checks: CheckItem[]; overall: string; fixable_count: number } | null>(null);
+  const [selfCheckLoading, setSelfCheckLoading] = useState(false);
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairResult, setRepairResult] = useState<{ repairs: { name: string; action: string }[]; count: number } | null>(null);
+
   const [pluginRestarting, setPluginRestarting] = useState(false);
   const [pluginRestartMsg, setPluginRestartMsg] = useState("");
   const [weixinRestarting, setWeixinRestarting] = useState(false);
@@ -257,8 +264,10 @@ export function InstanceDetailPage() {
 
   const { instance, install_timeline, config } = detail;
   const apiKeyConfigured = (detail as Record<string, unknown>).api_key_configured !== false;
+  const containerRunning = (detail as Record<string, unknown>).container_running === true;
   const isInstalling = ["pulling", "configuring", "starting"].includes(instance.install_state);
-  const canInstall = instance.install_state === "idle" || instance.install_state === "failed";
+  const canInstall = instance.install_state === "idle" || (instance.install_state === "failed" && !containerRunning);
+  const canSelfCheck = instance.install_state === "failed" && containerRunning;
 
   return (
     <div>
@@ -292,6 +301,26 @@ export function InstanceDetailPage() {
               {installing ? t("detail.starting") : instance.install_state === "failed" ? t("detail.retryInstall") : t("detail.install")}
             </button>
           )}
+          {canSelfCheck && (
+            <button
+              onClick={async () => {
+                setSelfCheckLoading(true);
+                setRepairResult(null);
+                try {
+                  const res = await api.selfCheck(instanceId!);
+                  setSelfCheckResult(res);
+                } catch (err: unknown) {
+                  setError(err instanceof Error ? err.message : "Self-check failed");
+                } finally {
+                  setSelfCheckLoading(false);
+                }
+              }}
+              disabled={selfCheckLoading}
+              className="bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+            >
+              {selfCheckLoading ? t("detail.checking") : t("detail.selfCheck")}
+            </button>
+          )}
           <button onClick={() => handleAction("logs")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.logs")}</button>
           <button onClick={() => handleAction("stop")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.stop")}</button>
           <button onClick={() => handleAction("restart")} disabled={actionLoading !== "" || !instance.compose_project} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-md">{t("detail.restart")}</button>
@@ -314,6 +343,75 @@ export function InstanceDetailPage() {
               </div>
               <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">{upgradeResult.output}</pre>
               <button onClick={() => setUpgradeResult(null)} className="mt-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-lg">Close</button>
+            </div>
+          </div>
+        )}
+
+        {/* Self-check result modal */}
+        {selfCheckResult && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => { setSelfCheckResult(null); setRepairResult(null); }}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-xl mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">{t("detail.selfCheckTitle")}</h3>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  selfCheckResult.overall === "ok" ? "bg-green-900/40 text-green-400" :
+                  selfCheckResult.overall === "fixable" ? "bg-yellow-900/40 text-yellow-400" :
+                  "bg-red-900/40 text-red-400"
+                }`}>
+                  {selfCheckResult.overall === "ok" ? t("detail.allGood") :
+                   selfCheckResult.overall === "fixable" ? t("detail.fixable", { count: selfCheckResult.fixable_count }) :
+                   t("detail.needsAttention")}
+                </span>
+              </div>
+              <div className="flex-1 overflow-auto space-y-2">
+                {selfCheckResult.checks.map((c) => (
+                  <div key={c.name} className="flex items-start gap-2 text-sm bg-gray-800/50 rounded-lg px-3 py-2">
+                    <span className="mt-0.5 text-base">
+                      {c.status === "ok" ? "✅" : c.fixable ? "🔧" : "❌"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-gray-200 font-medium">{c.label}</div>
+                      <div className="text-gray-400 text-xs break-words">{c.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {repairResult && (
+                <div className="mt-3 p-3 bg-green-900/20 border border-green-700 rounded-lg text-xs text-green-300 space-y-1">
+                  <div className="font-medium">✅ {t("detail.repairDone", { count: repairResult.count })}</div>
+                  {repairResult.repairs.map((r, i) => (
+                    <div key={i}>• {r.action}</div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2 mt-4">
+                {selfCheckResult.fixable_count > 0 && !repairResult && (
+                  <button
+                    onClick={async () => {
+                      setRepairLoading(true);
+                      try {
+                        const res = await api.selfCheckRepair(instanceId!);
+                        setRepairResult(res);
+                        // Re-run check to show updated status
+                        const check2 = await api.selfCheck(instanceId!);
+                        setSelfCheckResult(check2);
+                        await fetchDetail();
+                      } catch (err: unknown) {
+                        setError(err instanceof Error ? err.message : "Repair failed");
+                      } finally {
+                        setRepairLoading(false);
+                      }
+                    }}
+                    disabled={repairLoading}
+                    className="flex-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-sm py-2 rounded-lg"
+                  >
+                    {repairLoading ? t("detail.repairing") : t("detail.repairAll")}
+                  </button>
+                )}
+                <button onClick={() => { setSelfCheckResult(null); setRepairResult(null); fetchDetail(); }} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-lg">
+                  {t("common.close")}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -313,6 +313,15 @@ def get_instance(
     has_anthropic = bool(get_setting("anthropic_auth_token", ""))
     has_openai = bool(get_setting("openai_api_key", ""))
     resp_dict["api_key_configured"] = has_anthropic or has_openai
+
+    # Check if container is actually running (for self-check button logic)
+    try:
+        from ..services.docker_utils import get_container_name as _gcn, get_container_info as _gci
+        _cn = _gcn(instance_id, inst.get("product", "openclaw"))
+        _ci = _gci(_cn)
+        resp_dict["container_running"] = _ci.get("running", False)
+    except Exception:
+        resp_dict["container_running"] = False
     return resp_dict
 
 
@@ -1653,3 +1662,414 @@ def download_file(
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Self-Check & Repair ─────────────────────────────────────────────────────
+
+
+def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
+    """Run all checks, return list of {name, status, detail, fixable}."""
+    from ..database import get_setting, runtime_root, get_connection
+    from ..services.docker_utils import get_container_name, get_container_info, docker_run
+    from ..services.install_service import _safe_agent_name, _read_env_file
+
+    checks: list[dict] = []
+    container = get_container_name(instance_id, product)
+    _rt = runtime_root()
+    inst_runtime = os.path.join(_rt, instance_id)
+
+    # ── 1. Container running ───────────────────────────────────────────
+    try:
+        info = get_container_info(container)
+        running = info.get("running", False)
+    except Exception:
+        running = False
+    checks.append({
+        "name": "container_running",
+        "label": "容器运行状态",
+        "status": "ok" if running else "fail",
+        "detail": f"{container}: {'运行中' if running else '未运行'}",
+        "fixable": False,
+    })
+
+    if not running:
+        return checks  # No point checking further
+
+    # ── 2. DB metadata ─────────────────────────────────────────────────
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT compose_project, compose_file, runtime_dir, status, install_state FROM instances WHERE id = %s", (instance_id,))
+    inst = cursor.fetchone()
+    cursor.close()
+    missing = []
+    if not inst.get("compose_project"):
+        missing.append("compose_project")
+    if not inst.get("runtime_dir"):
+        missing.append("runtime_dir")
+    if inst.get("install_state") != "running":
+        missing.append(f"install_state={inst.get('install_state')}")
+    if inst.get("status") != "active":
+        missing.append(f"status={inst.get('status')}")
+    checks.append({
+        "name": "db_metadata",
+        "label": "数据库元数据",
+        "status": "fail" if missing else "ok",
+        "detail": f"缺失: {', '.join(missing)}" if missing else "完整",
+        "fixable": bool(missing),
+    })
+
+    # ── 3. API Keys ────────────────────────────────────────────────────
+    db_anthropic_base = get_setting("anthropic_base_url", "")
+    db_anthropic_token = get_setting("anthropic_auth_token", "")
+    db_openai_base = get_setting("openai_base_url", "")
+    db_openai_key = get_setting("openai_api_key", "")
+    has_any_key = bool(db_anthropic_token or db_openai_key)
+
+    key_issues = []
+    if not has_any_key:
+        key_issues.append("全局未配置任何 AI API Key")
+    else:
+        if product == "openclaw":
+            oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+            if os.path.exists(oc_json):
+                try:
+                    cfg = json.loads(open(oc_json).read())
+                    ant = cfg.get("models", {}).get("providers", {}).get("anthropic", {})
+                    if db_anthropic_token and ant.get("apiKey") != db_anthropic_token:
+                        key_issues.append("openclaw.json apiKey 与全局配置不一致")
+                    if db_anthropic_base and ant.get("baseUrl") != db_anthropic_base:
+                        key_issues.append("openclaw.json baseUrl 与全局配置不一致")
+                except Exception:
+                    key_issues.append("openclaw.json 读取失败")
+            else:
+                key_issues.append("openclaw.json 不存在")
+        else:  # zylos
+            env_path = os.path.join(inst_runtime, ".env")
+            if os.path.exists(env_path):
+                env = _read_env_file(Path(env_path))
+                if db_anthropic_token and env.get("ANTHROPIC_AUTH_TOKEN") != db_anthropic_token:
+                    key_issues.append("实例 .env ANTHROPIC_AUTH_TOKEN 与全局不一致")
+                if db_anthropic_base and env.get("ANTHROPIC_BASE_URL") != db_anthropic_base:
+                    key_issues.append("实例 .env ANTHROPIC_BASE_URL 与全局不一致")
+                if db_openai_key and env.get("OPENAI_API_KEY") != db_openai_key:
+                    key_issues.append("实例 .env OPENAI_API_KEY 与全局不一致")
+                if db_openai_base and env.get("OPENAI_BASE_URL") != db_openai_base:
+                    key_issues.append("实例 .env OPENAI_BASE_URL 与全局不一致")
+                # Check compose yaml for stale defaults
+                compose_yaml = os.path.join(inst_runtime, "docker-compose.instance.yml")
+                if os.path.exists(compose_yaml):
+                    yaml_text = open(compose_yaml).read()
+                    if db_anthropic_base and f'ANTHROPIC_BASE_URL: "{db_anthropic_base}"' not in yaml_text and "api.anthropic.com" in yaml_text:
+                        key_issues.append("compose yaml ANTHROPIC_BASE_URL 默认值未更新")
+            else:
+                key_issues.append("实例 .env 不存在")
+    checks.append({
+        "name": "api_keys",
+        "label": "AI API Key 配置",
+        "status": "fail" if key_issues else ("missing" if not has_any_key else "ok"),
+        "detail": "; ".join(key_issues) if key_issues else ("全局无 API Key" if not has_any_key else "已同步"),
+        "fixable": bool(key_issues) and has_any_key,
+    })
+
+    # ── 4. HXA Config ──────────────────────────────────────────────────
+    hxa_issues = []
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT org_id, org_token, agent_name FROM instance_configs WHERE instance_id = %s", (instance_id,))
+    ic = cursor.fetchone()
+    cursor.close()
+
+    container_token = ""
+    if product == "openclaw":
+        oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+        if os.path.exists(oc_json):
+            try:
+                cfg = json.loads(open(oc_json).read())
+                hxa = cfg.get("channels", {}).get("hxa-connect", {})
+                container_token = hxa.get("agentToken", "")
+                if not container_token:
+                    hxa_issues.append("openclaw.json 无 agentToken")
+            except Exception:
+                hxa_issues.append("openclaw.json 读取失败")
+    else:
+        zy_cfg = os.path.join(inst_runtime, "zylos-data", "components", "hxa-connect", "config.json")
+        if os.path.exists(zy_cfg):
+            try:
+                cfg = json.loads(open(zy_cfg).read())
+                org = cfg.get("orgs", {}).get("default", {})
+                container_token = org.get("agent_token", "")
+                if not container_token:
+                    hxa_issues.append("config.json 无 agent_token")
+            except Exception:
+                hxa_issues.append("config.json 读取失败")
+        else:
+            hxa_issues.append("hxa-connect config.json 不存在")
+
+    if not ic:
+        hxa_issues.append("instance_configs 记录不存在")
+    elif not ic.get("org_id"):
+        hxa_issues.append("instance_configs.org_id 为空")
+    if ic and container_token and ic.get("org_token") != container_token:
+        hxa_issues.append("DB org_token 与容器内 token 不一致")
+
+    checks.append({
+        "name": "hxa_config",
+        "label": "HXA 组织配置",
+        "status": "fail" if hxa_issues else "ok",
+        "detail": "; ".join(hxa_issues) if hxa_issues else "配置完整",
+        "fixable": bool(hxa_issues) and bool(container_token),
+    })
+
+    # ── 5. HXA Connection ──────────────────────────────────────────────
+    ws_connected = False
+    if product == "openclaw":
+        rc, logs = docker_run(["docker", "logs", "--tail", "30", container], timeout=10)
+        ws_connected = "WebSocket connected" in logs
+    else:
+        rc, logs = docker_run(["docker", "exec", container, "tail", "-20",
+                               "/home/zylos/zylos/components/hxa-connect/logs/out.log"], timeout=10)
+        ws_connected = "WebSocket connected" in logs
+        if not ws_connected:
+            # Check if process is running
+            rc2, pm2_out = docker_run(["docker", "exec", container, "pm2", "show", "zylos-hxa-connect", "--no-color"], timeout=10)
+            if rc2 != 0 or "not found" in pm2_out.lower():
+                ws_connected = False  # process not even running
+    checks.append({
+        "name": "hxa_connection",
+        "label": "HXA WebSocket 连接",
+        "status": "ok" if ws_connected else "fail",
+        "detail": "已连接" if ws_connected else "未连接",
+        "fixable": not ws_connected and bool(container_token),
+    })
+
+    # ── 6. HXA NPM Dependencies (OpenClaw only) ───────────────────────
+    if product == "openclaw":
+        rc, out = docker_run(["docker", "exec", container, "test", "-d",
+                              "/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz"], timeout=5)
+        has_deps = rc == 0
+        checks.append({
+            "name": "hxa_npm_deps",
+            "label": "HXA 插件依赖",
+            "status": "ok" if has_deps else "fail",
+            "detail": "node_modules 完整" if has_deps else "缺少 @coco-xyz/hxa-connect-sdk",
+            "fixable": not has_deps,
+        })
+
+    return checks
+
+
+@router.post("/{instance_id}/self-check")
+def self_check(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Run comprehensive self-check on an instance. Returns report without modifying anything."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    product = inst.get("product", "openclaw")
+    checks = _self_check_instance(instance_id, product, db)
+    fixable_count = sum(1 for c in checks if c.get("fixable"))
+    fail_count = sum(1 for c in checks if c["status"] == "fail")
+    if fail_count == 0:
+        overall = "ok"
+    elif fixable_count > 0:
+        overall = "fixable"
+    else:
+        overall = "needs_attention"
+    return {"checks": checks, "overall": overall, "fixable_count": fixable_count}
+
+
+@router.post("/{instance_id}/self-check/repair")
+def self_check_repair(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Execute auto-repair for all fixable issues found by self-check."""
+    from ..database import get_setting, runtime_root, get_connection
+    from ..services.docker_utils import get_container_name, docker_run
+    from ..services.install_service import _safe_agent_name, _read_env_file, _write_env_file
+
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    product = inst.get("product", "openclaw")
+    container = get_container_name(instance_id, product)
+    _rt = runtime_root()
+    inst_runtime = os.path.join(_rt, instance_id)
+    repairs: list[dict] = []
+
+    # ── Fix DB metadata ────────────────────────────────────────────────
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT compose_project, runtime_dir, status, install_state FROM instances WHERE id = %s", (instance_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    if row and (not row.get("compose_project") or row.get("install_state") != "running"):
+        _openclaw_home = os.getenv("OPENCLAW_HOME", "")
+        host_rt = os.path.join(_openclaw_home, "runtime", instance_id) if _openclaw_home else inst_runtime
+        # Find compose file
+        compose_file = ""
+        for candidate in ["docker-compose.instance.yml", "docker-compose.yml", "repo/docker-compose.yml", "repo/compose.yml"]:
+            if os.path.exists(os.path.join(inst_runtime, candidate)):
+                compose_file = os.path.join(host_rt, candidate)
+                break
+        project = f"hire_{instance_id}" if product == "openclaw" else f"hire_{instance_id}"
+        cursor = db.cursor()
+        cursor.execute(
+            "UPDATE instances SET compose_project=%s, compose_file=%s, runtime_dir=%s, status='active', install_state='running', updated_at=%s WHERE id=%s",
+            (project, compose_file, host_rt, _utc_now(), instance_id),
+        )
+        cursor.close()
+        repairs.append({"name": "db_metadata", "action": "已修复 DB 元数据（status=active, install_state=running）"})
+
+    # ── Fix API Keys ───────────────────────────────────────────────────
+    db_anthropic_base = get_setting("anthropic_base_url", "")
+    db_anthropic_token = get_setting("anthropic_auth_token", "")
+    db_openai_base = get_setting("openai_base_url", "")
+    db_openai_key = get_setting("openai_api_key", "")
+
+    if product == "openclaw":
+        oc_json_path = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+        if os.path.exists(oc_json_path):
+            try:
+                cfg = json.loads(open(oc_json_path).read())
+                ant = cfg.setdefault("models", {}).setdefault("providers", {}).setdefault("anthropic", {})
+                changed = False
+                if db_anthropic_base and ant.get("baseUrl") != db_anthropic_base:
+                    ant["baseUrl"] = db_anthropic_base
+                    changed = True
+                if db_anthropic_token and ant.get("apiKey") != db_anthropic_token:
+                    ant["apiKey"] = db_anthropic_token
+                    changed = True
+                if changed:
+                    open(oc_json_path, "w").write(json.dumps(cfg, indent=2) + "\n")
+                    docker_run(["docker", "restart", container], timeout=30)
+                    repairs.append({"name": "api_keys", "action": "已同步 API Key 到 openclaw.json 并重启"})
+            except Exception as e:
+                repairs.append({"name": "api_keys", "action": f"修复失败: {e}"})
+    else:  # zylos
+        env_path = os.path.join(inst_runtime, ".env")
+        compose_yaml = os.path.join(inst_runtime, "docker-compose.instance.yml")
+        if os.path.exists(env_path):
+            env = _read_env_file(Path(env_path))
+            changed = False
+            for env_key, db_val in [
+                ("ANTHROPIC_BASE_URL", db_anthropic_base),
+                ("ANTHROPIC_AUTH_TOKEN", db_anthropic_token),
+                ("ANTHROPIC_API_KEY", db_anthropic_token),
+                ("OPENAI_BASE_URL", db_openai_base),
+                ("OPENAI_API_KEY", db_openai_key),
+                ("CODEX_API_KEY", db_openai_key),
+            ]:
+                if db_val and env.get(env_key) != db_val:
+                    env[env_key] = db_val
+                    changed = True
+            if changed:
+                _write_env_file(Path(env_path), env)
+                # Also update zylos-data/.env
+                zy_env_path = os.path.join(inst_runtime, "zylos-data", ".env")
+                if os.path.exists(zy_env_path):
+                    zy_env = _read_env_file(Path(zy_env_path))
+                    zy_env.update({k: v for k, v in env.items() if k.startswith("ANTHROPIC") or k.startswith("OPENAI") or k.startswith("CODEX")})
+                    _write_env_file(Path(zy_env_path), zy_env)
+                repairs.append({"name": "api_keys", "action": "已同步 API Key 到实例 .env"})
+            # Fix compose yaml stale defaults
+            if os.path.exists(compose_yaml) and db_anthropic_base:
+                yaml_text = open(compose_yaml).read()
+                if "api.anthropic.com" in yaml_text and db_anthropic_base != "https://api.anthropic.com":
+                    yaml_text = yaml_text.replace(
+                        '${ANTHROPIC_BASE_URL:-https://api.anthropic.com}',
+                        f'${{ANTHROPIC_BASE_URL:-{db_anthropic_base}}}'
+                    )
+                    open(compose_yaml, "w").write(yaml_text)
+                    repairs.append({"name": "api_keys", "action": "已更新 compose yaml ANTHROPIC_BASE_URL 默认值"})
+            if changed:
+                # Restart container to pick up new env
+                compose_file = inst.get("compose_file", "")
+                project = inst.get("compose_project", "")
+                if compose_file and project:
+                    try:
+                        _cf = compose_file
+                        # Convert host path to container path if needed
+                        if not os.path.exists(_cf):
+                            _cf = os.path.join(inst_runtime, os.path.basename(_cf))
+                        docker_run(["docker", "compose", "-f", _cf, "-p", project, "--env-file", env_path, "down"], timeout=30)
+                        docker_run(["docker", "compose", "-f", _cf, "-p", project, "--env-file", env_path, "up", "-d"], timeout=60)
+                        repairs.append({"name": "api_keys", "action": "已重启容器使新配置生效"})
+                    except Exception:
+                        pass
+
+    # ── Fix HXA Config (sync container→DB) ─────────────────────────────
+    container_token = ""
+    container_agent_name = ""
+    container_org_id = ""
+    if product == "openclaw":
+        oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+        if os.path.exists(oc_json):
+            try:
+                cfg = json.loads(open(oc_json).read())
+                hxa = cfg.get("channels", {}).get("hxa-connect", {})
+                container_token = hxa.get("agentToken", "")
+                container_agent_name = hxa.get("agentName", "")
+                container_org_id = hxa.get("orgId", "")
+            except Exception:
+                pass
+    else:
+        zy_cfg = os.path.join(inst_runtime, "zylos-data", "components", "hxa-connect", "config.json")
+        if os.path.exists(zy_cfg):
+            try:
+                cfg = json.loads(open(zy_cfg).read())
+                org = cfg.get("orgs", {}).get("default", {})
+                container_token = org.get("agent_token", "")
+                container_agent_name = org.get("agent_name", "")
+                container_org_id = org.get("org_id", "")
+            except Exception:
+                pass
+
+    if container_token:
+        conn = get_connection()
+        try:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT org_id, org_token FROM instance_configs WHERE instance_id = %s", (instance_id,))
+            ic = cur.fetchone()
+            if not ic:
+                cur.execute(
+                    "INSERT INTO instance_configs (instance_id, org_id, org_token, agent_name, configured_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (instance_id, container_org_id, container_token, container_agent_name, _utc_now(), _utc_now()),
+                )
+                repairs.append({"name": "hxa_config", "action": "已创建 instance_configs 记录"})
+            else:
+                updates = []
+                if container_org_id and ic.get("org_id") != container_org_id:
+                    updates.append(f"org_id={container_org_id}")
+                if container_token and ic.get("org_token") != container_token:
+                    updates.append("org_token 已同步")
+                if updates:
+                    cur.execute(
+                        "UPDATE instance_configs SET org_id=%s, org_token=%s, agent_name=%s, updated_at=%s WHERE instance_id=%s",
+                        (container_org_id or ic.get("org_id"), container_token, container_agent_name or ic.get("agent_name"), _utc_now(), instance_id),
+                    )
+                    repairs.append({"name": "hxa_config", "action": f"已同步: {', '.join(updates)}"})
+            # Also update instances.agent_name
+            if container_agent_name:
+                cur.execute("UPDATE instances SET agent_name=%s WHERE id=%s AND (agent_name IS NULL OR agent_name != %s)",
+                            (container_agent_name, instance_id, container_agent_name))
+            cur.close()
+        finally:
+            conn.close()
+
+    # ── Fix HXA Connection (restart) ───────────────────────────────────
+    if product == "zylos":
+        rc, _ = docker_run(["docker", "exec", container, "pm2", "restart", "zylos-hxa-connect"], timeout=15)
+        if rc != 0:
+            eco = "/home/zylos/zylos/.claude/skills/hxa-connect/ecosystem.config.cjs"
+            docker_run(["docker", "exec", container, "pm2", "start", eco], timeout=15)
+        repairs.append({"name": "hxa_connection", "action": "已重启 zylos-hxa-connect"})
+
+    # ── Fix HXA NPM deps (OpenClaw only) ───────────────────────────────
+    if product == "openclaw":
+        rc, _ = docker_run(["docker", "exec", container, "test", "-d",
+                            "/home/node/.openclaw/extensions/openclaw-hxa-connect/node_modules/@coco-xyz"], timeout=5)
+        if rc != 0:
+            docker_run(["docker", "exec", container, "sh", "-c",
+                        "cd /home/node/.openclaw/extensions/openclaw-hxa-connect && npm install --production"], timeout=60)
+            docker_run(["docker", "restart", container], timeout=30)
+            repairs.append({"name": "hxa_npm_deps", "action": "已安装依赖并重启"})
+
+    return {"repairs": repairs, "count": len(repairs)}
