@@ -791,6 +791,18 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
         _log("❌ npm install 失败")
         return False, "".join(logs)
 
+    # Create scripts/send.js wrapper for C4 compatibility
+    # C4 comm-bridge looks for skills/{channel}/scripts/send.js but package has dist/scripts/send.js
+    _exec(["sh", "-c", f"""mkdir -p {SKILL_DIR}/scripts && cat > {SKILL_DIR}/scripts/send.js << 'WRAPPER'
+#!/usr/bin/env node
+const path = require("path");
+const {{ execFileSync }} = require("child_process");
+try {{
+  execFileSync("node", [path.join(__dirname, "..", "dist", "scripts", "send.js"), ...process.argv.slice(2)], {{ stdio: "inherit" }});
+}} catch (e) {{ process.exit(e.status || 1); }}
+WRAPPER"""], timeout=10)
+    _log("C4 send wrapper 已创建")
+
     # Step 5: Start PM2 process
     _log("\n=== 启动插件 ===")
     _flush()
