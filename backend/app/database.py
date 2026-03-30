@@ -83,9 +83,14 @@ def hxa_hub_url() -> str:
 
 
 def runtime_root() -> str:
+    """Return runtime directory path. In Docker, set RUNTIME_ROOT=/app/runtime."""
     if "runtime_root" not in _config_cache:
-        home = os.getenv("OPENCLAW_HOME", str(Path(__file__).resolve().parent.parent.parent))
-        _config_cache["runtime_root"] = os.path.join(home, "runtime")
+        explicit = os.getenv("RUNTIME_ROOT", "")
+        if explicit:
+            _config_cache["runtime_root"] = explicit
+        else:
+            home = os.getenv("OPENCLAW_HOME", str(Path(__file__).resolve().parent.parent.parent))
+            _config_cache["runtime_root"] = os.path.join(home, "runtime")
     return _config_cache["runtime_root"]
 
 

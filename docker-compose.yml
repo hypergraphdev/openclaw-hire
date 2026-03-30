@@ -40,6 +40,7 @@ services:
       SITE_BASE_URL: http://localhost:3000
       HXA_HUB_URL: https://www.ucai.net/connect
       HXA_INVITE_CODE: ${HXA_INVITE_CODE:-}
+      RUNTIME_ROOT: /app/runtime
       # OPENCLAW_HOME MUST be the HOST path to this project directory.
       # Backend creates agent containers via host Docker socket — those
       # containers mount runtime dirs from the HOST filesystem, not the
