@@ -688,6 +688,13 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
                 del_req = urllib.request.Request(f"{hub}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": _origin}, method="DELETE")
                 urllib.request.urlopen(del_req, timeout=10)
                 break
+
+        # Delete tombstone so the name can be reused
+        try:
+            ts_req = urllib.request.Request(f"{hub}/api/orgs/{org_id}/tombstones/{agent_name}", headers={"Cookie": cookie, "Origin": _origin}, method="DELETE")
+            urllib.request.urlopen(ts_req, timeout=10)
+        except Exception:
+            pass
     except Exception:
         pass
 
