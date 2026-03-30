@@ -391,7 +391,9 @@ def _run_install(instance_id: str) -> None:
         # Container uses /app/runtime internally; HOST_RUNTIME_ROOT tells install script
         # what path to use for docker compose volume mounts (must be valid on host)
         container_runtime = str(Path(__file__).resolve().parent.parent.parent / "runtime")
-        host_runtime = str(_runtime_root_path())  # From OPENCLAW_HOME (host path)
+        # OPENCLAW_HOME is the HOST path; RUNTIME_ROOT is the container path
+        _openclaw_home = os.getenv("OPENCLAW_HOME", "")
+        host_runtime = os.path.join(_openclaw_home, "runtime") if _openclaw_home else container_runtime
         install_extra_env["HOST_RUNTIME_ROOT"] = host_runtime
         rc, out = _run([str(script), instance_id, product, repo_url, container_runtime], clean_env=True, extra_env=install_extra_env)
         if rc != 0:
