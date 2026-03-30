@@ -202,6 +202,16 @@ if [[ "$PRODUCT" == "zylos" ]]; then
 
   INSTANCE_DATA_DIR="$WORKDIR/zylos-data"
   INSTANCE_CLAUDE_DIR="$WORKDIR/claude-config"
+
+  # HOST paths for docker compose volume mounts (Docker-in-Docker)
+  if [[ -n "${HOST_RUNTIME_ROOT:-}" ]]; then
+    HOST_WORKDIR="$HOST_RUNTIME_ROOT/$INSTANCE_ID"
+    HOST_DATA_DIR="$HOST_WORKDIR/zylos-data"
+    HOST_CLAUDE_DIR="$HOST_WORKDIR/claude-config"
+  else
+    HOST_DATA_DIR="$INSTANCE_DATA_DIR"
+    HOST_CLAUDE_DIR="$INSTANCE_CLAUDE_DIR"
+  fi
   mkdir -p "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR"
   # zylos container runs as non-root; ensure mounted dirs are writable to avoid init/pm2 failures
   chown -R 1001:1001 "$INSTANCE_DATA_DIR" "$INSTANCE_CLAUDE_DIR" >/dev/null 2>&1 || true
@@ -210,7 +220,7 @@ if [[ "$PRODUCT" == "zylos" ]]; then
   PATCHED_COMPOSE="$WORKDIR/docker-compose.instance.yml"
   SRC_COMPOSE="$COMPOSE_FILE" PATCHED_PATH="$PATCHED_COMPOSE" INSTANCE_ID="$INSTANCE_ID" \
   WEB_CONSOLE_PORT="$WEB_CONSOLE_PORT" HTTP_PORT="$HTTP_PORT" \
-  INSTANCE_DATA_DIR="$INSTANCE_DATA_DIR" INSTANCE_CLAUDE_DIR="$INSTANCE_CLAUDE_DIR" \
+  INSTANCE_DATA_DIR="$HOST_DATA_DIR" INSTANCE_CLAUDE_DIR="$HOST_CLAUDE_DIR" \
   python3 - <<'PY'
 import os
 from pathlib import Path
