@@ -1244,6 +1244,7 @@ def _configure_zylos_hxa_only(
     # Sync latest API keys from admin settings into instance .env
     _db_anthropic_base = get_setting("anthropic_base_url", "")
     _db_anthropic_token = get_setting("anthropic_auth_token", "")
+    _db_openai_base = get_setting("openai_base_url", "")
     _db_openai_key = get_setting("openai_api_key", "")
 
     updates = {
@@ -1263,6 +1264,8 @@ def _configure_zylos_hxa_only(
     if _db_anthropic_token:
         updates["ANTHROPIC_AUTH_TOKEN"] = _db_anthropic_token
         updates["ANTHROPIC_API_KEY"] = _db_anthropic_token
+    if _db_openai_base:
+        updates["OPENAI_BASE_URL"] = _db_openai_base
     if _db_openai_key:
         updates["OPENAI_API_KEY"] = _db_openai_key
         updates["CODEX_API_KEY"] = _db_openai_key
