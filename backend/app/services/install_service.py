@@ -591,7 +591,9 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
         return False, "Server missing ORG_SECRET."
 
     hub = _get_hub_url().rstrip("/")
-    origin = site_base_url()
+    from urllib.parse import urlparse as _up3
+    _p3 = _up3(hub)
+    origin = f"{_p3.scheme}://{_p3.netloc}"
 
     # Step 1: Admin login to get session cookie
     try:
@@ -664,22 +666,26 @@ def _register_zylos_hxa_agent(instance_id: str, runtime_dir: str) -> tuple[bool,
 def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> None:
     """Best effort: delete existing bot by name via admin API."""
     try:
+        hub = _get_hub_url().rstrip("/")
+        from urllib.parse import urlparse as _up4
+        _p4 = _up4(hub)
+        _origin = f"{_p4.scheme}://{_p4.netloc}"
+
         # Login as org admin
-        login_url = f"{_get_hub_url().rstrip('/')}/api/auth/login"
         login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
-        req = urllib.request.Request(login_url, data=login_data, headers={"Content-Type": "application/json", "Origin": site_base_url()}, method="POST")
+        req = urllib.request.Request(f"{hub}/api/auth/login", data=login_data, headers={"Content-Type": "application/json", "Origin": _origin}, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
             cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
 
         # List bots
-        list_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots", headers={"Cookie": cookie, "Origin": site_base_url()})
+        list_req = urllib.request.Request(f"{hub}/api/bots", headers={"Cookie": cookie, "Origin": _origin})
         with urllib.request.urlopen(list_req, timeout=10) as resp:
             bots = json.loads(resp.read().decode())
 
         # Find and delete matching bot
         for bot in (bots if isinstance(bots, list) else []):
             if bot.get("name") == agent_name:
-                del_req = urllib.request.Request(f"{_get_hub_url().rstrip('/')}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": site_base_url()}, method="DELETE")
+                del_req = urllib.request.Request(f"{hub}/api/bots/{bot['id']}", headers={"Cookie": cookie, "Origin": _origin}, method="DELETE")
                 urllib.request.urlopen(del_req, timeout=10)
                 break
     except Exception:

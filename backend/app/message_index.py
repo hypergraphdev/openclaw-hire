@@ -42,7 +42,7 @@ def _hub_get(hub_url: str, token: str, path: str) -> dict | list:
     """Simple Hub GET request."""
     req = urllib.request.Request(
         f"{hub_url}{path}",
-        headers={"Authorization": f"Bearer {token}", "Origin": site_base_url()},
+        headers={"Authorization": f"Bearer {token}", "Origin": (lambda u: f"{u.scheme}://{u.netloc}")(__import__("urllib.parse", fromlist=["urlparse"]).urlparse(hub_url))},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())

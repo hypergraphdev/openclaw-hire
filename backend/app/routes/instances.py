@@ -1084,6 +1084,13 @@ def _ensure_user_bot(hub_url: str, user_id: str, display_name: str = "", target_
     return ""
 
 
+def _hub_origin():
+    from urllib.parse import urlparse
+    from ..services.install_service import _get_hub_url
+    p = urlparse(_get_hub_url())
+    return f"{p.scheme}://{p.netloc}"
+
+
 def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | None = None):
     """Make an authenticated request to the HXA Hub API."""
     url = f"{hub_url}{path}"
@@ -1094,7 +1101,7 @@ def _hub_request(hub_url: str, token: str, method: str, path: str, body: dict | 
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "Origin": site_base_url(),
+            "Origin": _hub_origin(),
         },
         method=method,
     )
