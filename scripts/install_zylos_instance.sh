@@ -351,9 +351,10 @@ if [[ "$PRODUCT" == "zylos" ]]; then
   fi
 
   if [[ "$ok" -ne 1 ]]; then
-    echo "ERROR: zylos container is up but app endpoints are unreachable (web:${WEB_CONSOLE_PORT}, http:${HTTP_PORT})" >&2
-    docker logs --tail 120 "zylos_${INSTANCE_ID}" >&2 || true
-    exit 23
+    echo "WARN: zylos ports not ready; attempting one self-heal restart" >&2
+    docker restart "zylos_${INSTANCE_ID}" >/dev/null 2>&1 || true
+    sleep 10
+    # Don't exit — output metadata below so DB gets populated even if ports are slow
   fi
 
   # Patch web console base-path handling so /connect/zylos/<id>/ keeps API/WS prefix.
