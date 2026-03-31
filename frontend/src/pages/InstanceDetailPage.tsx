@@ -766,6 +766,75 @@ export function InstanceDetailPage() {
             </div>
           )}
 
+          {/* Join Organization (HXA Connect) */}
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
+            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("org.title")}</h2>
+            <div className="space-y-3">
+              {(hxaResult?.ok || config?.agent_name) && (
+                <>
+                  <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
+                    {hxaResult?.message || t("org.alreadyConnected")}{config?.org_name ? ` — ${config.org_name}` : ""}
+                  </div>
+                  <dl className="space-y-1 text-xs">
+                    <div><dt className="text-gray-500">{t("org.agentName")}</dt><dd className="text-gray-300 font-mono">{hxaResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
+                    <div><dt className="text-gray-500">{t("org.orgId")}</dt><dd className="text-gray-300 font-mono break-all">{config?.org_id || "-"}</dd></div>
+                    <div><dt className="text-gray-500">{t("org.hubUrl")}</dt><dd className="text-gray-300 break-all">{config?.hub_url || "-"}</dd></div>
+                  </dl>
+                  <button
+                    onClick={handleJoinOrg}
+                    disabled={!instance.compose_project || hxaConfiguring}
+                    className="text-xs text-gray-500 hover:text-gray-300 underline"
+                  >
+                    {hxaConfiguring ? t("org.reconnecting") : t("org.reconnect")}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!instanceId) return;
+                      setPluginRestarting(true);
+                      setPluginRestartMsg("");
+                      try {
+                        const res = await api.restartPlugins(instanceId);
+                        setPluginRestartMsg(res.ok ? t("org.pluginRestarted") : res.detail);
+                        if (res.ok) setTimeout(() => fetchDetail(), 5000);
+                      } catch (err: unknown) {
+                        setPluginRestartMsg(err instanceof Error ? err.message : t("org.pluginRestartFailed"));
+                      } finally {
+                        setPluginRestarting(false);
+                      }
+                    }}
+                    disabled={pluginRestarting}
+                    className="text-xs text-gray-500 hover:text-gray-300 underline ml-3"
+                  >
+                    {pluginRestarting ? t("org.pluginRestarting") : t("org.pluginRestart")}
+                  </button>
+                  {pluginRestartMsg && (
+                    <p className="text-xs text-yellow-400 mt-1">{pluginRestartMsg}</p>
+                  )}
+                </>
+              )}
+              {!hxaResult?.ok && !config?.agent_name && (
+                <>
+                  {hxaError && (
+                    <p className="text-xs text-red-400">{hxaError}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {t("org.connect")}
+                  </p>
+                  <button
+                    onClick={handleJoinOrg}
+                    disabled={!instance.compose_project || hxaConfiguring}
+                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
+                  >
+                    {hxaConfiguring ? t("org.connecting") : t("org.connectButton")}
+                  </button>
+                  {!instance.compose_project && (
+                    <p className="text-xs text-gray-600">{t("detail.installFirst")}</p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Telegram Integration */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <div className="relative">
@@ -873,74 +942,6 @@ export function InstanceDetailPage() {
             </div>
           </div>
 
-          {/* Join Organization (HXA Connect) */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("org.title")}</h2>
-            <div className="space-y-3">
-              {(hxaResult?.ok || config?.agent_name) && (
-                <>
-                  <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                    {hxaResult?.message || t("org.alreadyConnected")}{config?.org_name ? ` — ${config.org_name}` : ""}
-                  </div>
-                  <dl className="space-y-1 text-xs">
-                    <div><dt className="text-gray-500">{t("org.agentName")}</dt><dd className="text-gray-300 font-mono">{hxaResult?.agent_name || config?.agent_name || instance.agent_name || "-"}</dd></div>
-                    <div><dt className="text-gray-500">{t("org.orgId")}</dt><dd className="text-gray-300 font-mono break-all">{config?.org_id || "-"}</dd></div>
-                    <div><dt className="text-gray-500">{t("org.hubUrl")}</dt><dd className="text-gray-300 break-all">{config?.hub_url || "-"}</dd></div>
-                  </dl>
-                  <button
-                    onClick={handleJoinOrg}
-                    disabled={!instance.compose_project || hxaConfiguring}
-                    className="text-xs text-gray-500 hover:text-gray-300 underline"
-                  >
-                    {hxaConfiguring ? t("org.reconnecting") : t("org.reconnect")}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (!instanceId) return;
-                      setPluginRestarting(true);
-                      setPluginRestartMsg("");
-                      try {
-                        const res = await api.restartPlugins(instanceId);
-                        setPluginRestartMsg(res.ok ? t("org.pluginRestarted") : res.detail);
-                        if (res.ok) setTimeout(() => fetchDetail(), 5000);
-                      } catch (err: unknown) {
-                        setPluginRestartMsg(err instanceof Error ? err.message : t("org.pluginRestartFailed"));
-                      } finally {
-                        setPluginRestarting(false);
-                      }
-                    }}
-                    disabled={pluginRestarting}
-                    className="text-xs text-gray-500 hover:text-gray-300 underline ml-3"
-                  >
-                    {pluginRestarting ? t("org.pluginRestarting") : t("org.pluginRestart")}
-                  </button>
-                  {pluginRestartMsg && (
-                    <p className="text-xs text-yellow-400 mt-1">{pluginRestartMsg}</p>
-                  )}
-                </>
-              )}
-              {!hxaResult?.ok && !config?.agent_name && (
-                <>
-                  {hxaError && (
-                    <p className="text-xs text-red-400">{hxaError}</p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    {t("org.connect")}
-                  </p>
-                  <button
-                    onClick={handleJoinOrg}
-                    disabled={!instance.compose_project || hxaConfiguring}
-                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors"
-                  >
-                    {hxaConfiguring ? t("org.connecting") : t("org.connectButton")}
-                  </button>
-                  {!instance.compose_project && (
-                    <p className="text-xs text-gray-600">{t("detail.installFirst")}</p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
           </>)}
         </div>
       </div>
