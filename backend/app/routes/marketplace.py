@@ -769,7 +769,7 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
     # Step 2: Extract
     _log("\n=== 解压插件 ===")
     _flush()
-    rc, out = _exec(["sh", "-c", f"mkdir -p {SKILL_DIR} && cd {SKILL_DIR} && tar xzf /tmp/zylos-weixin.tgz --strip-components=1"])
+    rc, out = _exec(["sh", "-c", f"mkdir -p {SKILL_DIR} && cd {SKILL_DIR} && tar xzf /tmp/zylos-weixin.tgz --strip-components=1 --no-same-owner --touch"])
     if rc != 0:
         _log(f"❌ 解压失败: {out}")
         return False, "".join(logs)
