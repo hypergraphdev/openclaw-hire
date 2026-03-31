@@ -267,7 +267,7 @@ export function InstanceDetailPage() {
   const containerRunning = (detail as Record<string, unknown>).container_running === true;
   const isInstalling = ["pulling", "configuring", "starting"].includes(instance.install_state);
   const canInstall = instance.install_state === "idle" || (instance.install_state === "failed" && !containerRunning);
-  const canSelfCheck = !isInstalling;
+  const canSelfCheck = !!instance.compose_project;
 
   return (
     <div>
