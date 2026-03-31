@@ -363,9 +363,9 @@ def _run_install(instance_id: str) -> None:
         _add_install_event(instance_id, "configuring", "Running installer script and detecting compose file...")
         _set_instance_state(instance_id, "starting")
 
-        # Scripts are always in the same repo tree as this Python file (even inside Docker)
-        _app_root = Path(__file__).resolve().parent.parent.parent
-        script = _app_root / "scripts" / "install_instance.sh"
+        # Scripts are in project root /scripts/, Python file is at backend/app/services/
+        _project_root = Path(__file__).resolve().parent.parent.parent.parent
+        script = _project_root / "scripts" / "install_instance.sh"
         # Inject admin-configurable settings from DB into installer env
         db_anthropic_base = get_setting("anthropic_base_url", "")
         db_anthropic_token = get_setting("anthropic_auth_token", "")
