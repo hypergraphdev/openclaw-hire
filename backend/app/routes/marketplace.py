@@ -786,7 +786,7 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
     # Step 4: Install dependencies
     _log("\n=== 安装依赖 ===")
     _flush()
-    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install --production 2>&1 | tail -5"], timeout=120)
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install --omit=dev --no-bin-links 2>&1 | tail -5"], timeout=120)
     _log(out)
     if rc != 0:
         _log("❌ npm install 失败")
