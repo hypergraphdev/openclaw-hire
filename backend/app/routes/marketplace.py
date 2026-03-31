@@ -775,8 +775,9 @@ def _install_weixin_zylos(container: str, instance_id: str = "", item_id: str = 
         return False, "".join(logs)
     _log("解压完成")
 
-    # Clean up tarball (as root since docker cp creates root-owned file)
+    # Clean up tarball and fix ownership (docker cp + tar may create root-owned files)
     _exec(["rm", "-f", "/tmp/zylos-weixin.tgz"], user="root", timeout=10)
+    _exec(["chown", "-R", "zylos:zylos", SKILL_DIR], user="root", timeout=10)
 
     # Step 3: Create data directories
     rc, out = _exec(["sh", "-c", f"mkdir -p {DATA_DIR}/logs {DATA_DIR}/accounts {DATA_DIR}/sync-buffers"])
