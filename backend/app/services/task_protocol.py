@@ -47,11 +47,32 @@ def format_task_assignment(task: dict, content: str) -> str:
     else:
         criteria_lines = "1. 完整回答任务描述中提出的所有问题"
 
-    assign_line = f"**分配给:** @{assigned_to} | " if assigned_to else ""
+    # 从内容中提取 @mentions，判断是否多人任务
+    mentioned = re.findall(r"@([\w\-\u4e00-\u9fff]+)", content)
+    # 去重，保留顺序
+    seen: set[str] = set()
+    executors: list[str] = []
+    for name in mentioned:
+        if name not in seen and name != assigned_to:
+            executors.append(name)
+            seen.add(name)
+
+    if executors and assigned_to:
+        # 多人任务：assigned_to 是项目经理，@的人是执行者
+        role_line = f"**项目经理:** @{assigned_to} | **执行者:** {', '.join(f'@{e}' for e in executors)} | "
+    elif assigned_to:
+        role_line = f"**分配给:** @{assigned_to} | "
+    else:
+        role_line = ""
+
+    executor_note = ""
+    if executors:
+        executor_note = f"\n- 被 @ 到的成员（{', '.join(f'@{e}' for e in executors)}）请各自认领并完成自己负责的部分"
+        executor_note += "\n- 每位执行者完成后都需要回复自己负责部分的结果"
 
     return f"""---TASK---
 ## 任务: {title}
-{assign_line}**深度要求:** {depth} | **ID:** {task_id}
+{role_line}**深度要求:** {depth} | **ID:** {task_id}
 
 ### 任务描述
 {content}
@@ -62,7 +83,7 @@ def format_task_assignment(task: dict, content: str) -> str:
 ### 输出要求
 - 深度: {depth} — {depth_desc}
 - 结构清晰，使用标题和分节组织内容
-- 给出具体的数据、示例或证据，而非泛泛而谈
+- 给出具体的数据、示例或证据，而非泛泛而谈{executor_note}
 - 完成后在回复末尾写: `TASK-COMPLETE: {task_id}`
 ---END-TASK---"""
 

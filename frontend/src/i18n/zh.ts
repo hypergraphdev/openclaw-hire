@@ -403,4 +403,9 @@ export const zh: Record<string, string> = {
   "qc.verdict.PASS": "通过",
   "qc.verdict.REVISE": "需修改",
   "qc.verdict.FAIL": "未通过",
+  "qc.projectManager": "项目经理",
+  "qc.executors": "执行者",
+  "qc.draftRestored": "已恢复上次编辑的草稿",
+  "qc.confirmClose": "有未保存的内容，确定关闭？",
+  "qc.mentionHint": "输入 @ 选择成员",
 };

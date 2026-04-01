@@ -4,10 +4,31 @@
  * 包含：QC 开关、任务列表、任务创建弹窗、质量评估
  * 作为独立组件嵌入 MyOrgPage 的 Thread 视图中
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import type { QCConfig, ThreadTask, TaskDepth } from "../types";
+
+// ── @ Mention 下拉 (轻量版) ──
+function MiniMentionPopup({ members, filter, onSelect }: {
+  members: { name: string; online: boolean }[];
+  filter: string;
+  onSelect: (name: string) => void;
+}) {
+  const filtered = members.filter(m => m.name.toLowerCase().includes(filter.toLowerCase()));
+  if (filtered.length === 0) return null;
+  return (
+    <div className="absolute left-0 bottom-full mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-[60] max-h-40 overflow-auto w-56">
+      {filtered.map(m => (
+        <button key={m.name} onClick={() => onSelect(m.name)}
+          className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700 flex items-center gap-2">
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${m.online ? "bg-green-400" : "bg-gray-500"}`} />
+          <span className="text-gray-200">{m.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ── 状态颜色映射 ──
 const STATUS_COLORS: Record<string, string> = {
@@ -26,39 +47,121 @@ function scoreColor(score: number | null): string {
   return "text-red-400";
 }
 
+// ── 从文本中提取所有 @name ──
+function extractMentions(text: string): string[] {
+  return [...text.matchAll(/@([\w\-\u4e00-\u9fff]+)/g)].map(m => m[1]);
+}
+
 // ── Task Create Modal ──
 function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: {
   threadId: string;
   orgId: string;
-  participants: { name?: string }[];
+  participants: { name?: string; online?: boolean }[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const t = useT();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [criteriaText, setCriteriaText] = useState("");
-  const [depth, setDepth] = useState<TaskDepth>("thorough");
-  const [assignTo, setAssignTo] = useState("");
+  const DRAFT_KEY = `task_draft_${threadId}`;
+
+  // 从草稿恢复初始值
+  const savedDraft = (() => {
+    try { const s = localStorage.getItem(DRAFT_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
+  })();
+
+  const [title, setTitle] = useState(savedDraft?.title || "");
+  const [description, setDescription] = useState(savedDraft?.description || "");
+  const [criteriaText, setCriteriaText] = useState(savedDraft?.criteriaText || "");
+  const [depth, setDepth] = useState<TaskDepth>(savedDraft?.depth || "thorough");
+  const [assignTo, setAssignTo] = useState(savedDraft?.assignTo || "");
   const [sendMessage, setSendMessage] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [draftHint, setDraftHint] = useState(!!savedDraft);
+
+  // @ Mention state
+  const [showMention, setShowMention] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState("");
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
+  // 实时保存草稿
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, description, criteriaText, depth, assignTo }));
+  }, [title, description, criteriaText, depth, assignTo, DRAFT_KEY]);
+
+  // 隐藏草稿恢复提示
+  useEffect(() => { if (draftHint) { const t = setTimeout(() => setDraftHint(false), 3000); return () => clearTimeout(t); } }, [draftHint]);
+
+  // 从 description 提取被 @ 的人
+  const mentionedNames = extractMentions(description);
+  const isMultiPerson = mentionedNames.length > 0;
+
+  // description 输入处理（带 @ 检测）
+  function handleDescChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setDescription(val);
+    // 检测光标前的 @
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = val.slice(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@([\w\-\u4e00-\u9fff]*)$/);
+    if (atMatch) {
+      setMentionFilter(atMatch[1]);
+      setShowMention(true);
+    } else {
+      setShowMention(false);
+    }
+  }
+
+  function handleMentionSelect(name: string) {
+    // 替换光标前的 @partial 为 @name
+    if (!descRef.current) return;
+    const cursorPos = descRef.current.selectionStart;
+    const before = description.slice(0, cursorPos);
+    const after = description.slice(cursorPos);
+    const newBefore = before.replace(/@[\w\-\u4e00-\u9fff]*$/, `@${name} `);
+    setDescription(newBefore + after);
+    setShowMention(false);
+    // 聚焦回 textarea
+    setTimeout(() => {
+      if (descRef.current) {
+        descRef.current.focus();
+        const pos = newBefore.length;
+        descRef.current.setSelectionRange(pos, pos);
+      }
+    }, 0);
+  }
+
+  // 关闭确认（有内容时）
+  function handleClose() {
+    if (title || description || criteriaText) {
+      if (!confirm(t("qc.confirmClose"))) return;
+    }
+    localStorage.removeItem(DRAFT_KEY);
+    onClose();
+  }
 
   async function handleSubmit() {
     if (!title.trim()) return;
     setSubmitting(true);
-    const criteria = criteriaText.split("\n").map(l => l.trim()).filter(Boolean);
+    const criteria = criteriaText.split("\n").map((l: string) => l.trim()).filter(Boolean);
+
+    // 构建任务描述：多人任务追加角色说明
+    let finalDesc = description || title;
+    if (isMultiPerson && assignTo) {
+      finalDesc += `\n\n---\n**${t("qc.projectManager")}:** @${assignTo}\n**${t("qc.executors")}:** ${mentionedNames.map(n => `@${n}`).join(", ")}`;
+    }
+
     try {
       if (sendMessage) {
-        // Send as task message to thread
-        await api.myOrgThreadSendAsTask(threadId, description || title, {
-          title, description, acceptance_criteria: criteria, depth, assigned_to: assignTo || undefined,
+        await api.myOrgThreadSendAsTask(threadId, finalDesc, {
+          title, description: finalDesc, acceptance_criteria: criteria, depth,
+          assigned_to: assignTo || undefined,
         }, orgId);
       } else {
-        // Just create task record
         await api.myOrgThreadTaskCreate(threadId, {
-          title, description, acceptance_criteria: criteria, depth, assigned_to: assignTo || undefined,
+          title, description: finalDesc, acceptance_criteria: criteria, depth,
+          assigned_to: assignTo || undefined,
         }, orgId);
       }
+      localStorage.removeItem(DRAFT_KEY);
       onCreated();
       onClose();
     } catch (e) {
@@ -68,18 +171,49 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
     }
   }
 
+  const memberList = participants.filter(p => p.name).map(p => ({ name: p.name!, online: p.online ?? false }));
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-gray-800 rounded-lg p-5 w-[460px] max-h-[80vh] overflow-auto border border-gray-700" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-medium text-gray-100 mb-3">{t("qc.createTask")}</h3>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+      <div className="bg-gray-800 rounded-lg p-5 w-[480px] max-h-[80vh] overflow-auto border border-gray-700">
+        {/* 标题栏 + 关闭按钮 */}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-gray-100">{t("qc.createTask")}</h3>
+          <button onClick={handleClose} className="text-gray-500 hover:text-gray-300 text-lg leading-none" title={t("common.close")}>✕</button>
+        </div>
+
+        {/* 草稿恢复提示 */}
+        {draftHint && (
+          <div className="mb-2 px-2 py-1 bg-blue-900/30 border border-blue-800/30 rounded text-[10px] text-blue-300">
+            {t("qc.draftRestored")}
+          </div>
+        )}
 
         <label className="text-xs text-gray-400 block mb-1">{t("qc.taskTitle")}</label>
         <input value={title} onChange={e => setTitle(e.target.value)}
           className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 mb-3 focus:outline-none focus:border-blue-500" />
 
-        <label className="text-xs text-gray-400 block mb-1">{t("qc.taskDesc")}</label>
-        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 mb-3 resize-none focus:outline-none focus:border-blue-500" />
+        {/* 任务描述（支持 @提及） */}
+        <label className="text-xs text-gray-400 block mb-1">
+          {t("qc.taskDesc")} <span className="text-gray-600">({t("qc.mentionHint")})</span>
+        </label>
+        <div className="relative mb-3">
+          <textarea ref={descRef} value={description} onChange={handleDescChange} rows={4}
+            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 resize-none focus:outline-none focus:border-blue-500" />
+          {showMention && (
+            <MiniMentionPopup members={memberList} filter={mentionFilter} onSelect={handleMentionSelect} />
+          )}
+        </div>
+
+        {/* 已 @ 的人标签 */}
+        {mentionedNames.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-gray-500">{t("qc.executors")}:</span>
+            {mentionedNames.map(n => (
+              <span key={n} className="text-[10px] bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded">@{n}</span>
+            ))}
+          </div>
+        )}
 
         <label className="text-xs text-gray-400 block mb-1">{t("qc.acceptanceCriteria")} <span className="text-gray-600">({t("qc.acceptanceCriteriaHint")})</span></label>
         <textarea value={criteriaText} onChange={e => setCriteriaText(e.target.value)} rows={3}
@@ -98,10 +232,12 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
             </select>
           </div>
           <div className="flex-1">
-            <label className="text-xs text-gray-400 block mb-1">{t("qc.assignTo")}</label>
+            <label className="text-xs text-gray-400 block mb-1">
+              {isMultiPerson ? t("qc.projectManager") : t("qc.assignTo")}
+            </label>
             <select value={assignTo} onChange={e => setAssignTo(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500">
-              <option value="">-- {t("qc.assignTo")} --</option>
+              <option value="">-- {isMultiPerson ? t("qc.projectManager") : t("qc.assignTo")} --</option>
               {participants.map(p => p.name && <option key={p.name} value={p.name}>{p.name}</option>)}
             </select>
           </div>
@@ -114,7 +250,7 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
         </label>
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="text-xs text-gray-500 px-3 py-1.5">{t("common.cancel")}</button>
+          <button onClick={handleClose} className="text-xs text-gray-500 px-3 py-1.5">{t("common.cancel")}</button>
           <button onClick={handleSubmit} disabled={submitting || !title.trim()}
             className="text-xs bg-blue-600 text-white px-4 py-1.5 rounded disabled:opacity-50">
             {submitting ? t("common.loading") : t("qc.createTask")}

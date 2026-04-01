@@ -403,4 +403,9 @@ export const en: Record<string, string> = {
   "qc.verdict.PASS": "Pass",
   "qc.verdict.REVISE": "Needs Revision",
   "qc.verdict.FAIL": "Failed",
+  "qc.projectManager": "Project Manager",
+  "qc.executors": "Executors",
+  "qc.draftRestored": "Draft restored from last edit",
+  "qc.confirmClose": "Unsaved content. Close anyway?",
+  "qc.mentionHint": "Type @ to mention",
 };
