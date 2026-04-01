@@ -1,16 +1,21 @@
 # OpenClaw Hire Console
 
+[中文文档](README_CN.md) | English
+
 A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw) and [Zylos](https://github.com/zylos-ai/zylos-core) products with real-time chat, organization management, and plugin marketplace.
 
 ## Features
 
 - **Instance Lifecycle** — Create, install, start, stop, restart, upgrade AI agent instances via Docker
+- **Self-Check & Repair** — Automatic diagnostics with one-click repair for configuration issues
 - **Real-time Chat** — Talk to your AI agents through HXA Connect (WebSocket-based)
 - **Plugin Marketplace** — Install WeChat, Whisper (STT), Edge-TTS plugins with one click
-- **File Browser** — Browse and download files from instance containers
-- **Organization Management** — Multi-org support with bot transfer, thread messaging
+- **WeChat Integration** — Connect instances to WeChat via QR code login
 - **Telegram Integration** — Connect instances to Telegram bots
-- **Admin Console** — Instance diagnostics, Docker management, user management, global settings
+- **File Browser** — Browse and download files from instance containers
+- **Organization Management** — Multi-org support with bot transfer, thread messaging, DM
+- **Admin Console** — Instance diagnostics, Docker control, user management, global settings
+- **Configurable AI Model** — Set default model (Claude Sonnet, Opus, etc.) in global settings
 - **i18n** — English and Chinese
 
 ## Quick Start (Docker)
@@ -20,7 +25,7 @@ git clone https://github.com/hypergraphdev/openclaw-hire.git
 cd openclaw-hire
 cp .env.example .env
 
-# Edit .env — at minimum set these two:
+# Edit .env — at minimum set these:
 #   SECRET_KEY=your-random-secret
 #   OPENCLAW_HOME=/full/path/to/openclaw-hire  (must be HOST path, not container path)
 
@@ -34,7 +39,7 @@ docker compose up -d
 > sudo systemctl restart docker
 > ```
 
-Visit `http://localhost:3000` — register an account and start deploying AI agents.
+Visit `http://localhost:3000` — the first registered user automatically becomes admin.
 
 ## Manual Setup
 
@@ -45,7 +50,7 @@ Visit `http://localhost:3000` — register an account and start deploying AI age
 - MySQL 8.0
 - Docker (for running AI agent instances)
 
-> **Windows users:** Use WSL2 (recommended) or Docker Desktop. The instance install scripts require a Linux/macOS shell. With `docker compose up` (containerized backend), everything works on Windows natively.
+> **Windows users:** Use WSL2 (recommended) or Docker Desktop. With `docker compose up` (containerized backend), everything works on Windows natively.
 
 ### Backend
 
@@ -80,7 +85,7 @@ Tables are auto-created on first startup.
 
 ## Configuration
 
-All settings can be configured via environment variables or the admin settings panel.
+All settings can be configured via environment variables or the **Admin > Global Settings** panel.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -93,10 +98,17 @@ All settings can be configured via environment variables or the admin settings p
 | `HXA_HUB_URL` | `https://www.ucai.net/connect` | HXA Connect Hub (public hub available) |
 | `ANTHROPIC_BASE_URL` | | Anthropic API proxy URL |
 | `ANTHROPIC_AUTH_TOKEN` | | Anthropic API key |
-| `WHISPER_SERVICE_URL` | `http://172.17.0.1:8019` | Whisper STT service |
 | `OPENCLAW_HOME` | *(project root)* | Base path for runtime data |
 | `VITE_API_BASE` | | Frontend API endpoint |
 | `VITE_BASE_PATH` | `/` | Frontend base path |
+
+### Admin Panel Settings
+
+After login, go to **Settings** to configure:
+
+- **AI Model** — Default model for new instances (e.g. `claude-sonnet-4-5`, `claude-opus-4`)
+- **API Keys** — Anthropic / OpenAI credentials
+- **HXA Hub** — Organization ID, secrets, invite code
 
 See [`.env.example`](.env.example) for a complete template.
 
@@ -113,8 +125,9 @@ Browser ──→ Frontend (React/Vite) ──→ Backend (FastAPI)
 ```
 
 **Tech Stack:**
-- **Frontend:** React 19 + Vite + TypeScript + Tailwind CSS
+- **Frontend:** React 19 + Vite 7 + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + MySQL (mysql-connector-python)
+- **Auth:** JWT (HS256) + PBKDF2-SHA256 password hashing
 - **Messaging:** HXA Connect Hub (WebSocket)
 - **Containers:** Docker Compose for AI agent instances
 
@@ -126,10 +139,10 @@ To self-host your own Hub, see the [hxa-connect repository](https://github.com/h
 
 ### First-time Setup
 
-1. Register and log in as admin
-2. Go to **Admin > Global Settings** and set your Hub URL
+1. Register and log in (first user is auto-admin)
+2. Go to **Settings** and configure your API keys and default model
 3. Go to **Admin > HXA Orgs** and create your first organization
-4. Set it as default — new instances will automatically join this org
+4. Deploy an instance — it will automatically join the default org
 
 ## Contributing
 
