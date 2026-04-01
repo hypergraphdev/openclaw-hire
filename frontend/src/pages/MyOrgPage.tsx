@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import { PixelOffice } from "../components/PixelOffice";
 import type { ChatInfo, ChatMessage, MyOrgData, MyOrgPeer, OrgThread, SearchResult, ThreadMessage } from "../types";
+import ThreadTaskPanel from "../components/ThreadTaskPanel";
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
 
@@ -1001,6 +1002,15 @@ export function MyOrgPage() {
               {/* Announcement banner */}
               {target.type === "thread" && announcement && (
                 <div className="px-4 py-2 bg-blue-900/20 border-b border-blue-800/30 text-xs text-blue-300">📢 {announcement}</div>
+              )}
+
+              {/* Task Panel (QC) */}
+              {target.type === "thread" && threadDetail && (
+                <ThreadTaskPanel
+                  threadId={target.thread.id}
+                  orgId={orgIdRef.current}
+                  participants={threadDetail.participants || []}
+                />
               )}
 
               {/* Search bar */}

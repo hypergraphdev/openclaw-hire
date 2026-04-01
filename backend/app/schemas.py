@@ -209,3 +209,27 @@ class DashboardSummary(BaseModel):
 class DashboardResponse(BaseModel):
     user: UserResponse
     summary: DashboardSummary
+
+
+# ── Thread Quality Control ───────────────────────────────────────────────────
+
+class CreateTaskRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    acceptance_criteria: list[str] = []
+    depth: str = "thorough"
+    assigned_to: Optional[str] = None
+
+    @field_validator("depth")
+    @classmethod
+    def valid_depth(cls, v: str) -> str:
+        if v not in ("shallow", "moderate", "thorough", "exhaustive"):
+            raise ValueError("depth must be: shallow, moderate, thorough, or exhaustive")
+        return v
+
+
+class QCConfigRequest(BaseModel):
+    min_quality_score: float = 0.6
+    auto_revision: bool = True
+    max_revisions: int = 2
+    evaluator_api_key: Optional[str] = None

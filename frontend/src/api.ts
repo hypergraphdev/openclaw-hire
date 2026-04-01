@@ -1,4 +1,4 @@
-import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MarketplaceInstall, MarketplaceItem, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, User } from "./types";
+import type { AdminUserInstances, AgentActivityResponse, AlertsResponse, AuthToken, ChatInfo, ChatMessagesResponse, ChatPeer, ChatSendResponse, ChatWsTicketResponse, ConnectivityTestResponse, DashboardData, EvaluateResult, HxaOrg, HxaOrgAgent, HxaOrgDetail, Instance, InstanceDetail, InstanceLogs, MarketplaceInstall, MarketplaceItem, MetricsResponse, MyOrgData, OrgThread, ProductCatalog, QCConfig, SearchResult, SessionClearResponse, SessionsResponse, SkillContentResponse, SkillsResponse, SparklineResponse, TelegramConfigResponse, ThreadMessage, ThreadTask, User } from "./types";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "");
@@ -297,6 +297,35 @@ export const api = {
     request<unknown>(`/api/my-org/threads/${threadId}/invite${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify({ name }) }),
   myOrgThreadKick: (threadId: string, botId: string, orgId?: string) =>
     request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/kick${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify({ bot_id: botId }) }),
+
+  // Thread QC (Quality Control)
+  myOrgThreadQCGet: (threadId: string) =>
+    request<QCConfig>(`/api/my-org/threads/${threadId}/qc`),
+  myOrgThreadQCEnable: (threadId: string, config: { min_quality_score?: number; auto_revision?: boolean; max_revisions?: number; evaluator_api_key?: string }, orgId?: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/qc${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify(config) }),
+  myOrgThreadQCDisable: (threadId: string) =>
+    request<{ ok: boolean }>(`/api/my-org/threads/${threadId}/qc`, { method: "DELETE" }),
+
+  // Thread Tasks
+  myOrgThreadTasks: (threadId: string, status?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    const qs = params.toString();
+    return request<{ tasks: ThreadTask[] }>(`/api/my-org/threads/${threadId}/tasks${qs ? `?${qs}` : ""}`);
+  },
+  myOrgThreadTaskCreate: (threadId: string, task: { title: string; description?: string; acceptance_criteria: string[]; depth?: string; assigned_to?: string }, orgId?: string) =>
+    request<ThreadTask>(`/api/my-org/threads/${threadId}/tasks${orgId ? `?org=${orgId}` : ""}`, { method: "POST", body: JSON.stringify(task) }),
+  myOrgThreadTaskGet: (threadId: string, taskId: string) =>
+    request<ThreadTask>(`/api/my-org/threads/${threadId}/tasks/${taskId}`),
+  myOrgThreadTaskEvaluate: (threadId: string, taskId: string, responseContent: string, orgId?: string) =>
+    request<EvaluateResult>(`/api/my-org/threads/${threadId}/tasks/${taskId}/evaluate${orgId ? `?org=${orgId}` : ""}`, {
+      method: "POST", body: JSON.stringify({ response_content: responseContent }),
+    }),
+  // Send as task (structured task assignment)
+  myOrgThreadSendAsTask: (threadId: string, content: string, task: { title: string; description?: string; acceptance_criteria: string[]; depth?: string; assigned_to?: string }, orgId?: string) =>
+    request<ThreadMessage & { task?: ThreadTask }>(`/api/my-org/threads/${threadId}/messages${orgId ? `?org=${orgId}` : ""}`, {
+      method: "POST", body: JSON.stringify({ content, as_task: task }),
+    }),
 
   // Search
   myOrgSearchSync: () => request<{ ok: boolean; new_messages: number }>("/api/my-org/search/sync", { method: "POST" }),

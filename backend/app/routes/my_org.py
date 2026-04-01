@@ -12,7 +12,10 @@ from pydantic import BaseModel
 
 from ..database import get_setting, get_connection, site_base_url, runtime_root
 from ..deps import get_current_user, get_db
+from ..schemas import CreateTaskRequest, QCConfigRequest
 from ..services.install_service import _get_hub_url
+from ..services.task_protocol import format_task_assignment, format_revision_request, parse_task_completion, build_thread_context_qc
+from ..services.quality_gate import evaluate_response, should_request_revision
 from .admin_hxa import _get_agent_token, _hub_admin_request, _hub_org_admin_request, _cleanup_bot_and_tombstone, _write_new_token, _restart_hxa_connect
 from .instances import _hub_request, _ensure_user_bot, _make_admin_bot_name
 
@@ -800,6 +803,8 @@ class ThreadSendRequest(BaseModel):
     content: str
     image_url: str | None = None
     bot_instance_id: str | None = None  # which bot to send as (for multi-bot users)
+    task_id: str | None = None          # link message to existing task
+    as_task: CreateTaskRequest | None = None  # create a new task inline
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -837,9 +842,65 @@ def thread_send(
     if req.image_url:
         content = f"[image]({req.image_url})\n{content}" if content else f"[image]({req.image_url})"
 
+    # ── Task Protocol: 包装结构化任务 ──
+    task_record = None
+    if req.as_task:
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        task_id = str(uuid4())[:12]
+        org_id = info.get("org_id", "")
+
+        # 获取发送者 bot name
+        sender_name = ""
+        try:
+            me = _hub_request(hub_url, token, "GET", "/api/me")
+            sender_name = me.get("name", "")
+        except Exception:
+            pass
+
+        criteria_json = json.dumps(req.as_task.acceptance_criteria, ensure_ascii=False)
+        task_record = {
+            "id": task_id,
+            "thread_id": thread_id,
+            "org_id": org_id,
+            "assigned_to": req.as_task.assigned_to or "",
+            "assigned_by": sender_name,
+            "title": req.as_task.title,
+            "description": req.as_task.description or content,
+            "acceptance_criteria": criteria_json,
+            "depth": req.as_task.depth,
+            "status": "in_progress",
+            "revision_count": 0,
+            "max_revisions": 2,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        # 写入数据库
+        cursor = db.cursor()
+        cursor.execute(
+            """INSERT INTO thread_tasks
+               (id, thread_id, org_id, assigned_to, assigned_by, title, description,
+                acceptance_criteria, depth, status, revision_count, max_revisions, created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (task_id, thread_id, org_id, task_record["assigned_to"], sender_name,
+             req.as_task.title, task_record["description"], criteria_json,
+             req.as_task.depth, "in_progress", 0, 2, now, now),
+        )
+        cursor.close()
+
+        # 用 task protocol 包装消息
+        content = format_task_assignment(task_record, content)
+
     result = _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/messages", {
         "content": content,
     })
+
+    # 如果创建了任务，返回任务信息
+    if task_record:
+        result = result if isinstance(result, dict) else {}
+        result["task"] = task_record
+
     return result
 
 
@@ -1077,3 +1138,314 @@ def search_messages_endpoint(
     org_id = info["org_id"]
     results = search_messages(org_id, query=q, in_channel=in_channel, from_sender=from_sender, to_name=to_name, limit=limit)
     return {"results": results, "total": len(results)}
+
+
+# ---------------------------------------------------------------------------
+#  Thread Quality Control (QC)
+# ---------------------------------------------------------------------------
+
+@router.post("/threads/{thread_id}/qc")
+def enable_thread_qc(
+    thread_id: str,
+    req: QCConfigRequest,
+    org: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Enable quality control for a thread."""
+    import datetime
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    org_id = info.get("org_id", "")
+
+    cursor = db.cursor()
+    cursor.execute(
+        """INSERT INTO thread_qc_config
+           (thread_id, org_id, enabled, min_quality_score, auto_revision, max_revisions, evaluator_api_key, created_at, updated_at)
+           VALUES (%s,%s,1,%s,%s,%s,%s,%s,%s)
+           ON DUPLICATE KEY UPDATE
+           enabled=1, min_quality_score=VALUES(min_quality_score),
+           auto_revision=VALUES(auto_revision), max_revisions=VALUES(max_revisions),
+           evaluator_api_key=COALESCE(VALUES(evaluator_api_key), evaluator_api_key),
+           updated_at=VALUES(updated_at)""",
+        (thread_id, org_id, req.min_quality_score, int(req.auto_revision),
+         req.max_revisions, req.evaluator_api_key, now, now),
+    )
+    cursor.close()
+    return {"ok": True, "thread_id": thread_id, "enabled": True}
+
+
+@router.get("/threads/{thread_id}/qc")
+def get_thread_qc(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Get QC config for a thread."""
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM thread_qc_config WHERE thread_id = %s", (thread_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    if not row:
+        return {"enabled": False, "thread_id": thread_id}
+    return {
+        "thread_id": thread_id,
+        "enabled": bool(row["enabled"]),
+        "min_quality_score": row["min_quality_score"],
+        "auto_revision": bool(row["auto_revision"]),
+        "max_revisions": row["max_revisions"],
+        "has_api_key": bool(row.get("evaluator_api_key")),
+    }
+
+
+@router.delete("/threads/{thread_id}/qc")
+def disable_thread_qc(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Disable QC for a thread."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE thread_qc_config SET enabled=0, updated_at=%s WHERE thread_id=%s",
+        (now, thread_id),
+    )
+    cursor.close()
+    return {"ok": True, "thread_id": thread_id, "enabled": False}
+
+
+# ---------------------------------------------------------------------------
+#  Thread Tasks
+# ---------------------------------------------------------------------------
+
+@router.post("/threads/{thread_id}/tasks")
+def create_thread_task(
+    thread_id: str,
+    req: CreateTaskRequest,
+    org: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Create a task in a thread (without sending a message)."""
+    import datetime
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    task_id = str(uuid4())[:12]
+    org_id = info.get("org_id", "")
+    criteria_json = json.dumps(req.acceptance_criteria, ensure_ascii=False)
+
+    cursor = db.cursor()
+    cursor.execute(
+        """INSERT INTO thread_tasks
+           (id, thread_id, org_id, assigned_to, assigned_by, title, description,
+            acceptance_criteria, depth, status, revision_count, max_revisions, created_at, updated_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (task_id, thread_id, org_id, req.assigned_to or "", "",
+         req.title, req.description or "", criteria_json,
+         req.depth, "pending", 0, 2, now, now),
+    )
+    cursor.close()
+
+    return {
+        "id": task_id,
+        "thread_id": thread_id,
+        "title": req.title,
+        "status": "pending",
+        "depth": req.depth,
+        "assigned_to": req.assigned_to,
+    }
+
+
+@router.get("/threads/{thread_id}/tasks")
+def list_thread_tasks(
+    thread_id: str,
+    status: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """List tasks in a thread."""
+    cursor = db.cursor(dictionary=True)
+    if status:
+        cursor.execute(
+            "SELECT * FROM thread_tasks WHERE thread_id=%s AND status=%s ORDER BY created_at DESC",
+            (thread_id, status),
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM thread_tasks WHERE thread_id=%s ORDER BY created_at DESC",
+            (thread_id,),
+        )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    tasks = []
+    for r in rows:
+        criteria = r.get("acceptance_criteria", "[]")
+        try:
+            criteria = json.loads(criteria)
+        except (json.JSONDecodeError, TypeError):
+            criteria = []
+        tasks.append({
+            "id": r["id"],
+            "thread_id": r["thread_id"],
+            "title": r["title"],
+            "description": r.get("description", ""),
+            "assigned_to": r.get("assigned_to", ""),
+            "assigned_by": r.get("assigned_by", ""),
+            "status": r["status"],
+            "depth": r.get("depth", "thorough"),
+            "acceptance_criteria": criteria,
+            "quality_score": r.get("quality_score"),
+            "quality_feedback": r.get("quality_feedback"),
+            "revision_count": r.get("revision_count", 0),
+            "max_revisions": r.get("max_revisions", 2),
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        })
+    return {"tasks": tasks}
+
+
+@router.get("/threads/{thread_id}/tasks/{task_id}")
+def get_thread_task(
+    thread_id: str,
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Get a single task detail."""
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM thread_tasks WHERE id=%s AND thread_id=%s", (task_id, thread_id))
+    r = cursor.fetchone()
+    cursor.close()
+    if not r:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    criteria = r.get("acceptance_criteria", "[]")
+    try:
+        criteria = json.loads(criteria)
+    except (json.JSONDecodeError, TypeError):
+        criteria = []
+
+    return {
+        "id": r["id"],
+        "thread_id": r["thread_id"],
+        "title": r["title"],
+        "description": r.get("description", ""),
+        "assigned_to": r.get("assigned_to", ""),
+        "assigned_by": r.get("assigned_by", ""),
+        "status": r["status"],
+        "depth": r.get("depth", "thorough"),
+        "acceptance_criteria": criteria,
+        "quality_score": r.get("quality_score"),
+        "quality_feedback": r.get("quality_feedback"),
+        "revision_count": r.get("revision_count", 0),
+        "max_revisions": r.get("max_revisions", 2),
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+    }
+
+
+class EvaluateTaskRequest(BaseModel):
+    response_content: str
+
+
+@router.post("/threads/{thread_id}/tasks/{task_id}/evaluate")
+def evaluate_thread_task(
+    thread_id: str,
+    task_id: str,
+    req: EvaluateTaskRequest,
+    org: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Evaluate a bot's response for a task. Auto-sends revision request if needed."""
+    import datetime
+
+    user_id = current_user["id"]
+    info = _get_user_org_info(user_id, db, target_org_id=org or None)
+    if info["status"] != "ok":
+        raise HTTPException(status_code=400, detail="Not in an organization.")
+
+    # 读取任务
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM thread_tasks WHERE id=%s AND thread_id=%s", (task_id, thread_id))
+    task = cursor.fetchone()
+    cursor.close()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    # 获取 QC 配置
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM thread_qc_config WHERE thread_id=%s", (thread_id,))
+    qc_config = cursor.fetchone()
+    cursor.close()
+
+    # 获取 API key: 优先用 QC 配置的，然后用全局设置
+    api_key = ""
+    if qc_config and qc_config.get("evaluator_api_key"):
+        api_key = qc_config["evaluator_api_key"]
+    else:
+        api_key = get_setting("anthropic_api_key", "")
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No evaluator API key configured.")
+
+    # 执行评估
+    evaluation = evaluate_response(task, req.response_content, api_key)
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    score = evaluation.get("overall_score", 0.0)
+    verdict = evaluation.get("verdict", "FAIL")
+    feedback = evaluation.get("feedback", "")
+
+    # 更新任务
+    new_status = "completed" if verdict == "PASS" else ("revision" if verdict == "REVISE" else "failed")
+    cursor = db.cursor()
+    cursor.execute(
+        """UPDATE thread_tasks SET quality_score=%s, quality_feedback=%s,
+           status=%s, updated_at=%s WHERE id=%s""",
+        (score, json.dumps(evaluation, ensure_ascii=False), new_status, now, task_id),
+    )
+    cursor.close()
+
+    # 自动发送修改请求
+    revision_sent = False
+    min_score = qc_config["min_quality_score"] if qc_config else 0.6
+    auto_rev = qc_config["auto_revision"] if qc_config else True
+
+    if auto_rev and should_request_revision(task, evaluation, min_score):
+        hub_url = _get_hub_url().rstrip("/")
+        token = _get_thread_token(user_id, info, hub_url, db)
+        if token:
+            revision_msg = format_revision_request({**task, "quality_score": score}, feedback)
+            try:
+                _hub_request(hub_url, token, "POST", f"/api/threads/{thread_id}/messages", {
+                    "content": revision_msg,
+                })
+                # 更新修改计数
+                cursor = db.cursor()
+                cursor.execute(
+                    "UPDATE thread_tasks SET revision_count=revision_count+1, status='revision', updated_at=%s WHERE id=%s",
+                    (now, task_id),
+                )
+                cursor.close()
+                revision_sent = True
+            except Exception:
+                pass  # best effort
+
+    return {
+        "task_id": task_id,
+        "evaluation": evaluation,
+        "new_status": new_status,
+        "revision_sent": revision_sent,
+    }

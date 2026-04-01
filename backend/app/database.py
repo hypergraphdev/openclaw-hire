@@ -273,6 +273,44 @@ def init_db() -> None:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ── Thread Quality Control ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS thread_tasks (
+                id VARCHAR(64) PRIMARY KEY,
+                thread_id VARCHAR(255) NOT NULL,
+                org_id VARCHAR(255) NOT NULL,
+                assigned_to VARCHAR(255) DEFAULT NULL,
+                assigned_by VARCHAR(255) DEFAULT NULL,
+                title VARCHAR(512) NOT NULL,
+                description TEXT,
+                acceptance_criteria TEXT,
+                depth VARCHAR(32) DEFAULT 'thorough',
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                quality_score FLOAT DEFAULT NULL,
+                quality_feedback TEXT,
+                revision_count INT DEFAULT 0,
+                max_revisions INT DEFAULT 2,
+                created_at VARCHAR(64) NOT NULL,
+                updated_at VARCHAR(64) NOT NULL,
+                INDEX idx_thread (thread_id),
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS thread_qc_config (
+                thread_id VARCHAR(255) PRIMARY KEY,
+                org_id VARCHAR(255) NOT NULL,
+                enabled TINYINT NOT NULL DEFAULT 1,
+                min_quality_score FLOAT DEFAULT 0.6,
+                auto_revision TINYINT DEFAULT 1,
+                max_revisions INT DEFAULT 2,
+                evaluator_api_key VARCHAR(512) DEFAULT NULL,
+                created_at VARCHAR(64) NOT NULL,
+                updated_at VARCHAR(64) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # Migrations
         _safe_add_column(cursor, "users", "last_login_at", "VARCHAR(64) DEFAULT NULL")
 

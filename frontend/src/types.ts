@@ -418,3 +418,51 @@ export type MarketplaceInstall = {
   install_log: string;
   installed_at: string;
 };
+
+// ─── Thread Quality Control types ───
+
+export type TaskDepth = "shallow" | "moderate" | "thorough" | "exhaustive";
+export type TaskStatus = "pending" | "in_progress" | "review" | "revision" | "completed" | "failed";
+
+export type ThreadTask = {
+  id: string;
+  thread_id: string;
+  title: string;
+  description: string;
+  assigned_to: string;
+  assigned_by: string;
+  status: TaskStatus;
+  depth: TaskDepth;
+  acceptance_criteria: string[];
+  quality_score: number | null;
+  quality_feedback: string | null;
+  revision_count: number;
+  max_revisions: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QCConfig = {
+  thread_id: string;
+  enabled: boolean;
+  min_quality_score?: number;
+  auto_revision?: boolean;
+  max_revisions?: number;
+  has_api_key?: boolean;
+};
+
+export type TaskEvaluation = {
+  overall_score: number;
+  dimensions: Record<string, number>;
+  verdict: "PASS" | "REVISE" | "FAIL";
+  feedback: string;
+  unmet_criteria: string[];
+  strengths: string[];
+};
+
+export type EvaluateResult = {
+  task_id: string;
+  evaluation: TaskEvaluation;
+  new_status: string;
+  revision_sent: boolean;
+};
