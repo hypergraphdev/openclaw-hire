@@ -174,12 +174,12 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
   const memberList = participants.filter(p => p.name).map(p => ({ name: p.name!, online: p.online ?? false }));
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-      <div className="bg-gray-800 rounded-lg p-5 w-[480px] max-h-[80vh] overflow-auto border border-gray-700">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6">
+      <div className="bg-gray-800 rounded-xl p-6 w-full max-w-[720px] max-h-[90vh] overflow-auto border border-gray-700 shadow-2xl">
         {/* 标题栏 + 关闭按钮 */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-gray-100">{t("qc.createTask")}</h3>
-          <button onClick={handleClose} className="text-gray-500 hover:text-gray-300 text-lg leading-none" title={t("common.close")}>✕</button>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-gray-100">{t("qc.createTask")}</h3>
+          <button onClick={handleClose} className="text-gray-500 hover:text-gray-300 text-xl leading-none w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700" title={t("common.close")}>✕</button>
         </div>
 
         {/* 草稿恢复提示 */}
@@ -191,15 +191,15 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
 
         <label className="text-xs text-gray-400 block mb-1">{t("qc.taskTitle")}</label>
         <input value={title} onChange={e => setTitle(e.target.value)}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 mb-3 focus:outline-none focus:border-blue-500" />
+          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 mb-4 focus:outline-none focus:border-blue-500" />
 
         {/* 任务描述（支持 @提及） */}
         <label className="text-xs text-gray-400 block mb-1">
           {t("qc.taskDesc")} <span className="text-gray-600">({t("qc.mentionHint")})</span>
         </label>
-        <div className="relative mb-3">
-          <textarea ref={descRef} value={description} onChange={handleDescChange} rows={4}
-            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 resize-none focus:outline-none focus:border-blue-500" />
+        <div className="relative mb-4">
+          <textarea ref={descRef} value={description} onChange={handleDescChange} rows={6}
+            className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 resize-y focus:outline-none focus:border-blue-500 min-h-[120px]" />
           {showMention && (
             <MiniMentionPopup members={memberList} filter={mentionFilter} onSelect={handleMentionSelect} />
           )}
@@ -216,9 +216,9 @@ function TaskCreateModal({ threadId, orgId, participants, onClose, onCreated }: 
         )}
 
         <label className="text-xs text-gray-400 block mb-1">{t("qc.acceptanceCriteria")} <span className="text-gray-600">({t("qc.acceptanceCriteriaHint")})</span></label>
-        <textarea value={criteriaText} onChange={e => setCriteriaText(e.target.value)} rows={3}
+        <textarea value={criteriaText} onChange={e => setCriteriaText(e.target.value)} rows={4}
           placeholder={"完整分析所有可能的原因\n给出具体的解决方案\n包含测试验证步骤"}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 mb-3 resize-none focus:outline-none focus:border-blue-500" />
+          className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 mb-4 resize-y focus:outline-none focus:border-blue-500 min-h-[80px]" />
 
         <div className="flex gap-3 mb-3">
           <div className="flex-1">
@@ -289,9 +289,9 @@ function EvaluateModal({ threadId, task, orgId, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-gray-800 rounded-lg p-5 w-[520px] max-h-[80vh] overflow-auto border border-gray-700" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-medium text-gray-100 mb-1">{t("qc.evaluate")}: {task.title}</h3>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="bg-gray-800 rounded-xl p-6 w-full max-w-[680px] max-h-[90vh] overflow-auto border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-gray-100 mb-1">{t("qc.evaluate")}: {task.title}</h3>
         <p className="text-xs text-gray-500 mb-3">Task ID: {task.id}</p>
 
         {!result ? (
@@ -405,9 +405,9 @@ function QCConfigModal({ threadId, orgId, currentConfig, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-gray-800 rounded-lg p-5 w-[380px] border border-gray-700" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-medium text-gray-100 mb-3">{t("qc.title")}</h3>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="bg-gray-800 rounded-xl p-6 w-full max-w-[480px] border border-gray-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-gray-100 mb-4">{t("qc.title")}</h3>
 
         <label className="text-xs text-gray-400 block mb-1">{t("qc.minScore")}</label>
         <input type="number" value={minScore} onChange={e => setMinScore(Number(e.target.value))} step={0.1} min={0} max={1}

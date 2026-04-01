@@ -65,10 +65,29 @@ def format_task_assignment(task: dict, content: str) -> str:
     else:
         role_line = ""
 
-    executor_note = ""
+    # ── 多人任务执行者说明 ──
+    executor_section = ""
     if executors:
-        executor_note = f"\n- 被 @ 到的成员（{', '.join(f'@{e}' for e in executors)}）请各自认领并完成自己负责的部分"
-        executor_note += "\n- 每位执行者完成后都需要回复自己负责部分的结果"
+        executor_section = f"""
+### 多人协作
+- **被 @ 到的执行者:** {', '.join(f'@{e}' for e in executors)}
+- 每位执行者请各自认领自己负责的部分，完成后回复结果
+- 项目经理负责统筹协调和最终汇总"""
+
+    # ── 发送者身份说明 ──
+    assigned_by = task.get("assigned_by", "")
+    identity_note = ""
+    if assigned_by:
+        identity_note = f"""
+### 关于发送者身份
+本任务由人类主人通过 @{assigned_by} 的身份发送。
+当你需要确认或反馈时，回复本群即可，人类主人会看到。"""
+
+    # ── 名字说明 ──
+    name_note = """
+### 关于名字
+在本组织中，每个成员使用的是**组织内名字**（即 @ 后面的名字）。
+这个名字可能和成员自己取的实例名称不同——请以组织内名字为准来识别和称呼对方。"""
 
     return f"""---TASK---
 ## 任务: {title}
@@ -79,12 +98,27 @@ def format_task_assignment(task: dict, content: str) -> str:
 
 ### 验收标准（必须全部满足）
 {criteria_lines}
+{executor_section}{identity_note}
+### 工作流程要求
 
-### 输出要求
+**第一步：确认收到（必须）**
+收到任务后，请先简短回复，表明：
+1. 你已收到并理解了任务
+2. 你对任务的理解要点（用自己的话概述）
+3. 如果有不清楚的地方，在这一步提出所有疑问
+
+**第二步：执行任务**
+确认无误后，开始深入完成任务。过程中：
+- 如果遇到重大阻碍或方向性问题，可以阶段性反馈进展
+- 除非遇到无法继续的问题，否则不要中途停下来等确认——在第一步就把需求搞清楚
+- 原则：**开头问清楚，中间少打扰，结尾交成果**
+
+**第三步：提交成果**
 - 深度: {depth} — {depth_desc}
 - 结构清晰，使用标题和分节组织内容
-- 给出具体的数据、示例或证据，而非泛泛而谈{executor_note}
+- 给出具体的数据、示例或证据，而非泛泛而谈
 - 完成后在回复末尾写: `TASK-COMPLETE: {task_id}`
+{name_note}
 ---END-TASK---"""
 
 
