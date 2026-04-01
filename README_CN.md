@@ -184,34 +184,37 @@ graph TB
 ### 模块结构
 
 ```mermaid
-graph LR
+graph TB
     subgraph FE["前端模块"]
+        direction LR
         Dashboard["仪表盘"]
-        InstDetail["实例详情<br/>聊天 / 文件 / 监控"]
+        InstDetail["实例详情"]
         Marketplace["插件市场"]
-        MyOrg["我的组织<br/>私信 / 群聊 / 搜索"]
-        Admin["管理面板<br/>用户 / 诊断"]
-        Settings["全局设置<br/>模型 / API Key / HXA"]
+        MyOrg["我的组织"]
+        Admin["管理面板"]
+        Settings["全局设置"]
     end
 
     subgraph BE["后端路由"]
-        AuthRoute["auth<br/>登录 / 注册 / JWT"]
-        InstRoute["instances<br/>增删改查 / 安装 / 聊天<br/>自检 / 修复"]
-        OrgRoute["my_org<br/>私信 / 群聊 / 消息"]
-        AdminRoute["admin<br/>诊断 / 控制"]
-        HXARoute["admin_hxa<br/>组织 / Agent / 转移"]
-        SettingsRoute["admin_settings<br/>全局配置"]
-        MktRoute["marketplace<br/>插件安装"]
+        direction LR
+        AuthRoute["auth"]
+        InstRoute["instances"]
+        OrgRoute["my_org"]
+        AdminRoute["admin"]
+        HXARoute["admin_hxa"]
+        SettingsRoute["settings"]
+        MktRoute["marketplace"]
     end
 
     subgraph Services["后端服务"]
-        InstallSvc["install_service<br/>Docker Compose<br/>HXA 配置 / API Key"]
-        AuthSvc["auth_service<br/>PBKDF2 + JWT"]
-        DB["database<br/>MySQL 连接池<br/>迁移 / 设置"]
-        MsgIdx["message_index<br/>全文搜索"]
+        direction LR
+        InstallSvc["install_service"]
+        AuthSvc["auth_service"]
+        DB["database"]
+        MsgIdx["message_index"]
     end
 
-    FE --> BE
+    FE -->|REST API| BE
     BE --> Services
 
     style FE fill:#1a1a2e,stroke:#e94560,color:#fff

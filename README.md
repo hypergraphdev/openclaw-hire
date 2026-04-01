@@ -184,34 +184,37 @@ graph TB
 ### Module Structure
 
 ```mermaid
-graph LR
+graph TB
     subgraph FE["Frontend Modules"]
+        direction LR
         Dashboard["Dashboard"]
-        InstDetail["Instance Detail<br/>Chat / Files / Monitor"]
-        Marketplace["Plugin Marketplace"]
-        MyOrg["My Organization<br/>DM / Thread / Search"]
-        Admin["Admin Panel<br/>Users / Diagnostics"]
-        Settings["Global Settings<br/>Model / API Keys / HXA"]
+        InstDetail["Instance Detail"]
+        Marketplace["Marketplace"]
+        MyOrg["My Org"]
+        Admin["Admin"]
+        Settings["Settings"]
     end
 
     subgraph BE["Backend Routes"]
-        AuthRoute["auth<br/>Login / Register / JWT"]
-        InstRoute["instances<br/>CRUD / Install / Chat<br/>Self-Check / Repair"]
-        OrgRoute["my_org<br/>DM / Thread / Messages"]
-        AdminRoute["admin<br/>Diagnostics / Control"]
-        HXARoute["admin_hxa<br/>Orgs / Agents / Transfer"]
-        SettingsRoute["admin_settings<br/>Global Config"]
-        MktRoute["marketplace<br/>Plugin Install"]
+        direction LR
+        AuthRoute["auth"]
+        InstRoute["instances"]
+        OrgRoute["my_org"]
+        AdminRoute["admin"]
+        HXARoute["admin_hxa"]
+        SettingsRoute["settings"]
+        MktRoute["marketplace"]
     end
 
     subgraph Services["Backend Services"]
-        InstallSvc["install_service<br/>Docker Compose<br/>HXA Config / API Keys"]
-        AuthSvc["auth_service<br/>PBKDF2 + JWT"]
-        DB["database<br/>MySQL Pool<br/>Migrations / Settings"]
-        MsgIdx["message_index<br/>Full-text Search"]
+        direction LR
+        InstallSvc["install_service"]
+        AuthSvc["auth_service"]
+        DB["database"]
+        MsgIdx["message_index"]
     end
 
-    FE --> BE
+    FE -->|REST API| BE
     BE --> Services
 
     style FE fill:#1a1a2e,stroke:#e94560,color:#fff
