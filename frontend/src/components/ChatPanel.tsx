@@ -560,6 +560,28 @@ function RenderTextWithFileLinks({ text, instanceId }: { text: string; instanceI
   );
 }
 
+// ─── Copy Button ───────────────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async (e) => {
+        e.stopPropagation();
+        try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+      }}
+      className="absolute bottom-1 right-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+      title="复制"
+    >
+      {copied ? (
+        <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+      ) : (
+        <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+      )}
+    </button>
+  );
+}
+
 // ─── Message Bubble ─────────────────────────────────────────────────
 
 function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; isSelf: boolean; instanceId: string }) {
@@ -576,7 +598,7 @@ function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; 
         <span className="text-[10px] text-gray-600">{time}</span>
       </div>
       <div
-        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+        className={`group/bubble relative max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
           isSelf
             ? "bg-blue-600/20 border border-blue-500/30 text-gray-200"
             : "bg-gray-800 border border-gray-700 text-gray-300"
@@ -591,6 +613,7 @@ function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; 
           />
         )}
         {text && <RenderTextWithFileLinks text={text} instanceId={instanceId} />}
+        <CopyButton text={content} />
       </div>
     </div>
   );

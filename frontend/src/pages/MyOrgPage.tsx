@@ -52,6 +52,24 @@ function MentionPopup({ members, filter, onSelect, onClose, threadMembers }: {
   );
 }
 
+// Copy button for message bubbles
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }}
+      className="absolute bottom-1 right-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+      title="复制"
+    >
+      {copied ? (
+        <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+      ) : (
+        <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+      )}
+    </button>
+  );
+}
+
 // Render message content with clickable @mentions and file links
 function RenderContent({ content, threadMemberNames, onMentionClick }: {
   content: string;
@@ -1055,7 +1073,7 @@ export function MyOrgPage() {
                   const msgTime = friendlyTime(msg.created_at);
                   return (
                     <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isSelf ? "justify-end" : "justify-start"} transition-all duration-300 ${highlightMsgId === msg.id ? "ring-2 ring-yellow-400 rounded-lg" : ""}`}>
-                      <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
+                      <div className={`group/bubble relative max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         <div className={`flex items-center gap-2 mb-0.5 ${isSelf ? "justify-end" : "justify-start"}`}>
                           {!isSelf && <span className="text-[10px] text-gray-400">{senderName}</span>}
                           {isSelf && (target?.type === "thread" || (data?.my_bots || []).length > 1) && <span className="text-[10px] text-blue-200/70">{senderName}</span>}
@@ -1063,6 +1081,7 @@ export function MyOrgPage() {
                         </div>
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
                         {textContent && <RenderContent content={textContent} threadMemberNames={target?.type === "thread" ? threadMemberNames : undefined} onMentionClick={handleMentionClick} />}
+                        <CopyBtn text={msg.content || ""} />
                       </div>
                     </div>
                   );
