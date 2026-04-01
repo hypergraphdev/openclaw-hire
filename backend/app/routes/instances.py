@@ -2151,6 +2151,15 @@ def self_check_repair(
             if auth_agent_name:
                 cur.execute("UPDATE instances SET agent_name=%s WHERE id=%s AND (agent_name IS NULL OR agent_name != %s)",
                             (auth_agent_name, instance_id, auth_agent_name))
+
+            # 4. Clear stale admin bot tokens if org_id changed
+            old_org_id = ic.get("org_id", "") if ic else ""
+            if auth_org_id and old_org_id and auth_org_id != old_org_id:
+                cur.execute("DELETE FROM server_settings WHERE `key` LIKE %s",
+                            (f"hxa_user_bot_token%_{old_org_id[:8]}%",))
+                _user_bot_cache.clear()
+                repairs.append({"name": "hxa_config", "action": f"已清理旧组织({old_org_id[:8]}…)的 admin bot 缓存"})
+
             cur.close()
         finally:
             conn.close()

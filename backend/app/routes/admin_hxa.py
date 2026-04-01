@@ -813,9 +813,19 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
             "UPDATE instance_configs SET org_id = %s, org_token = %s WHERE instance_id = %s",
             (target_org_id, new_token, instance_id),
         )
+        # Clear cached admin bot tokens for the OLD org (they're now invalid)
+        if current_org_id and current_org_id != target_org_id:
+            cursor.execute(
+                "DELETE FROM server_settings WHERE `key` LIKE %s",
+                (f"hxa_user_bot_token%_{current_org_id[:8]}%",),
+            )
         cursor.close()
     finally:
         conn.close()
+
+    # Clear in-memory admin bot cache so stale tokens aren't reused
+    from .instances import _user_bot_cache
+    _user_bot_cache.clear()
 
     return {"ok": True, "new_org_id": target_org_id, "agent_name": agent_name}
 
