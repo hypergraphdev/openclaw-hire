@@ -1770,14 +1770,16 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
         "fixable": bool(key_issues) and has_any_key,
     })
 
-    # ── 4. HXA Config ──────────────────────────────────────────────────
+    # ── 4. HXA Config (with Hub consistency check) ─────────────────────
     hxa_issues = []
     cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT org_id, org_token, agent_name FROM instance_configs WHERE instance_id = %s", (instance_id,))
+    cursor.execute("SELECT hub_url, org_id, org_token, agent_name FROM instance_configs WHERE instance_id = %s", (instance_id,))
     ic = cursor.fetchone()
     cursor.close()
 
     container_token = ""
+    container_org_id = ""
+    container_agent_name = ""
     if product == "openclaw":
         oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
         if os.path.exists(oc_json):
@@ -1785,6 +1787,8 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
                 cfg = json.loads(open(oc_json).read())
                 hxa = cfg.get("channels", {}).get("hxa-connect", {})
                 container_token = hxa.get("agentToken", "")
+                container_org_id = hxa.get("orgId", "")
+                container_agent_name = hxa.get("agentName", "")
                 if not container_token:
                     hxa_issues.append("openclaw.json 无 agentToken")
             except Exception:
@@ -1796,6 +1800,8 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
                 cfg = json.loads(open(zy_cfg).read())
                 org = cfg.get("orgs", {}).get("default", {})
                 container_token = org.get("agent_token", "")
+                container_org_id = org.get("org_id", "")
+                container_agent_name = org.get("agent_name", "")
                 if not container_token:
                     hxa_issues.append("config.json 无 agent_token")
             except Exception:
@@ -1810,11 +1816,32 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
     if ic and container_token and ic.get("org_token") != container_token:
         hxa_issues.append("DB org_token 与容器内 token 不一致")
 
+    # Hub consistency check: query Hub for authoritative org_id/agent_name
+    hub_org_id = ""
+    hub_agent_name = ""
+    if container_token:
+        hub_url = (ic.get("hub_url") if ic else "") or hxa_hub_url()
+        try:
+            me = _hub_request(hub_url, container_token, "GET", "/api/me")
+            hub_org_id = me.get("org_id", "")
+            hub_agent_name = me.get("name", "")
+            # Compare Hub vs DB
+            if hub_org_id and ic and ic.get("org_id") and ic["org_id"] != hub_org_id:
+                hxa_issues.append(f"DB org_id({ic['org_id'][:8]}…) 与 Hub({hub_org_id[:8]}…) 不一致")
+            # Compare Hub vs container config
+            if hub_org_id and container_org_id and container_org_id != hub_org_id:
+                hxa_issues.append(f"容器 orgId({container_org_id[:8]}…) 与 Hub({hub_org_id[:8]}…) 不一致")
+            # Compare agent_name
+            if hub_agent_name and ic and ic.get("agent_name") and ic["agent_name"] != hub_agent_name:
+                hxa_issues.append(f"DB agent_name({ic['agent_name']}) 与 Hub({hub_agent_name}) 不一致")
+        except Exception:
+            pass  # Hub unreachable, skip consistency check
+
     checks.append({
         "name": "hxa_config",
         "label": "HXA 组织配置",
         "status": "fail" if hxa_issues else "ok",
-        "detail": "; ".join(hxa_issues) if hxa_issues else "配置完整",
+        "detail": "; ".join(hxa_issues) if hxa_issues else "配置完整，Hub 一致",
         "fixable": bool(hxa_issues) and bool(container_token),
     })
 
@@ -2019,7 +2046,7 @@ def self_check_repair(
                     except Exception:
                         pass
 
-    # ── Fix HXA Config (sync container→DB) ─────────────────────────────
+    # ── Fix HXA Config (Hub is authoritative → sync to container + DB) ──
     container_token = ""
     container_agent_name = ""
     container_org_id = ""
@@ -2047,33 +2074,83 @@ def self_check_repair(
                 pass
 
     if container_token:
+        # Query Hub for authoritative org_id and agent_name
         conn = get_connection()
         try:
             cur = conn.cursor(dictionary=True)
-            cur.execute("SELECT org_id, org_token FROM instance_configs WHERE instance_id = %s", (instance_id,))
+            cur.execute("SELECT hub_url, org_id, org_token, agent_name FROM instance_configs WHERE instance_id = %s", (instance_id,))
             ic = cur.fetchone()
+
+            hub_url = (ic.get("hub_url") if ic else "") or hxa_hub_url()
+            auth_org_id = container_org_id
+            auth_agent_name = container_agent_name
+            try:
+                me = _hub_request(hub_url, container_token, "GET", "/api/me")
+                auth_org_id = me.get("org_id", "") or container_org_id
+                auth_agent_name = me.get("name", "") or container_agent_name
+            except Exception:
+                pass  # Hub unreachable, fall back to container values
+
+            # 1. Sync to runtime config file
+            if auth_org_id != container_org_id or auth_agent_name != container_agent_name:
+                config_updated = False
+                if product == "openclaw":
+                    oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+                    if os.path.exists(oc_json):
+                        try:
+                            oc_cfg = json.loads(open(oc_json).read())
+                            hxa_sec = oc_cfg.get("channels", {}).get("hxa-connect", {})
+                            if auth_org_id:
+                                hxa_sec["orgId"] = auth_org_id
+                            if auth_agent_name:
+                                hxa_sec["agentName"] = auth_agent_name
+                            open(oc_json, "w").write(json.dumps(oc_cfg, indent=2) + "\n")
+                            config_updated = True
+                        except Exception:
+                            pass
+                else:
+                    zy_cfg_path = os.path.join(inst_runtime, "zylos-data", "components", "hxa-connect", "config.json")
+                    if os.path.exists(zy_cfg_path):
+                        try:
+                            zy_cfg = json.loads(open(zy_cfg_path).read())
+                            default_org = zy_cfg.get("orgs", {}).get("default", {})
+                            if auth_org_id:
+                                default_org["org_id"] = auth_org_id
+                            if auth_agent_name:
+                                default_org["agent_name"] = auth_agent_name
+                            open(zy_cfg_path, "w").write(json.dumps(zy_cfg, indent=2) + "\n")
+                            config_updated = True
+                        except Exception:
+                            pass
+                if config_updated:
+                    repairs.append({"name": "hxa_config", "action": f"已同步运行时配置 org_id→{auth_org_id[:8]}…"})
+
+            # 2. Sync to DB instance_configs
             if not ic:
                 cur.execute(
-                    "INSERT INTO instance_configs (instance_id, org_id, org_token, agent_name, configured_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (instance_id, container_org_id, container_token, container_agent_name, _utc_now(), _utc_now()),
+                    "INSERT INTO instance_configs (instance_id, hub_url, org_id, org_token, agent_name, configured_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (instance_id, hub_url, auth_org_id, container_token, auth_agent_name, _utc_now(), _utc_now()),
                 )
                 repairs.append({"name": "hxa_config", "action": "已创建 instance_configs 记录"})
             else:
                 updates = []
-                if container_org_id and ic.get("org_id") != container_org_id:
-                    updates.append(f"org_id={container_org_id}")
+                if auth_org_id and ic.get("org_id") != auth_org_id:
+                    updates.append(f"org_id→{auth_org_id[:8]}…")
                 if container_token and ic.get("org_token") != container_token:
-                    updates.append("org_token 已同步")
+                    updates.append("org_token")
+                if auth_agent_name and ic.get("agent_name") != auth_agent_name:
+                    updates.append(f"agent_name→{auth_agent_name}")
                 if updates:
                     cur.execute(
                         "UPDATE instance_configs SET org_id=%s, org_token=%s, agent_name=%s, updated_at=%s WHERE instance_id=%s",
-                        (container_org_id or ic.get("org_id"), container_token, container_agent_name or ic.get("agent_name"), _utc_now(), instance_id),
+                        (auth_org_id or ic.get("org_id"), container_token, auth_agent_name or ic.get("agent_name"), _utc_now(), instance_id),
                     )
-                    repairs.append({"name": "hxa_config", "action": f"已同步: {', '.join(updates)}"})
-            # Also update instances.agent_name
-            if container_agent_name:
+                    repairs.append({"name": "hxa_config", "action": f"已同步 DB: {', '.join(updates)}"})
+
+            # 3. Sync agent_name to instances table
+            if auth_agent_name:
                 cur.execute("UPDATE instances SET agent_name=%s WHERE id=%s AND (agent_name IS NULL OR agent_name != %s)",
-                            (container_agent_name, instance_id, container_agent_name))
+                            (auth_agent_name, instance_id, auth_agent_name))
             cur.close()
         finally:
             conn.close()
