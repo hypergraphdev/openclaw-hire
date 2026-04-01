@@ -223,6 +223,8 @@ export const en: Record<string, string> = {
   "adminSettings.openai": "OpenAI / GPT",
   "adminSettings.hxa": "HXA Connect Organization",
   "adminSettings.inviteCode": "Invite Code (auto-creates org without Admin Secret)",
+  "adminSettings.defaultModel": "Default AI Model",
+  "adminSettings.defaultModelHint": "Default model for new instances. Leave empty for claude-sonnet-4-5",
   "adminSettings.saving": "Saving...",
   "adminSettings.save": "Save Settings",
   "adminSettings.saved": "Saved",

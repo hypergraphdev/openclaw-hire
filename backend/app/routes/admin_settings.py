@@ -12,6 +12,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin-settings"])
 SETTING_KEYS = [
     "anthropic_base_url", "anthropic_auth_token",
     "openai_base_url", "openai_api_key",
+    "default_model",
     "hxa_org_id", "hxa_org_secret", "hxa_admin_secret", "hxa_invite_code",
 ]
 
@@ -21,6 +22,7 @@ class SettingsResponse(BaseModel):
     anthropic_auth_token: str = ""
     openai_base_url: str = ""
     openai_api_key: str = ""
+    default_model: str = ""
     hxa_org_id: str = ""
     hxa_org_secret: str = ""
     hxa_admin_secret: str = ""
@@ -32,6 +34,7 @@ class SettingsUpdateRequest(BaseModel):
     anthropic_auth_token: str | None = None
     openai_base_url: str | None = None
     openai_api_key: str | None = None
+    default_model: str | None = None
     hxa_org_id: str | None = None
     hxa_org_secret: str | None = None
     hxa_admin_secret: str | None = None
@@ -46,6 +49,7 @@ def get_settings(current_user: dict = Depends(get_current_user)):
         anthropic_auth_token=get_setting("anthropic_auth_token"),
         openai_base_url=get_setting("openai_base_url"),
         openai_api_key=get_setting("openai_api_key"),
+        default_model=get_setting("default_model"),
         hxa_org_id=get_setting("hxa_org_id"),
         hxa_org_secret=get_setting("hxa_org_secret"),
         hxa_admin_secret=get_setting("hxa_admin_secret"),

@@ -8,6 +8,7 @@ interface Settings {
   anthropic_auth_token: string;
   openai_base_url: string;
   openai_api_key: string;
+  default_model: string;
   hxa_org_id: string;
   hxa_org_secret: string;
   hxa_admin_secret: string;
@@ -22,6 +23,7 @@ export default function AdminSettingsPage() {
     anthropic_auth_token: "",
     openai_base_url: "",
     openai_api_key: "",
+    default_model: "",
     hxa_org_id: "",
     hxa_org_secret: "",
     hxa_admin_secret: "",
@@ -98,6 +100,17 @@ export default function AdminSettingsPage() {
           show={showToken}
           onToggle={() => setShowToken((v) => !v)}
         />
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">{t("adminSettings.defaultModel")}</label>
+          <input
+            type="text"
+            value={settings.default_model}
+            onChange={(e) => setSettings((s) => ({ ...s, default_model: e.target.value }))}
+            placeholder="claude-sonnet-4-5"
+            className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
+          />
+          <p className="text-[10px] text-gray-600 mt-1">{t("adminSettings.defaultModelHint")}</p>
+        </div>
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">

@@ -394,6 +394,10 @@ def _run_install(instance_id: str) -> None:
         if db_hxa_org_secret:
             install_extra_env["HXA_CONNECT_ORG_SECRET"] = db_hxa_org_secret
             install_extra_env["ORG_SECRET"] = db_hxa_org_secret
+        db_default_model = get_setting("default_model", "")
+        if db_default_model:
+            install_extra_env["OPENCLAW_MODEL"] = db_default_model
+            install_extra_env["ANTHROPIC_MODEL"] = db_default_model
         # Container uses /app/runtime internally; HOST_RUNTIME_ROOT tells install script
         # what path to use for docker compose volume mounts (must be valid on host)
         container_runtime = str(Path(__file__).resolve().parent.parent.parent / "runtime")

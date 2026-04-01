@@ -223,6 +223,8 @@ export const zh: Record<string, string> = {
   "adminSettings.openai": "OpenAI / GPT",
   "adminSettings.hxa": "默认 HXA Connect 组织",
   "adminSettings.inviteCode": "Invite Code（用于自动创建组织，无需 Admin Secret）",
+  "adminSettings.defaultModel": "默认 AI 模型",
+  "adminSettings.defaultModelHint": "新实例使用的默认模型，留空则使用 claude-sonnet-4-5",
   "adminSettings.saving": "保存中...",
   "adminSettings.save": "保存设置",
   "adminSettings.saved": "已保存",
