@@ -6,17 +6,30 @@ A self-hosted web console for deploying and managing AI agent instances. Support
 
 ## Features
 
-- **Instance Lifecycle** — Create, install, start, stop, restart, upgrade AI agent instances via Docker
-- **Self-Check & Repair** — Automatic diagnostics with one-click repair for configuration issues
-- **Real-time Chat** — Talk to your AI agents through HXA Connect (WebSocket-based)
-- **Plugin Marketplace** — Install WeChat, Whisper (STT), Edge-TTS plugins with one click
-- **WeChat Integration** — Connect instances to WeChat via QR code login
-- **Telegram Integration** — Connect instances to Telegram bots
-- **File Browser** — Browse and download files from instance containers
-- **Organization Management** — Multi-org support with bot transfer, thread messaging, DM
-- **Admin Console** — Instance diagnostics, Docker control, user management, global settings
-- **Configurable AI Model** — Set default model (Claude Sonnet, Opus, etc.) in global settings
-- **i18n** — English and Chinese
+### Instance Management
+- **Full Lifecycle** — Create, install, start, stop, restart, upgrade, and uninstall AI agent instances via Docker Compose
+- **Self-Check & Repair** — 7-point automatic diagnostics (container, DB, API keys, HXA config, WebSocket, npm deps, AI runtime) with one-click repair. Hub consistency verification ensures org_id/agent_name stay in sync across DB, container config, and Hub API
+- **File Browser** — Browse container file system, download files directly from the web UI
+- **Docker Control** — View container logs, set CPU/memory limits, manage container lifecycle from admin panel
+
+### Communication Channels
+- **Real-time Chat** — Talk to your AI agents through HXA Connect (WebSocket-based) with message copy support
+- **WeChat Integration** — Connect instances to WeChat via QR code login. Messages flow through the C4 comm-bridge with automatic deduplication
+- **Telegram Integration** — Bind Telegram bots to instances for mobile access
+- **HXA Organization** — Multi-org bot communication hub. Bots can be transferred between organizations. Each user gets a dedicated admin bot per org for DM conversations
+
+### Plugin Marketplace
+- **One-click Install** — Install plugins directly into running containers
+- **Available Plugins** — WeChat (zylos-weixin), Whisper STT (speech-to-text), Edge-TTS (text-to-speech)
+- **WSL/Docker Compatible** — Handles permission quirks on WSL2 Docker automatically
+
+### Administration
+- **Global Settings** — Configure default AI model, API keys (Anthropic/OpenAI), HXA Hub connection from a single panel
+- **Configurable AI Model** — Set default model for new instances (e.g. `claude-sonnet-4-5`, `claude-opus-4`, or any compatible model)
+- **User Management** — First registered user becomes admin automatically. View and manage all users
+- **HXA Org Management** — Create/delete organizations, manage agents, rotate secrets, transfer bots between orgs
+- **Instance Diagnostics** — Per-instance health checks including HXA/Telegram/Claude/container status
+- **i18n** — Full English and Chinese interface
 
 ## Quick Start (Docker)
 
@@ -114,22 +127,156 @@ See [`.env.example`](.env.example) for a complete template.
 
 ## Architecture
 
+### System Architecture
+
+```mermaid
+graph TB
+    subgraph Client["Client Layer"]
+        Browser["Browser"]
+        WeChat["WeChat App"]
+        Telegram["Telegram App"]
+    end
+
+    subgraph Console["OpenClaw Hire Console"]
+        Frontend["Frontend<br/>React 19 + Vite 7 + Tailwind"]
+        Backend["Backend<br/>FastAPI + JWT Auth"]
+        MySQL[("MySQL<br/>Users, Instances,<br/>Configs, Settings")]
+    end
+
+    subgraph Hub["HXA Connect Hub"]
+        HubAPI["REST API + WebSocket"]
+        OrgMgmt["Organization Manager"]
+    end
+
+    subgraph Instances["AI Agent Instances (Docker)"]
+        OC["OpenClaw Container<br/>Gateway + CLI"]
+        ZY["Zylos Container<br/>Claude/Codex Runtime"]
+        HXAPlugin["HXA Connect Plugin"]
+        TGPlugin["Telegram Plugin"]
+        WXPlugin["WeChat Plugin"]
+        C4["C4 Comm-Bridge"]
+    end
+
+    Browser -->|HTTPS| Frontend
+    Frontend -->|REST API| Backend
+    Backend --> MySQL
+    Backend -->|Docker API| Instances
+    Backend -->|REST + WS| Hub
+
+    Hub <-->|WebSocket| HXAPlugin
+    WeChat <-->|Long Poll| WXPlugin
+    Telegram <-->|Bot API| TGPlugin
+
+    WXPlugin -->|C4 receive| C4
+    TGPlugin -->|C4 receive| C4
+    HXAPlugin -->|C4 receive| C4
+    C4 -->|tmux paste| OC
+    C4 -->|tmux paste| ZY
+    OC -->|C4 send| C4
+    ZY -->|C4 send| C4
+
+    style Console fill:#1a1a2e,stroke:#16213e,color:#fff
+    style Hub fill:#0f3460,stroke:#16213e,color:#fff
+    style Instances fill:#1a1a2e,stroke:#533483,color:#fff
+    style Client fill:#1a1a2e,stroke:#16213e,color:#fff
 ```
-Browser ──→ Frontend (React/Vite) ──→ Backend (FastAPI)
-                                          │
-                                          ├──→ MySQL
-                                          ├──→ Docker (instance containers)
-                                          └──→ HXA Hub (real-time messaging)
-                                                  │
-                                              WebSocket
+
+### Module Structure
+
+```mermaid
+graph LR
+    subgraph FE["Frontend Modules"]
+        Dashboard["Dashboard"]
+        InstDetail["Instance Detail<br/>Chat / Files / Monitor"]
+        Marketplace["Plugin Marketplace"]
+        MyOrg["My Organization<br/>DM / Thread / Search"]
+        Admin["Admin Panel<br/>Users / Diagnostics"]
+        Settings["Global Settings<br/>Model / API Keys / HXA"]
+    end
+
+    subgraph BE["Backend Routes"]
+        AuthRoute["auth<br/>Login / Register / JWT"]
+        InstRoute["instances<br/>CRUD / Install / Chat<br/>Self-Check / Repair"]
+        OrgRoute["my_org<br/>DM / Thread / Messages"]
+        AdminRoute["admin<br/>Diagnostics / Control"]
+        HXARoute["admin_hxa<br/>Orgs / Agents / Transfer"]
+        SettingsRoute["admin_settings<br/>Global Config"]
+        MktRoute["marketplace<br/>Plugin Install"]
+    end
+
+    subgraph Services["Backend Services"]
+        InstallSvc["install_service<br/>Docker Compose<br/>HXA Config / API Keys"]
+        AuthSvc["auth_service<br/>PBKDF2 + JWT"]
+        DB["database<br/>MySQL Pool<br/>Migrations / Settings"]
+        MsgIdx["message_index<br/>Full-text Search"]
+    end
+
+    FE --> BE
+    BE --> Services
+
+    style FE fill:#1a1a2e,stroke:#e94560,color:#fff
+    style BE fill:#1a1a2e,stroke:#0f3460,color:#fff
+    style Services fill:#1a1a2e,stroke:#533483,color:#fff
+```
+
+### Instance Install Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant BE as Backend
+    participant D as Docker
+    participant Hub as HXA Hub
+
+    U->>FE: Click "Install"
+    FE->>BE: POST /instances/{id}/install
+    BE->>BE: Clone product repo
+    BE->>BE: Find compose file
+    BE->>D: docker compose up -d --build
+    D-->>BE: Container running
+    BE->>BE: Inject API keys from global settings
+    BE->>Hub: Register agent in org
+    Hub-->>BE: bot_token + agent_id
+    BE->>D: Write HXA config to container
+    BE->>D: Restart HXA plugin
+    BE-->>FE: Install complete
+    FE-->>U: Status: Running
+```
+
+### Message Flow (WeChat Example)
+
+```mermaid
+sequenceDiagram
+    participant WX as WeChat User
+    participant Bot as WeChat Plugin
+    participant C4R as C4 Receive
+    participant C4D as C4 Dispatcher
+    participant AI as Claude (tmux)
+    participant C4S as C4 Send
+    participant Adapter as send.js Adapter
+
+    WX->>Bot: Send message
+    Bot->>Bot: Dedup check (30s window)
+    Bot->>C4R: node c4-receive.js --channel weixin
+    C4R->>C4R: Append "reply via" suffix
+    C4R->>C4D: Queue in SQLite
+    C4D->>AI: Paste to tmux session
+    AI->>AI: Process message
+    AI->>C4S: node c4-send.js "weixin" "endpoint"
+    C4S->>Adapter: node scripts/send.js endpoint message
+    Adapter->>Adapter: Translate positional → named args
+    Adapter->>Bot: node dist/scripts/send.js --endpoint --content
+    Bot->>WX: Send reply via WeChat API
 ```
 
 **Tech Stack:**
 - **Frontend:** React 19 + Vite 7 + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + MySQL (mysql-connector-python)
-- **Auth:** JWT (HS256) + PBKDF2-SHA256 password hashing
+- **Auth:** JWT (HS256, 7-day expiry) + PBKDF2-SHA256 password hashing
 - **Messaging:** HXA Connect Hub (WebSocket)
 - **Containers:** Docker Compose for AI agent instances
+- **Deployment:** Nginx reverse proxy, Docker Compose for self-hosting
 
 ## HXA Hub
 

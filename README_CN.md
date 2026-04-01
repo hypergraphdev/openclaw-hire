@@ -6,17 +6,30 @@
 
 ## 功能特性
 
-- **实例生命周期** — 通过 Docker 创建、安装、启动、停止、重启、升级 AI Agent 实例
-- **自检修复** — 自动诊断配置问题，一键修复（API Key、组织一致性、HXA 连接等）
-- **实时聊天** — 通过 HXA Connect（WebSocket）与 AI Agent 对话
-- **插件市场** — 一键安装微信、Whisper（语音识别）、Edge-TTS 等插件
-- **微信集成** — 扫码登录，通过微信与 AI Agent 对话
-- **Telegram 集成** — 绑定 Telegram Bot，通过 Telegram 与 AI Agent 对话
-- **文件浏览** — 浏览和下载实例容器内的文件
-- **组织管理** — 多组织支持，Bot 转移、群聊、私信
-- **管理后台** — 实例诊断、Docker 控制、用户管理、全局配置
-- **AI 模型可配** — 在全局设置中配置默认模型（Claude Sonnet、Opus 等）
-- **中英双语** — 完整的中英文界面
+### 实例管理
+- **完整生命周期** — 通过 Docker Compose 创建、安装、启动、停止、重启、升级、卸载 AI Agent 实例
+- **自检修复** — 7 项自动诊断（容器状态、DB 元数据、API Key、HXA 配置、WebSocket 连接、npm 依赖、AI 运行时），一键修复。Hub 一致性验证确保 org_id / agent_name 在 DB、容器配置和 Hub API 三处保持同步
+- **文件浏览** — 在 Web 界面中浏览容器文件系统，直接下载文件
+- **Docker 控制** — 查看容器日志、设置 CPU/内存限制、在管理面板中管理容器生命周期
+
+### 通信渠道
+- **实时聊天** — 通过 HXA Connect（WebSocket）与 AI Agent 对话，支持消息复制
+- **微信集成** — 扫码登录连接微信。消息通过 C4 通信桥传递，自动去重（30 秒窗口）
+- **Telegram 集成** — 绑定 Telegram Bot，通过手机随时与 AI Agent 对话
+- **HXA 组织** — 多组织 Bot 通信枢纽。Bot 可在组织间转移。每个用户在每个组织中有独立的 admin bot 用于私信对话
+
+### 插件市场
+- **一键安装** — 直接安装插件到运行中的容器
+- **可用插件** — 微信（zylos-weixin）、Whisper 语音识别（STT）、Edge-TTS 语音合成
+- **WSL/Docker 兼容** — 自动处理 WSL2 Docker 的权限问题（chmod/utime）
+
+### 管理后台
+- **全局设置** — 在统一面板中配置默认 AI 模型、API Key（Anthropic/OpenAI）、HXA Hub 连接
+- **AI 模型可配** — 为新实例设置默认模型（如 `claude-sonnet-4-5`、`claude-opus-4`，或任何兼容模型）
+- **用户管理** — 第一个注册的用户自动成为管理员，可查看和管理所有用户
+- **HXA 组织管理** — 创建/删除组织、管理 Agent、轮换密钥、在组织间转移 Bot
+- **实例诊断** — 逐实例健康检查，包括 HXA/Telegram/Claude/容器状态
+- **中英双语** — 完整的中英文界面支持
 
 ## 快速开始（Docker）
 
@@ -114,22 +127,156 @@ GRANT ALL ON openclaw_hire.* TO 'openclaw'@'localhost';
 
 ## 架构
 
+### 系统架构
+
+```mermaid
+graph TB
+    subgraph Client["客户端"]
+        Browser["浏览器"]
+        WeChat["微信"]
+        Telegram["Telegram"]
+    end
+
+    subgraph Console["OpenClaw Hire 控制台"]
+        Frontend["前端<br/>React 19 + Vite 7 + Tailwind"]
+        Backend["后端<br/>FastAPI + JWT 认证"]
+        MySQL[("MySQL<br/>用户、实例、<br/>配置、设置")]
+    end
+
+    subgraph Hub["HXA Connect Hub"]
+        HubAPI["REST API + WebSocket"]
+        OrgMgmt["组织管理"]
+    end
+
+    subgraph Instances["AI Agent 实例 (Docker)"]
+        OC["OpenClaw 容器<br/>Gateway + CLI"]
+        ZY["Zylos 容器<br/>Claude/Codex 运行时"]
+        HXAPlugin["HXA Connect 插件"]
+        TGPlugin["Telegram 插件"]
+        WXPlugin["微信插件"]
+        C4["C4 通信桥"]
+    end
+
+    Browser -->|HTTPS| Frontend
+    Frontend -->|REST API| Backend
+    Backend --> MySQL
+    Backend -->|Docker API| Instances
+    Backend -->|REST + WS| Hub
+
+    Hub <-->|WebSocket| HXAPlugin
+    WeChat <-->|长轮询| WXPlugin
+    Telegram <-->|Bot API| TGPlugin
+
+    WXPlugin -->|C4 接收| C4
+    TGPlugin -->|C4 接收| C4
+    HXAPlugin -->|C4 接收| C4
+    C4 -->|tmux 粘贴| OC
+    C4 -->|tmux 粘贴| ZY
+    OC -->|C4 发送| C4
+    ZY -->|C4 发送| C4
+
+    style Console fill:#1a1a2e,stroke:#16213e,color:#fff
+    style Hub fill:#0f3460,stroke:#16213e,color:#fff
+    style Instances fill:#1a1a2e,stroke:#533483,color:#fff
+    style Client fill:#1a1a2e,stroke:#16213e,color:#fff
 ```
-浏览器 ──→ 前端 (React/Vite) ──→ 后端 (FastAPI)
-                                      │
-                                      ├──→ MySQL
-                                      ├──→ Docker（AI Agent 容器）
-                                      └──→ HXA Hub（实时通信）
-                                              │
-                                          WebSocket
+
+### 模块结构
+
+```mermaid
+graph LR
+    subgraph FE["前端模块"]
+        Dashboard["仪表盘"]
+        InstDetail["实例详情<br/>聊天 / 文件 / 监控"]
+        Marketplace["插件市场"]
+        MyOrg["我的组织<br/>私信 / 群聊 / 搜索"]
+        Admin["管理面板<br/>用户 / 诊断"]
+        Settings["全局设置<br/>模型 / API Key / HXA"]
+    end
+
+    subgraph BE["后端路由"]
+        AuthRoute["auth<br/>登录 / 注册 / JWT"]
+        InstRoute["instances<br/>增删改查 / 安装 / 聊天<br/>自检 / 修复"]
+        OrgRoute["my_org<br/>私信 / 群聊 / 消息"]
+        AdminRoute["admin<br/>诊断 / 控制"]
+        HXARoute["admin_hxa<br/>组织 / Agent / 转移"]
+        SettingsRoute["admin_settings<br/>全局配置"]
+        MktRoute["marketplace<br/>插件安装"]
+    end
+
+    subgraph Services["后端服务"]
+        InstallSvc["install_service<br/>Docker Compose<br/>HXA 配置 / API Key"]
+        AuthSvc["auth_service<br/>PBKDF2 + JWT"]
+        DB["database<br/>MySQL 连接池<br/>迁移 / 设置"]
+        MsgIdx["message_index<br/>全文搜索"]
+    end
+
+    FE --> BE
+    BE --> Services
+
+    style FE fill:#1a1a2e,stroke:#e94560,color:#fff
+    style BE fill:#1a1a2e,stroke:#0f3460,color:#fff
+    style Services fill:#1a1a2e,stroke:#533483,color:#fff
+```
+
+### 实例安装流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant FE as 前端
+    participant BE as 后端
+    participant D as Docker
+    participant Hub as HXA Hub
+
+    U->>FE: 点击"安装"
+    FE->>BE: POST /instances/{id}/install
+    BE->>BE: 克隆产品仓库
+    BE->>BE: 查找 compose 文件
+    BE->>D: docker compose up -d --build
+    D-->>BE: 容器运行中
+    BE->>BE: 从全局设置注入 API Key
+    BE->>Hub: 在组织中注册 Agent
+    Hub-->>BE: bot_token + agent_id
+    BE->>D: 写入 HXA 配置到容器
+    BE->>D: 重启 HXA 插件
+    BE-->>FE: 安装完成
+    FE-->>U: 状态：运行中
+```
+
+### 消息流转（微信示例）
+
+```mermaid
+sequenceDiagram
+    participant WX as 微信用户
+    participant Bot as 微信插件
+    participant C4R as C4 接收
+    participant C4D as C4 调度器
+    participant AI as Claude (tmux)
+    participant C4S as C4 发送
+    participant Adapter as send.js 适配器
+
+    WX->>Bot: 发送消息
+    Bot->>Bot: 去重检测（30 秒窗口）
+    Bot->>C4R: node c4-receive.js --channel weixin
+    C4R->>C4R: 追加 "reply via" 后缀
+    C4R->>C4D: 写入 SQLite 队列
+    C4D->>AI: 粘贴到 tmux 会话
+    AI->>AI: 处理消息
+    AI->>C4S: node c4-send.js "weixin" "endpoint"
+    C4S->>Adapter: node scripts/send.js endpoint message
+    Adapter->>Adapter: 位置参数 → 命名参数转换
+    Adapter->>Bot: node dist/scripts/send.js --endpoint --content
+    Bot->>WX: 通过微信 API 发送回复
 ```
 
 **技术栈：**
 - **前端：** React 19 + Vite 7 + TypeScript + Tailwind CSS
 - **后端：** FastAPI + MySQL (mysql-connector-python)
-- **认证：** JWT (HS256) + PBKDF2-SHA256 密码哈希
+- **认证：** JWT (HS256, 7 天过期) + PBKDF2-SHA256 密码哈希
 - **通信：** HXA Connect Hub (WebSocket)
 - **容器：** Docker Compose 管理 AI Agent 实例
+- **部署：** Nginx 反向代理，Docker Compose 一键自托管
 
 ## HXA Hub
 
