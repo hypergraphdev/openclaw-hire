@@ -363,9 +363,15 @@ def _run_install(instance_id: str) -> None:
         _add_install_event(instance_id, "configuring", "Running installer script and detecting compose file...")
         _set_instance_state(instance_id, "starting")
 
-        # Scripts are in project root /scripts/, Python file is at backend/app/services/
-        _project_root = Path(__file__).resolve().parent.parent.parent.parent
-        script = _project_root / "scripts" / "install_instance.sh"
+        # Find scripts/ by walking up from __file__ until we find it
+        # Docker: /app/app/services/install_service.py → parent*3 = /app/
+        # Manual: /xxx/openclaw-hire/backend/app/services/install_service.py → parent*4 = /xxx/openclaw-hire/
+        _p = Path(__file__).resolve().parent
+        while _p != _p.parent:
+            if (_p / "scripts" / "install_instance.sh").exists():
+                break
+            _p = _p.parent
+        script = _p / "scripts" / "install_instance.sh"
         # Inject admin-configurable settings from DB into installer env
         db_anthropic_base = get_setting("anthropic_base_url", "")
         db_anthropic_token = get_setting("anthropic_auth_token", "")
