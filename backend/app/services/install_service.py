@@ -384,6 +384,7 @@ def _run_install(instance_id: str) -> None:
             install_extra_env["ANTHROPIC_BASE_URL"] = db_anthropic_base
         if db_anthropic_token:
             install_extra_env["ANTHROPIC_AUTH_TOKEN"] = db_anthropic_token
+            install_extra_env["ANTHROPIC_API_KEY"] = db_anthropic_token
         if db_openai_base:
             install_extra_env["OPENAI_BASE_URL"] = db_openai_base
         if db_openai_key:
