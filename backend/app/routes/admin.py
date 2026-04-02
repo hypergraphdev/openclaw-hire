@@ -315,9 +315,9 @@ from ..services.docker_utils import (
 )
 
 
-def _get_hxa_plugin_info(instance_id: str) -> dict:
+def _get_hxa_plugin_info(instance_id: str, db_runtime_dir: str = "") -> dict:
     """Read HXA plugin info from runtime config files."""
-    runtime_dir = RUNTIME_ROOT / instance_id
+    runtime_dir = Path(db_runtime_dir) if db_runtime_dir and Path(db_runtime_dir).is_dir() else RUNTIME_ROOT / instance_id
     agent_token = ""
     agent_name = ""
     org_id = ""
@@ -400,7 +400,8 @@ def instance_diagnostics(
     }
 
     # HXA plugin
-    hxa_plugin = _get_hxa_plugin_info(instance_id)
+    db_runtime_dir = row.get("runtime_dir", "")
+    hxa_plugin = _get_hxa_plugin_info(instance_id, db_runtime_dir=db_runtime_dir)
 
     # Telegram
     tg_token = row.get("telegram_bot_token")
@@ -419,7 +420,7 @@ def instance_diagnostics(
     resource_usage = _get_resource_usage(container_name)
 
     # Config file paths
-    runtime_dir = RUNTIME_ROOT / instance_id
+    runtime_dir = Path(db_runtime_dir) if db_runtime_dir and Path(db_runtime_dir).is_dir() else RUNTIME_ROOT / instance_id
     config_files: list[dict] = []
     candidates = [
         ("openclaw.json", runtime_dir / "openclaw-config" / "openclaw.json"),
