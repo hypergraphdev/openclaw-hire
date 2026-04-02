@@ -1667,7 +1667,7 @@ def download_file(
 # ── Self-Check & Repair ─────────────────────────────────────────────────────
 
 
-def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
+def _self_check_instance(instance_id: str, product: str, db, inst: dict | None = None) -> list[dict]:
     """Run all checks, return list of {name, status, detail, fixable}."""
     from ..database import get_setting, runtime_root, get_connection
     from ..services.docker_utils import get_container_name, get_container_info, docker_run
@@ -1676,7 +1676,7 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
     checks: list[dict] = []
     container = get_container_name(instance_id, product)
     # Prefer DB runtime_dir (may differ from default runtime_root in manual installs)
-    db_runtime_dir = inst.get("runtime_dir", "")
+    db_runtime_dir = (inst or {}).get("runtime_dir", "")
     _rt = runtime_root()
     inst_runtime = db_runtime_dir if db_runtime_dir and os.path.isdir(db_runtime_dir) else os.path.join(_rt, instance_id)
 
@@ -1918,7 +1918,7 @@ def self_check(
     """Run comprehensive self-check on an instance. Returns report without modifying anything."""
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product", "openclaw")
-    checks = _self_check_instance(instance_id, product, db)
+    checks = _self_check_instance(instance_id, product, db, inst=inst)
     fixable_count = sum(1 for c in checks if c.get("fixable"))
     fail_count = sum(1 for c in checks if c["status"] == "fail")
     if fail_count == 0:
