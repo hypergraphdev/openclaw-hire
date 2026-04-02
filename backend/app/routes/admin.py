@@ -456,12 +456,18 @@ def instance_diagnostics(
             "am_defaults": am_defaults,
         }
 
-    # OpenClaw version
+    # Product version
     openclaw_version = None
-    if product == "openclaw" and container.get("running"):
+    zylos_version = None
+    if container.get("running"):
         try:
-            rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
-            openclaw_version = ver_out.strip() if rc == 0 else None
+            if product == "openclaw":
+                rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
+                openclaw_version = ver_out.strip() if rc == 0 else None
+            else:
+                rc, ver_out = _docker_run(["docker", "exec", container_name, "sh", "-c",
+                                           "export PATH=/home/zylos/.npm-global/bin:$PATH && zylos --version 2>/dev/null || zylos version 2>/dev/null"])
+                zylos_version = ver_out.strip() if rc == 0 and ver_out.strip() else None
         except Exception:
             pass
 
@@ -476,6 +482,7 @@ def instance_diagnostics(
         "runtime_dir": str(runtime_dir),
         "zylos_config": zylos_config,
         "openclaw_version": openclaw_version,
+        "zylos_version": zylos_version,
     }
 
 

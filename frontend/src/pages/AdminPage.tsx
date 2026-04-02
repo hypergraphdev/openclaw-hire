@@ -822,11 +822,11 @@ export function AdminPage() {
                       <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.basic_info?.instance_id}</span>
                       <span className="text-gray-500">所有者</span><span className="text-gray-200 truncate">{diagData.basic_info?.owner_name}</span>
                       <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
-                      {diagData.openclaw_version && (<>
+                      {(diagData.openclaw_version || diagData.zylos_version) && (<>
                         <span className="text-gray-500">版本</span>
                         <span className="text-gray-200 flex items-center gap-2">
-                          {diagData.openclaw_version}
-                          <button
+                          {diagData.openclaw_version || diagData.zylos_version}
+                          {diagData.openclaw_version && <button
                             onClick={async () => {
                               if (!diagData.basic_info?.instance_id) return;
                               try {
@@ -837,7 +837,7 @@ export function AdminPage() {
                               } catch (e: unknown) { alert((e as Error).message); }
                             }}
                             className="text-[10px] px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded"
-                          >升级</button>
+                          >升级</button>}
                         </span>
                       </>)}
                     </div>
