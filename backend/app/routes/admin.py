@@ -465,15 +465,13 @@ def instance_diagnostics(
                 rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
                 openclaw_version = ver_out.strip() if rc == 0 else None
             else:
-                # zylos binary may be broken after container restart; extract version from docker logs
-                rc, ver_out = _docker_run(["docker", "logs", "--tail", "200", container_name])
-                for line in ver_out.splitlines():
-                    if "Zylos" in line and any(c.isdigit() for c in line):
-                        import re
-                        m = re.search(r"Zylos\s+([\d.]+)", line)
-                        if m:
-                            zylos_version = m.group(1)
-                            break
+                # zylos binary symlink breaks after restart; extract version from docker logs
+                import re as _re
+                rc, ver_out = _docker_run(["sh", "-c", f"docker logs {container_name} 2>&1 | grep -m1 'Zylos [0-9]'"], timeout=10)
+                if rc == 0 and ver_out.strip():
+                    m = _re.search(r"Zylos\s+([\d.]+)", ver_out)
+                    if m:
+                        zylos_version = m.group(1)
         except Exception:
             pass
 
