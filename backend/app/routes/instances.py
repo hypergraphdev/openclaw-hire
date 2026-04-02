@@ -1821,12 +1821,14 @@ def _self_check_instance(instance_id: str, product: str, db, inst: dict | None =
     # Hub consistency check: query Hub for authoritative org_id/agent_name
     hub_org_id = ""
     hub_agent_name = ""
+    hub_token_valid = False
     if container_token:
         hub_url = (ic.get("hub_url") if ic else "") or hxa_hub_url()
         try:
             me = _hub_request(hub_url, container_token, "GET", "/api/me")
             hub_org_id = me.get("org_id", "")
             hub_agent_name = me.get("name", "")
+            hub_token_valid = True
             # Compare Hub vs DB
             if hub_org_id and ic and ic.get("org_id") and ic["org_id"] != hub_org_id:
                 hxa_issues.append(f"DB org_id({ic['org_id'][:8]}…) 与 Hub({hub_org_id[:8]}…) 不一致")
@@ -1836,15 +1838,39 @@ def _self_check_instance(instance_id: str, product: str, db, inst: dict | None =
             # Compare agent_name
             if hub_agent_name and ic and ic.get("agent_name") and ic["agent_name"] != hub_agent_name:
                 hxa_issues.append(f"DB agent_name({ic['agent_name']}) 与 Hub({hub_agent_name}) 不一致")
+        except Exception as e:
+            err_str = str(e)
+            if "INVALID_TOKEN" in err_str or "Invalid token" in err_str or "401" in err_str:
+                hxa_issues.append("Bot token 在 Hub 上已失效，需要重新注册")
+            # else: Hub unreachable, skip
+
+    # Determine fixable: token exists OR we have org_secret to re-register
+    has_org_secret = False
+    if container_org_id or (ic and ic.get("org_id")):
+        _check_org_id = container_org_id or (ic.get("org_id") if ic else "")
+        try:
+            from ..database import get_setting
+            default_oid = get_setting("hxa_org_id", "")
+            if _check_org_id == default_oid and get_setting("hxa_org_secret", ""):
+                has_org_secret = True
+            else:
+                _conn_check = get_connection()
+                _cur_check = _conn_check.cursor(dictionary=True)
+                _cur_check.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (_check_org_id,))
+                _row = _cur_check.fetchone()
+                _cur_check.close()
+                _conn_check.close()
+                if _row and _row["org_secret"]:
+                    has_org_secret = True
         except Exception:
-            pass  # Hub unreachable, skip consistency check
+            pass
 
     checks.append({
         "name": "hxa_config",
         "label": "HXA 组织配置",
         "status": "fail" if hxa_issues else "ok",
         "detail": "; ".join(hxa_issues) if hxa_issues else "配置完整，Hub 一致",
-        "fixable": bool(hxa_issues) and bool(container_token),
+        "fixable": bool(hxa_issues) and (bool(container_token) or has_org_secret),
     })
 
     # ── 5. HXA Connection ──────────────────────────────────────────────
@@ -2086,7 +2112,7 @@ def self_check_repair(
             except Exception:
                 pass
 
-    if container_token:
+    if container_token or container_agent_name:
         # Query Hub for authoritative org_id and agent_name
         conn = get_connection()
         try:
@@ -2096,47 +2122,96 @@ def self_check_repair(
 
             hub_url = (ic.get("hub_url") if ic else "") or hxa_hub_url()
             auth_org_id = container_org_id
-            auth_agent_name = container_agent_name
-            try:
-                me = _hub_request(hub_url, container_token, "GET", "/api/me")
-                auth_org_id = me.get("org_id", "") or container_org_id
-                auth_agent_name = me.get("name", "") or container_agent_name
-            except Exception:
-                pass  # Hub unreachable, fall back to container values
+            auth_agent_name = container_agent_name or (ic.get("agent_name") if ic else "") or _safe_agent_name(instance_id)
+            hub_token_valid = False
+            if container_token:
+                try:
+                    me = _hub_request(hub_url, container_token, "GET", "/api/me")
+                    auth_org_id = me.get("org_id", "") or container_org_id
+                    auth_agent_name = me.get("name", "") or container_agent_name
+                    hub_token_valid = True
+                except Exception:
+                    pass  # Token invalid or Hub unreachable
 
-            # 1. Sync to runtime config file
-            if auth_org_id != container_org_id or auth_agent_name != container_agent_name:
-                config_updated = False
-                if product == "openclaw":
-                    oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
-                    if os.path.exists(oc_json):
+            # If token is invalid, try to re-register bot
+            if not hub_token_valid and auth_agent_name:
+                _re_org_id = container_org_id or (ic.get("org_id") if ic else "")
+                if _re_org_id:
+                    # Resolve org_secret
+                    _re_secret = ""
+                    default_oid = get_setting("hxa_org_id", "")
+                    if _re_org_id == default_oid:
+                        _re_secret = get_setting("hxa_org_secret", "")
+                    else:
+                        cur.execute("SELECT org_secret FROM org_secrets WHERE org_id = %s", (_re_org_id,))
+                        _sr = cur.fetchone()
+                        _re_secret = _sr["org_secret"] if _sr else ""
+                    if _re_secret:
                         try:
-                            oc_cfg = json.loads(open(oc_json).read())
-                            hxa_sec = oc_cfg.get("channels", {}).get("hxa-connect", {})
-                            if auth_org_id:
-                                hxa_sec["orgId"] = auth_org_id
-                            if auth_agent_name:
-                                hxa_sec["agentName"] = auth_agent_name
+                            # Use _cleanup_bot_and_tombstone from admin_hxa
+                            from .admin_hxa import _cleanup_bot_and_tombstone
+                            _cleanup_bot_and_tombstone(hub_url, _re_org_id, _re_secret, auth_agent_name)
+                        except Exception:
+                            pass
+                        try:
+                            import urllib.request
+                            reg_data = json.dumps({"org_id": _re_org_id, "org_secret": _re_secret, "name": auth_agent_name}).encode()
+                            reg_req = urllib.request.Request(f"{hub_url}/api/auth/register", data=reg_data,
+                                                             headers={"Content-Type": "application/json"}, method="POST")
+                            with urllib.request.urlopen(reg_req, timeout=15) as resp:
+                                reg_result = json.loads(resp.read().decode())
+                            new_token = reg_result.get("token", "")
+                            if new_token:
+                                container_token = new_token
+                                auth_org_id = _re_org_id
+                                hub_token_valid = True
+                                repairs.append({"name": "hxa_config", "action": f"Bot token 已失效，已重新注册 {auth_agent_name}"})
+                        except Exception as e:
+                            repairs.append({"name": "hxa_config", "action": f"Bot 重新注册失败: {e}"})
+
+            # 1. Sync to runtime config file (org_id, agent_name, token)
+            _orig_cfg_token = ""  # track original to detect change
+            config_updated = False
+            if product == "openclaw":
+                oc_json = os.path.join(inst_runtime, "openclaw-config", "openclaw.json")
+                if os.path.exists(oc_json):
+                    try:
+                        oc_cfg = json.loads(open(oc_json).read())
+                        hxa_sec = oc_cfg.get("channels", {}).get("hxa-connect", {})
+                        _orig_cfg_token = hxa_sec.get("agentToken", "")
+                        changed = False
+                        if auth_org_id and hxa_sec.get("orgId") != auth_org_id:
+                            hxa_sec["orgId"] = auth_org_id; changed = True
+                        if auth_agent_name and hxa_sec.get("agentName") != auth_agent_name:
+                            hxa_sec["agentName"] = auth_agent_name; changed = True
+                        if container_token and hxa_sec.get("agentToken") != container_token:
+                            hxa_sec["agentToken"] = container_token; changed = True
+                        if changed:
                             open(oc_json, "w").write(json.dumps(oc_cfg, indent=2) + "\n")
                             config_updated = True
-                        except Exception:
-                            pass
-                else:
-                    zy_cfg_path = os.path.join(inst_runtime, "zylos-data", "components", "hxa-connect", "config.json")
-                    if os.path.exists(zy_cfg_path):
-                        try:
-                            zy_cfg = json.loads(open(zy_cfg_path).read())
-                            default_org = zy_cfg.get("orgs", {}).get("default", {})
-                            if auth_org_id:
-                                default_org["org_id"] = auth_org_id
-                            if auth_agent_name:
-                                default_org["agent_name"] = auth_agent_name
+                    except Exception:
+                        pass
+            else:
+                zy_cfg_path = os.path.join(inst_runtime, "zylos-data", "components", "hxa-connect", "config.json")
+                if os.path.exists(zy_cfg_path):
+                    try:
+                        zy_cfg = json.loads(open(zy_cfg_path).read())
+                        default_org = zy_cfg.get("orgs", {}).get("default", {})
+                        _orig_cfg_token = default_org.get("agent_token", "")
+                        changed = False
+                        if auth_org_id and default_org.get("org_id") != auth_org_id:
+                            default_org["org_id"] = auth_org_id; changed = True
+                        if auth_agent_name and default_org.get("agent_name") != auth_agent_name:
+                            default_org["agent_name"] = auth_agent_name; changed = True
+                        if container_token and default_org.get("agent_token") != container_token:
+                            default_org["agent_token"] = container_token; changed = True
+                        if changed:
                             open(zy_cfg_path, "w").write(json.dumps(zy_cfg, indent=2) + "\n")
                             config_updated = True
-                        except Exception:
-                            pass
-                if config_updated:
-                    repairs.append({"name": "hxa_config", "action": f"已同步运行时配置 org_id→{auth_org_id[:8]}…"})
+                    except Exception:
+                        pass
+            if config_updated:
+                repairs.append({"name": "hxa_config", "action": f"已同步运行时配置"})
 
             # 2. Sync to DB instance_configs
             if not ic:
@@ -2165,13 +2240,31 @@ def self_check_repair(
                 cur.execute("UPDATE instances SET agent_name=%s WHERE id=%s AND (agent_name IS NULL OR agent_name != %s)",
                             (auth_agent_name, instance_id, auth_agent_name))
 
-            # 4. Clear stale admin bot tokens if org_id changed
+            # 4. Clear stale admin bot tokens if org_id or token changed
             old_org_id = ic.get("org_id", "") if ic else ""
-            if auth_org_id and old_org_id and auth_org_id != old_org_id:
+            old_token = ic.get("org_token", "") if ic else ""
+            token_changed = container_token and old_token and container_token != old_token
+            org_changed = auth_org_id and old_org_id and auth_org_id != old_org_id
+            if org_changed:
                 cur.execute("DELETE FROM server_settings WHERE `key` LIKE %s",
                             (f"hxa_user_bot_token%_{old_org_id[:8]}%",))
                 _user_bot_cache.clear()
                 repairs.append({"name": "hxa_config", "action": f"已清理旧组织({old_org_id[:8]}…)的 admin bot 缓存"})
+            elif token_changed:
+                # Token changed (re-registration) in same org — clear admin bot cache too
+                _user_bot_cache.clear()
+
+            # 5. If config was updated, restart hxa-connect
+            if config_updated or token_changed:
+                if product == "zylos":
+                    rc, _ = docker_run(["docker", "exec", container, "pm2", "restart", "zylos-hxa-connect"], timeout=15)
+                    if rc != 0:
+                        docker_run(["docker", "exec", container, "sh", "-c",
+                                    "cd /home/zylos/zylos/.claude/skills/hxa-connect && pm2 start src/bot.js --name zylos-hxa-connect"], timeout=15)
+                    repairs.append({"name": "hxa_config", "action": "已重启 hxa-connect"})
+                elif product == "openclaw":
+                    docker_run(["docker", "restart", container], timeout=30)
+                    repairs.append({"name": "hxa_config", "action": "已重启容器使新配置生效"})
 
             cur.close()
         finally:
