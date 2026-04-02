@@ -480,8 +480,8 @@ export function MyOrgPage() {
                 const recentCount = threadMsgTimestamps.current[msgThreadId].length;
                 const lastCooldown = threadLoopCooldown.current[msgThreadId] || 0;
 
-                // If 6+ bot messages in 60s and cooldown expired (5 min)
-                if (recentCount >= 6 && now - lastCooldown > 300000) {
+                // Thread: 18+ bot messages in 60s and cooldown expired (15 min) — 3x looser than DM
+                if (recentCount >= 18 && now - lastCooldown > 900000) {
                   threadLoopCooldown.current[msgThreadId] = now;
                   // Auto-send stop message
                   api.myOrgThreadSend(
