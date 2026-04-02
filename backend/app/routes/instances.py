@@ -1675,8 +1675,10 @@ def _self_check_instance(instance_id: str, product: str, db) -> list[dict]:
 
     checks: list[dict] = []
     container = get_container_name(instance_id, product)
+    # Prefer DB runtime_dir (may differ from default runtime_root in manual installs)
+    db_runtime_dir = inst.get("runtime_dir", "")
     _rt = runtime_root()
-    inst_runtime = os.path.join(_rt, instance_id)
+    inst_runtime = db_runtime_dir if db_runtime_dir and os.path.isdir(db_runtime_dir) else os.path.join(_rt, instance_id)
 
     # ── 1. Container running ───────────────────────────────────────────
     try:
@@ -1943,7 +1945,8 @@ def self_check_repair(
     product = inst.get("product", "openclaw")
     container = get_container_name(instance_id, product)
     _rt = runtime_root()
-    inst_runtime = os.path.join(_rt, instance_id)
+    db_runtime_dir = inst.get("runtime_dir", "")
+    inst_runtime = db_runtime_dir if db_runtime_dir and os.path.isdir(db_runtime_dir) else os.path.join(_rt, instance_id)
     repairs: list[dict] = []
 
     # ── Fix DB metadata ────────────────────────────────────────────────
