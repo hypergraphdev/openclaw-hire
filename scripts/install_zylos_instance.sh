@@ -421,7 +421,7 @@ fi
 docker exec "zylos_${INSTANCE_ID}" sh -c "
   INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js
   if [ -f \"\$INIT_JS\" ] && grep -q \"startsWith('sk-ant-')\" \"\$INIT_JS\"; then
-    sed -i \"s|if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-'))|if (false \&\& opts.apiKey)|\" \"\$INIT_JS\"
+    sed -i \"s|if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-'))|if (false)|\" \"\$INIT_JS\"
   fi
 " 2>/dev/null || true
 
