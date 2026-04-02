@@ -827,7 +827,56 @@ def transfer_bot(instance_id: str, payload: TransferBotRequest, current_user: di
     from .instances import _user_bot_cache
     _user_bot_cache.clear()
 
-    return {"ok": True, "new_org_id": target_org_id, "agent_name": agent_name}
+    # 8. Verify: call Hub /api/me with new token to confirm org_id matches
+    warnings: list[str] = []
+    try:
+        me_req = urllib.request.Request(
+            f"{hub}/api/me",
+            headers={"Authorization": f"Bearer {new_token}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(me_req, timeout=10) as resp:
+            me_info = json.loads(resp.read().decode())
+        hub_org_id = me_info.get("org_id", "")
+        hub_name = me_info.get("name", "")
+        if hub_org_id != target_org_id:
+            warnings.append(f"Hub org_id({hub_org_id[:8]}…) 与目标({target_org_id[:8]}…)不一致，请检查")
+        if hub_name != agent_name:
+            warnings.append(f"Hub agent_name({hub_name}) 与本地({agent_name})不一致")
+    except Exception as e:
+        warnings.append(f"Hub 验证失败: {e}")
+
+    # Also verify runtime config was written correctly
+    try:
+        from ..database import runtime_root as _runtime_root
+        _conn2 = get_connection()
+        _cur2 = _conn2.cursor(dictionary=True)
+        _cur2.execute("SELECT runtime_dir FROM instances WHERE id = %s", (instance_id,))
+        _irow = _cur2.fetchone()
+        _cur2.close()
+        _conn2.close()
+        _db_rt = (_irow or {}).get("runtime_dir", "")
+        _rt = _runtime_root()
+        rt_dir = Path(_db_rt) if _db_rt and Path(_db_rt).is_dir() else _rt / instance_id if _rt else None
+        if rt_dir:
+            oc_cfg = rt_dir / "openclaw-config" / "openclaw.json"
+            zy_cfg = rt_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
+            cfg_org_id = ""
+            if oc_cfg.exists():
+                cfg = json.loads(oc_cfg.read_text())
+                cfg_org_id = cfg.get("channels", {}).get("hxa-connect", {}).get("orgId", "")
+            elif zy_cfg.exists():
+                cfg = json.loads(zy_cfg.read_text())
+                cfg_org_id = cfg.get("orgs", {}).get("default", {}).get("org_id", "")
+            if cfg_org_id and cfg_org_id != target_org_id:
+                warnings.append(f"容器配置 org_id({cfg_org_id[:8]}…) 未更新到目标组织")
+    except Exception:
+        pass
+
+    result = {"ok": True, "new_org_id": target_org_id, "agent_name": agent_name}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def _write_new_token(instance_id: str, new_token: str, agent_name: str, org_id: str) -> None:
