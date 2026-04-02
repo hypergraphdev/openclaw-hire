@@ -1884,20 +1884,30 @@ def _self_check_instance(instance_id: str, product: str, db, inst: dict | None =
 
     # ── 7. AI Runtime (Zylos only) ────────────────────────────────────
     if product == "zylos":
-        rc, out = docker_run(["docker", "exec", container, "sh", "-lc",
-                              "/home/zylos/.npm-global/bin/zylos status 2>&1 | head -5"], timeout=15)
         runtime_ok = False
         runtime_detail = "未检测到"
+        # Try zylos status first (most accurate)
+        rc, out = docker_run(["docker", "exec", container, "sh", "-c",
+                              "export PATH=/home/zylos/.npm-global/bin:$PATH && zylos status 2>&1 | head -5"], timeout=15)
         if "Claude: IDLE" in out or "Claude: BUSY" in out:
             runtime_ok = True
             runtime_detail = "Claude 已认证，运行正常"
         elif "Codex: IDLE" in out or "Codex: BUSY" in out:
             runtime_ok = True
             runtime_detail = "Codex 已认证，运行正常"
-        elif "NOT INSTALLED" in out:
-            runtime_detail = "AI Runtime 未安装 (需要 zylos init)"
-        elif "not authenticated" in out.lower():
-            runtime_detail = "AI Runtime 未认证"
+        else:
+            # Fallback: check if claude/codex binary exists
+            rc2, which_out = docker_run(["docker", "exec", container, "which", "claude"], timeout=5)
+            if rc2 == 0 and which_out.strip():
+                runtime_detail = "Claude 已安装，但 tmux 会话未运行（需要 zylos init 恢复）"
+            else:
+                rc3, _ = docker_run(["docker", "exec", container, "which", "codex"], timeout=5)
+                if rc3 == 0:
+                    runtime_detail = "Codex 已安装，但 tmux 会话未运行"
+                elif "NOT INSTALLED" in out:
+                    runtime_detail = "AI Runtime 未安装（需要 zylos init）"
+                elif "not authenticated" in out.lower():
+                    runtime_detail = "AI Runtime 未认证"
         checks.append({
             "name": "ai_runtime",
             "label": "AI Runtime (Claude/Codex)",
