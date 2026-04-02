@@ -466,7 +466,7 @@ def instance_diagnostics(
                 openclaw_version = ver_out.strip() if rc == 0 else None
             else:
                 # zylos binary may be broken after container restart; extract version from docker logs
-                rc, ver_out = _docker_run(["docker", "logs", "--tail", "20", container_name])
+                rc, ver_out = _docker_run(["docker", "logs", "--tail", "200", container_name])
                 for line in ver_out.splitlines():
                     if "Zylos" in line and any(c.isdigit() for c in line):
                         import re
