@@ -465,13 +465,19 @@ def instance_diagnostics(
                 rc, ver_out = _docker_run(["docker", "exec", container_name, "openclaw", "--version"])
                 openclaw_version = ver_out.strip() if rc == 0 else None
             else:
-                # zylos binary symlink breaks after restart; extract version from docker logs
                 import re as _re
-                rc, ver_out = _docker_run(["sh", "-c", f"docker logs {container_name} 2>&1 | grep -m1 'Zylos [0-9]'"], timeout=10)
+                # Try zylos --version first (most accurate after upgrades)
+                rc, ver_out = _docker_run(["docker", "exec", container_name, "sh", "-c",
+                                           "export PATH=/home/zylos/.npm-global/bin:$PATH && zylos --version 2>/dev/null"], timeout=10)
                 if rc == 0 and ver_out.strip():
-                    m = _re.search(r"Zylos\s+([\d.]+)", ver_out)
-                    if m:
-                        zylos_version = m.group(1)
+                    zylos_version = ver_out.strip()
+                else:
+                    # Fallback: extract from docker logs startup banner
+                    rc, ver_out = _docker_run(["sh", "-c", f"docker logs {container_name} 2>&1 | grep 'Zylos [0-9]' | tail -1"], timeout=10)
+                    if rc == 0 and ver_out.strip():
+                        m = _re.search(r"Zylos\s+([\d.]+)", ver_out)
+                        if m:
+                            zylos_version = m.group(1)
         except Exception:
             pass
 
