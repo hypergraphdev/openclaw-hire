@@ -254,9 +254,12 @@ def _fix_auth_token_mode_compose(compose_file: Path, env_dir: str | None = None)
     - zylos init: validates sk-ant- prefix
     - Claude Code: rejects ANTHROPIC_API_KEY when AUTH_TOKEN is set
 
-    Solution: inject a custom entrypoint wrapper in compose that patches
-    the original entrypoint at runtime (before it executes), then removes
-    ANTHROPIC_API_KEY from compose env and all .env files.
+    Solution:
+    1. Keep ANTHROPIC_API_KEY=sk-ant-proxy-via-sub2api in host .env + compose
+       → entrypoint env var check passes
+    2. Set ANTHROPIC_API_KEY= (empty) in workspace .env
+       → tmux does `source .env` before `exec claude`, overriding env var to empty
+       → Claude Code sees empty API_KEY, only AUTH_TOKEN → no conflict
     """
     try:
         env_path = Path(env_dir or str(compose_file.parent)) / ".env"
@@ -266,59 +269,16 @@ def _fix_auth_token_mode_compose(compose_file: Path, env_dir: str | None = None)
         if not env.get("ANTHROPIC_AUTH_TOKEN"):
             return
 
-        import yaml
-    except ImportError:
-        yaml = None
-    except Exception:
-        return
+        # 3. Ensure placeholder in host .env (entrypoint env var check)
+        if not env.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-"):
+            env["ANTHROPIC_API_KEY"] = "sk-ant-proxy-via-sub2api"
+            _write_env_file(env_path, env)
 
-    try:
-        text = compose_file.read_text()
-
-        # Use simple text manipulation (yaml may not be installed)
-        import re as _re
-
-        # 1. Remove ANTHROPIC_API_KEY from compose environment section
-        new_text = _re.sub(r"^\s*ANTHROPIC_API_KEY:.*\n?", "", text, flags=_re.MULTILINE)
-
-        # 2. Inject entrypoint wrapper (if not already present)
-        if "entrypoint:" not in new_text:
-            # The wrapper patches entrypoint.sh to accept AUTH_TOKEN, then runs it
-            wrapper = (
-                '    entrypoint:\n'
-                '      - /bin/sh\n'
-                '      - -c\n'
-                '      - |\n'
-                '        EP=/home/zylos/.npm-global/lib/node_modules/zylos/docker/entrypoint.sh\n'
-                '        if [ -f "$$EP" ]; then\n'
-                '          sed -i \'s/\\[ -z "$${ANTHROPIC_API_KEY:-}" \\]/[ -z "$${ANTHROPIC_API_KEY:-}" ] \\&\\& [ -z "$${ANTHROPIC_AUTH_TOKEN:-}" ]/\' "$$EP"\n'
-                '          sed -i \'s/ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN/\' "$$EP"\n'
-                '          INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js\n'
-                '          [ -f "$$INIT_JS" ] && sed -i "s|if (opts.apiKey && !opts.apiKey.startsWith(\'sk-ant-\'))|if (false \\&\\& opts.apiKey)|" "$$INIT_JS"\n'
-                '        fi\n'
-                '        exec /entrypoint.sh\n'
-            )
-            # Insert after "restart:" line
-            new_text = _re.sub(
-                r"(^\s*restart:.*\n)",
-                r"\1" + wrapper,
-                new_text,
-                count=1,
-                flags=_re.MULTILINE,
-            )
-
-        if new_text != text:
-            compose_file.write_text(new_text)
-
-        # 3. Remove ANTHROPIC_API_KEY from host .env
-        env.pop("ANTHROPIC_API_KEY", None)
-        _write_env_file(env_path, env)
-
-        # 4. Remove from workspace .env
+        # 4. Set EMPTY in workspace .env — tmux `source .env` clears it before Claude
         ws_env_path = Path(env_dir or str(compose_file.parent)) / "zylos-data" / ".env"
         if ws_env_path.exists():
             ws_env = _read_env_file(ws_env_path)
-            ws_env.pop("ANTHROPIC_API_KEY", None)
+            ws_env["ANTHROPIC_API_KEY"] = ""
             _write_env_file(ws_env_path, ws_env)
     except Exception:
         pass
@@ -905,14 +865,13 @@ def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> boo
             return False
         env = _read_env_file(zylos_env)
 
-        # When AUTH_TOKEN is active, completely remove ANTHROPIC_API_KEY from workspace .env.
-        # The entrypoint is patched to accept AUTH_TOKEN directly.
-        # Claude Code's tmux does `source .env` so any API_KEY here would conflict.
+        # When AUTH_TOKEN is active, set ANTHROPIC_API_KEY to empty in workspace .env.
+        # Tmux does `source .env; exec claude` so empty value overrides the container
+        # env var, preventing Claude Code from seeing the conflict.
         filtered = dict(updates)
         has_auth_token = filtered.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_AUTH_TOKEN", "")
         if has_auth_token:
-            filtered.pop("ANTHROPIC_API_KEY", None)
-            env.pop("ANTHROPIC_API_KEY", None)
+            filtered["ANTHROPIC_API_KEY"] = ""  # empty = override to nothing
 
         env.update(filtered)
         _write_env_file(zylos_env, env)
