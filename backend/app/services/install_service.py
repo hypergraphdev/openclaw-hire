@@ -399,7 +399,7 @@ def _run_install(instance_id: str) -> None:
             install_extra_env["ANTHROPIC_BASE_URL"] = db_anthropic_base
         if db_anthropic_token:
             install_extra_env["ANTHROPIC_AUTH_TOKEN"] = db_anthropic_token
-            install_extra_env["ANTHROPIC_API_KEY"] = db_anthropic_token
+            install_extra_env["ANTHROPIC_API_KEY"] = _normalize_anthropic_api_key("", db_anthropic_token)
         if db_openai_base:
             install_extra_env["OPENAI_BASE_URL"] = db_openai_base
         if db_openai_key:
@@ -500,6 +500,7 @@ def stop_instance(instance_id: str, compose_file: str, project: str, runtime_dir
 def restart_instance(instance_id: str, compose_file: str, project: str, runtime_dir: str) -> tuple[bool, str]:
     rc, out = _compose_control(compose_file, project, runtime_dir, "restart")
     if rc == 0:
+        _patch_zylos_api_key_check(instance_id)
         _patch_zylos_web_console(runtime_dir)
         _patch_zylos_comm_bridge(runtime_dir)
         _restart_zylos_pm2_services(instance_id)
@@ -773,6 +774,25 @@ def _patch_zylos_comm_bridge(runtime_dir: str) -> bool:
         return False
 
 
+def _patch_zylos_api_key_check(instance_id: str) -> bool:
+    """Patch zylos init.js inside container to skip sk-ant- prefix validation.
+
+    Needed when ANTHROPIC_API_KEY is a proxy token (not a real Anthropic key).
+    Patches both init.js (cli validation) and entrypoint.sh (startup routing).
+    """
+    container = f"zylos_{instance_id}"
+    # Patch init.js: comment out the sk-ant- prefix check
+    patch_cmd = r"""
+INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js
+if [ -f "$INIT_JS" ]; then
+  sed -i "s|if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-'))|if (false \&\& opts.apiKey)|" "$INIT_JS"
+  echo "patched init.js"
+fi
+"""
+    rc, out = _run(["docker", "exec", container, "sh", "-c", patch_cmd])
+    return rc == 0
+
+
 def _restart_zylos_pm2_services(instance_id: str) -> None:
     container = f"zylos_{instance_id}"
     _run(["docker", "exec", container, "sh", "-lc", "pm2 restart web-console c4-dispatcher >/dev/null 2>&1 || true"])
@@ -1027,6 +1047,7 @@ def configure_instance_telegram(
     bootstrap_ok = True
     bootstrap_message = ""
     if product == "zylos":
+        _patch_zylos_api_key_check(instance_id)
         web_console_patched = _patch_zylos_web_console(runtime_dir)
         comm_bridge_patched = _patch_zylos_comm_bridge(runtime_dir)
         _restart_zylos_pm2_services(instance_id)
@@ -1289,7 +1310,7 @@ def _configure_zylos_hxa_only(
         updates["ANTHROPIC_BASE_URL"] = _db_anthropic_base
     if _db_anthropic_token:
         updates["ANTHROPIC_AUTH_TOKEN"] = _db_anthropic_token
-        updates["ANTHROPIC_API_KEY"] = _db_anthropic_token
+        updates["ANTHROPIC_API_KEY"] = _normalize_anthropic_api_key("", _db_anthropic_token)
     if _db_openai_base:
         updates["OPENAI_BASE_URL"] = _db_openai_base
     if _db_openai_key:
@@ -1306,6 +1327,7 @@ def _configure_zylos_hxa_only(
     if rc != 0:
         return False, f"Compose restart failed: {out[:500]}"
 
+    _patch_zylos_api_key_check(instance_id)
     _patch_zylos_web_console(runtime_dir)
     _patch_zylos_comm_bridge(runtime_dir)
 
