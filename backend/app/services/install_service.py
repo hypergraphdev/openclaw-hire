@@ -237,7 +237,22 @@ def _inject_resource_limits(compose_file: Path) -> None:
     compose_file.write_text(text)
 
 
+def _compose_pull(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> None:
+    """Pull latest images declared in compose file. Best-effort, never blocks on failure."""
+    env_args = _env_file_for(runtime_dir or str(workdir))
+    rc, out = _run(["docker", "compose", "-f", str(compose_file), "-p", project] + env_args + ["pull"], cwd=workdir, clean_env=True)
+    if rc != 0:
+        # Fallback to docker-compose v1
+        _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["pull"], cwd=workdir, clean_env=True)
+
+
 def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
+    # Pull latest images before starting (ensures we don't use stale :latest cache)
+    try:
+        _compose_pull(compose_file, project, workdir, runtime_dir)
+    except Exception:
+        pass  # Best-effort; proceed with cached image if pull fails
+
     # Inject resource limits into compose YAML before starting
     try:
         _inject_resource_limits(compose_file)
