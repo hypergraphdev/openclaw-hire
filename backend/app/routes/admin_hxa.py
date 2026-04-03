@@ -235,26 +235,64 @@ def update_agent_name(instance_id: str, payload: UpdateAgentNameRequest, current
 
 
 def _get_agent_token(instance_id: str) -> str:
-    """Read agent token from runtime config files."""
-    runtime_dir = RUNTIME_ROOT / instance_id
+    """Read agent token from runtime config files.
 
-    # OpenClaw
-    oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
-    if oc_cfg.exists():
-        try:
-            cfg = json.loads(oc_cfg.read_text())
-            return cfg.get("channels", {}).get("hxa-connect", {}).get("agentToken", "")
-        except Exception:
-            pass
+    Checks both RUNTIME_ROOT/<id> and the DB-stored runtime_dir (which may differ).
+    Falls back to org_token in instance_configs if file reads fail.
+    """
+    from ..database import get_connection
 
-    # Zylos
-    zy_cfg = runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
-    if zy_cfg.exists():
-        try:
-            cfg = json.loads(zy_cfg.read_text())
-            return cfg.get("orgs", {}).get("default", {}).get("agent_token", "")
-        except Exception:
-            pass
+    # Collect candidate runtime dirs: default path + DB-stored path
+    candidates = [RUNTIME_ROOT / instance_id]
+    try:
+        conn = get_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT runtime_dir FROM instances WHERE id = %s", (instance_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row and row.get("runtime_dir"):
+            db_path = Path(row["runtime_dir"])
+            if db_path not in candidates:
+                candidates.append(db_path)
+    except Exception:
+        pass
+
+    for runtime_dir in candidates:
+        # OpenClaw
+        oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
+        if oc_cfg.exists():
+            try:
+                cfg = json.loads(oc_cfg.read_text())
+                token = cfg.get("channels", {}).get("hxa-connect", {}).get("agentToken", "")
+                if token:
+                    return token
+            except Exception:
+                pass
+
+        # Zylos
+        zy_cfg = runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
+        if zy_cfg.exists():
+            try:
+                cfg = json.loads(zy_cfg.read_text())
+                token = cfg.get("orgs", {}).get("default", {}).get("agent_token", "")
+                if token:
+                    return token
+            except Exception:
+                pass
+
+    # Fallback: read from instance_configs.org_token in DB
+    try:
+        conn = get_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT org_token FROM instance_configs WHERE instance_id = %s", (instance_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row and row.get("org_token"):
+            return row["org_token"]
+    except Exception:
+        pass
 
     return ""
 
