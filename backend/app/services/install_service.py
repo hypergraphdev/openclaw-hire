@@ -246,12 +246,38 @@ def _compose_pull(compose_file: Path, project: str, workdir: Path, runtime_dir: 
         _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["pull"], cwd=workdir, clean_env=True)
 
 
+def _strip_api_key_from_compose(compose_file: Path, env_dir: str | None = None) -> None:
+    """Remove ANTHROPIC_API_KEY from compose when AUTH_TOKEN mode is active.
+
+    Claude Code rejects ANTHROPIC_API_KEY when ANTHROPIC_AUTH_TOKEN is set.
+    Even an empty ANTHROPIC_API_KEY="" causes conflicts.
+    """
+    try:
+        env_path = Path(env_dir or str(compose_file.parent)) / ".env"
+        if env_path.exists():
+            env = _read_env_file(env_path)
+            if env.get("ANTHROPIC_AUTH_TOKEN"):
+                text = compose_file.read_text()
+                import re as _re
+                new_text = _re.sub(r"^\s*ANTHROPIC_API_KEY:.*\n?", "", text, flags=_re.MULTILINE)
+                if new_text != text:
+                    compose_file.write_text(new_text)
+    except Exception:
+        pass
+
+
 def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: str | None = None) -> tuple[int, str]:
     # Pull latest images before starting (ensures we don't use stale :latest cache)
     try:
         _compose_pull(compose_file, project, workdir, runtime_dir)
     except Exception:
         pass  # Best-effort; proceed with cached image if pull fails
+
+    # Strip ANTHROPIC_API_KEY from compose if AUTH_TOKEN mode is active
+    try:
+        _strip_api_key_from_compose(compose_file, runtime_dir or str(workdir))
+    except Exception:
+        pass
 
     # Inject resource limits into compose YAML before starting
     try:
