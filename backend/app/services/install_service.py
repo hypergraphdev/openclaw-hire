@@ -799,13 +799,25 @@ def _restart_zylos_pm2_services(instance_id: str) -> None:
 
 
 def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> bool:
-    """Best effort: sync key envs into instance's own runtime .env (e.g., zylos-data/.env)."""
+    """Best effort: sync key envs into instance's own runtime .env (e.g., zylos-data/.env).
+
+    Claude Code forbids ANTHROPIC_API_KEY when ANTHROPIC_AUTH_TOKEN is set.
+    So when syncing to the workspace .env, drop ANTHROPIC_API_KEY if AUTH_TOKEN is present.
+    """
     try:
         zylos_env = Path(runtime_dir) / "zylos-data" / ".env"
         if not zylos_env.exists():
             return False
         env = _read_env_file(zylos_env)
-        env.update(updates)
+
+        # Filter: Claude Code rejects ANTHROPIC_API_KEY when AUTH_TOKEN is present
+        filtered = dict(updates)
+        has_auth_token = filtered.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_AUTH_TOKEN", "")
+        if has_auth_token:
+            filtered.pop("ANTHROPIC_API_KEY", None)
+            env.pop("ANTHROPIC_API_KEY", None)  # also remove existing one
+
+        env.update(filtered)
         _write_env_file(zylos_env, env)
         return True
     except Exception:
