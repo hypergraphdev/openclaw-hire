@@ -246,21 +246,48 @@ def _compose_pull(compose_file: Path, project: str, workdir: Path, runtime_dir: 
         _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["pull"], cwd=workdir, clean_env=True)
 
 
-def _fix_compose_api_key_for_auth_token(compose_file: Path, env_dir: str | None = None) -> None:
-    """When using AUTH_TOKEN mode, set ANTHROPIC_API_KEY to a placeholder in .env.
+def _fix_auth_token_mode_compose(compose_file: Path, env_dir: str | None = None) -> None:
+    """Fix ANTHROPIC_API_KEY handling for AUTH_TOKEN proxy mode.
 
-    Zylos entrypoint requires ANTHROPIC_API_KEY for auth check (step 1).
-    But Claude Code rejects it when AUTH_TOKEN is also set.
-    Solution: set a placeholder in .env so entrypoint passes, but the workspace
-    .env (synced by _sync_instance_runtime_env) won't have it.
+    Problem: Zylos has 3 layers with conflicting requirements:
+    - entrypoint auth check: needs ANTHROPIC_API_KEY (env var OR .env file grep)
+    - zylos init: validates sk-ant- prefix on --api-key flag
+    - Claude Code tmux: `source .env; exec claude` — inherits all env vars
+    - Claude Code: rejects ANTHROPIC_API_KEY env var when AUTH_TOKEN is set
+
+    Solution: Replace ANTHROPIC_API_KEY in compose with ANTHROPIC_AUTH_TOKEN
+    in the entrypoint auth check list. This is done by _patch_zylos_api_key_check
+    AFTER compose up. Here we just:
+    1. Remove ANTHROPIC_API_KEY from compose YAML (prevent env var injection)
+    2. Remove it from host .env (prevent compose interpolation)
+    3. Remove it from workspace .env (prevent tmux source loading)
+    The entrypoint auth check is patched separately to accept AUTH_TOKEN.
     """
     try:
         env_path = Path(env_dir or str(compose_file.parent)) / ".env"
-        if env_path.exists():
-            env = _read_env_file(env_path)
-            if env.get("ANTHROPIC_AUTH_TOKEN") and not env.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-"):
-                env["ANTHROPIC_API_KEY"] = "sk-ant-proxy-via-sub2api"
-                _write_env_file(env_path, env)
+        if not env_path.exists():
+            return
+        env = _read_env_file(env_path)
+        if not env.get("ANTHROPIC_AUTH_TOKEN"):
+            return
+
+        # Remove ANTHROPIC_API_KEY from compose YAML
+        text = compose_file.read_text()
+        import re as _re
+        new_text = _re.sub(r"^\s*ANTHROPIC_API_KEY:.*\n?", "", text, flags=_re.MULTILINE)
+        if new_text != text:
+            compose_file.write_text(new_text)
+
+        # Remove from host .env
+        env.pop("ANTHROPIC_API_KEY", None)
+        _write_env_file(env_path, env)
+
+        # Remove from workspace .env
+        ws_env_path = Path(env_dir or str(compose_file.parent)) / "zylos-data" / ".env"
+        if ws_env_path.exists():
+            ws_env = _read_env_file(ws_env_path)
+            ws_env.pop("ANTHROPIC_API_KEY", None)
+            _write_env_file(ws_env_path, ws_env)
     except Exception:
         pass
 
@@ -272,9 +299,9 @@ def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: st
     except Exception:
         pass  # Best-effort; proceed with cached image if pull fails
 
-    # Ensure ANTHROPIC_API_KEY placeholder exists for entrypoint auth check
+    # Fix AUTH_TOKEN mode: remove API_KEY from compose env, keep in .env for grep fallback
     try:
-        _fix_compose_api_key_for_auth_token(compose_file, runtime_dir or str(workdir))
+        _fix_auth_token_mode_compose(compose_file, runtime_dir or str(workdir))
     except Exception:
         pass
 
@@ -800,14 +827,25 @@ def _patch_zylos_comm_bridge(runtime_dir: str) -> bool:
 
 
 def _patch_zylos_api_key_check(instance_id: str) -> bool:
-    """Patch zylos init.js inside container to skip sk-ant- prefix validation.
+    """Patch zylos entrypoint and init.js inside container for AUTH_TOKEN proxy mode.
 
-    Needed when ANTHROPIC_API_KEY is a proxy token (not a real Anthropic key).
-    Patches both init.js (cli validation) and entrypoint.sh (startup routing).
+    Patches:
+    1. entrypoint.sh auth check: add ANTHROPIC_AUTH_TOKEN to the accepted env vars
+    2. init.js: skip sk-ant- prefix validation
     """
     container = f"zylos_{instance_id}"
-    # Patch init.js: comment out the sk-ant- prefix check
     patch_cmd = r"""
+# Patch entrypoint: add ANTHROPIC_AUTH_TOKEN to auth check
+ENTRY=/home/zylos/.npm-global/lib/node_modules/zylos/docker/entrypoint.sh
+if [ -f "$ENTRY" ]; then
+  # Add ANTHROPIC_AUTH_TOKEN to the env var check
+  sed -i 's/\[ -z "${ANTHROPIC_API_KEY:-}" \]/[ -z "${ANTHROPIC_API_KEY:-}" ] \&\& [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]/' "$ENTRY"
+  # Add ANTHROPIC_AUTH_TOKEN to the grep fallback check
+  sed -i 's/ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|OPENAI_API_KEY|CODEX_API_KEY/ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|OPENAI_API_KEY|CODEX_API_KEY/' "$ENTRY"
+  echo "patched entrypoint.sh"
+fi
+
+# Patch init.js: skip sk-ant- prefix check
 INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js
 if [ -f "$INIT_JS" ]; then
   sed -i "s|if (opts.apiKey && !opts.apiKey.startsWith('sk-ant-'))|if (false \&\& opts.apiKey)|" "$INIT_JS"
@@ -835,12 +873,14 @@ def _sync_instance_runtime_env(runtime_dir: str, updates: dict[str, str]) -> boo
             return False
         env = _read_env_file(zylos_env)
 
-        # Filter: Claude Code rejects ANTHROPIC_API_KEY when AUTH_TOKEN is present
+        # When AUTH_TOKEN is active, completely remove ANTHROPIC_API_KEY from workspace .env.
+        # The entrypoint is patched to accept AUTH_TOKEN directly.
+        # Claude Code's tmux does `source .env` so any API_KEY here would conflict.
         filtered = dict(updates)
         has_auth_token = filtered.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_AUTH_TOKEN", "")
         if has_auth_token:
             filtered.pop("ANTHROPIC_API_KEY", None)
-            env.pop("ANTHROPIC_API_KEY", None)  # also remove existing one
+            env.pop("ANTHROPIC_API_KEY", None)
 
         env.update(filtered)
         _write_env_file(zylos_env, env)
