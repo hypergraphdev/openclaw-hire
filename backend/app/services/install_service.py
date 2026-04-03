@@ -246,22 +246,21 @@ def _compose_pull(compose_file: Path, project: str, workdir: Path, runtime_dir: 
         _run(["docker-compose", "-f", str(compose_file), "-p", project] + env_args + ["pull"], cwd=workdir, clean_env=True)
 
 
-def _strip_api_key_from_compose(compose_file: Path, env_dir: str | None = None) -> None:
-    """Remove ANTHROPIC_API_KEY from compose when AUTH_TOKEN mode is active.
+def _fix_compose_api_key_for_auth_token(compose_file: Path, env_dir: str | None = None) -> None:
+    """When using AUTH_TOKEN mode, set ANTHROPIC_API_KEY to a placeholder in .env.
 
-    Claude Code rejects ANTHROPIC_API_KEY when ANTHROPIC_AUTH_TOKEN is set.
-    Even an empty ANTHROPIC_API_KEY="" causes conflicts.
+    Zylos entrypoint requires ANTHROPIC_API_KEY for auth check (step 1).
+    But Claude Code rejects it when AUTH_TOKEN is also set.
+    Solution: set a placeholder in .env so entrypoint passes, but the workspace
+    .env (synced by _sync_instance_runtime_env) won't have it.
     """
     try:
         env_path = Path(env_dir or str(compose_file.parent)) / ".env"
         if env_path.exists():
             env = _read_env_file(env_path)
-            if env.get("ANTHROPIC_AUTH_TOKEN"):
-                text = compose_file.read_text()
-                import re as _re
-                new_text = _re.sub(r"^\s*ANTHROPIC_API_KEY:.*\n?", "", text, flags=_re.MULTILINE)
-                if new_text != text:
-                    compose_file.write_text(new_text)
+            if env.get("ANTHROPIC_AUTH_TOKEN") and not env.get("ANTHROPIC_API_KEY", "").startswith("sk-ant-"):
+                env["ANTHROPIC_API_KEY"] = "sk-ant-proxy-via-sub2api"
+                _write_env_file(env_path, env)
     except Exception:
         pass
 
@@ -273,9 +272,9 @@ def _compose_up(compose_file: Path, project: str, workdir: Path, runtime_dir: st
     except Exception:
         pass  # Best-effort; proceed with cached image if pull fails
 
-    # Strip ANTHROPIC_API_KEY from compose if AUTH_TOKEN mode is active
+    # Ensure ANTHROPIC_API_KEY placeholder exists for entrypoint auth check
     try:
-        _strip_api_key_from_compose(compose_file, runtime_dir or str(workdir))
+        _fix_compose_api_key_for_auth_token(compose_file, runtime_dir or str(workdir))
     except Exception:
         pass
 
