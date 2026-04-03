@@ -249,19 +249,14 @@ def _compose_pull(compose_file: Path, project: str, workdir: Path, runtime_dir: 
 def _fix_auth_token_mode_compose(compose_file: Path, env_dir: str | None = None) -> None:
     """Fix ANTHROPIC_API_KEY handling for AUTH_TOKEN proxy mode.
 
-    Problem: Zylos has 3 layers with conflicting requirements:
-    - entrypoint auth check: needs ANTHROPIC_API_KEY (env var OR .env file grep)
-    - zylos init: validates sk-ant- prefix on --api-key flag
-    - Claude Code tmux: `source .env; exec claude` — inherits all env vars
-    - Claude Code: rejects ANTHROPIC_API_KEY env var when AUTH_TOKEN is set
+    Zylos has 3 conflicting layers:
+    - entrypoint auth check: needs ANTHROPIC_API_KEY env var
+    - zylos init: validates sk-ant- prefix
+    - Claude Code: rejects ANTHROPIC_API_KEY when AUTH_TOKEN is set
 
-    Solution: Replace ANTHROPIC_API_KEY in compose with ANTHROPIC_AUTH_TOKEN
-    in the entrypoint auth check list. This is done by _patch_zylos_api_key_check
-    AFTER compose up. Here we just:
-    1. Remove ANTHROPIC_API_KEY from compose YAML (prevent env var injection)
-    2. Remove it from host .env (prevent compose interpolation)
-    3. Remove it from workspace .env (prevent tmux source loading)
-    The entrypoint auth check is patched separately to accept AUTH_TOKEN.
+    Solution: inject a custom entrypoint wrapper in compose that patches
+    the original entrypoint at runtime (before it executes), then removes
+    ANTHROPIC_API_KEY from compose env and all .env files.
     """
     try:
         env_path = Path(env_dir or str(compose_file.parent)) / ".env"
@@ -271,18 +266,55 @@ def _fix_auth_token_mode_compose(compose_file: Path, env_dir: str | None = None)
         if not env.get("ANTHROPIC_AUTH_TOKEN"):
             return
 
-        # Remove ANTHROPIC_API_KEY from compose YAML
+        import yaml
+    except ImportError:
+        yaml = None
+    except Exception:
+        return
+
+    try:
         text = compose_file.read_text()
+
+        # Use simple text manipulation (yaml may not be installed)
         import re as _re
+
+        # 1. Remove ANTHROPIC_API_KEY from compose environment section
         new_text = _re.sub(r"^\s*ANTHROPIC_API_KEY:.*\n?", "", text, flags=_re.MULTILINE)
+
+        # 2. Inject entrypoint wrapper (if not already present)
+        if "entrypoint:" not in new_text:
+            # The wrapper patches entrypoint.sh to accept AUTH_TOKEN, then runs it
+            wrapper = (
+                '    entrypoint:\n'
+                '      - /bin/sh\n'
+                '      - -c\n'
+                '      - |\n'
+                '        EP=/home/zylos/.npm-global/lib/node_modules/zylos/docker/entrypoint.sh\n'
+                '        if [ -f "$$EP" ]; then\n'
+                '          sed -i \'s/\\[ -z "$${ANTHROPIC_API_KEY:-}" \\]/[ -z "$${ANTHROPIC_API_KEY:-}" ] \\&\\& [ -z "$${ANTHROPIC_AUTH_TOKEN:-}" ]/\' "$$EP"\n'
+                '          sed -i \'s/ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN/\' "$$EP"\n'
+                '          INIT_JS=/home/zylos/.npm-global/lib/node_modules/zylos/cli/commands/init.js\n'
+                '          [ -f "$$INIT_JS" ] && sed -i "s|if (opts.apiKey && !opts.apiKey.startsWith(\'sk-ant-\'))|if (false \\&\\& opts.apiKey)|" "$$INIT_JS"\n'
+                '        fi\n'
+                '        exec /entrypoint.sh\n'
+            )
+            # Insert after "restart:" line
+            new_text = _re.sub(
+                r"(^\s*restart:.*\n)",
+                r"\1" + wrapper,
+                new_text,
+                count=1,
+                flags=_re.MULTILINE,
+            )
+
         if new_text != text:
             compose_file.write_text(new_text)
 
-        # Remove from host .env
+        # 3. Remove ANTHROPIC_API_KEY from host .env
         env.pop("ANTHROPIC_API_KEY", None)
         _write_env_file(env_path, env)
 
-        # Remove from workspace .env
+        # 4. Remove from workspace .env
         ws_env_path = Path(env_dir or str(compose_file.parent)) / "zylos-data" / ".env"
         if ws_env_path.exists():
             ws_env = _read_env_file(ws_env_path)
