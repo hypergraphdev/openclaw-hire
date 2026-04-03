@@ -825,6 +825,14 @@ def rename_agent(
     cursor.close()
     _update_agent_name_in_config(instance_id, new_name)
 
+    # Restart hxa-connect so mention filter uses new name
+    try:
+        container = f"zylos_{instance_id}" if inst["product"] == "zylos" else f"{inst.get('compose_project', '')}-openclaw-gateway-1"
+        subprocess.run(["docker", "exec", container, "sh", "-lc", "pm2 restart zylos-hxa-connect 2>/dev/null || true"],
+                       capture_output=True, timeout=10)
+    except Exception:
+        pass
+
     return {"ok": True, "agent_name": new_name}
 
 

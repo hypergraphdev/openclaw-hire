@@ -299,7 +299,23 @@ def _get_agent_token(instance_id: str) -> str:
 
 def _update_agent_name_in_config(instance_id: str, new_name: str) -> None:
     """Update agent name in runtime config files (best effort)."""
+    from ..database import get_connection
+
+    # Check both RUNTIME_ROOT/<id> and DB-stored runtime_dir
     runtime_dir = RUNTIME_ROOT / instance_id
+    try:
+        conn = get_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT runtime_dir FROM instances WHERE id = %s", (instance_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row and row.get("runtime_dir"):
+            db_path = Path(row["runtime_dir"])
+            if db_path.exists() and db_path != runtime_dir:
+                runtime_dir = db_path
+    except Exception:
+        pass
 
     # OpenClaw: openclaw.json
     oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
