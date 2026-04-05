@@ -298,11 +298,14 @@ def _get_agent_token(instance_id: str) -> str:
 
 
 def _update_agent_name_in_config(instance_id: str, new_name: str) -> None:
-    """Update agent name in runtime config files (best effort)."""
+    """Update agent name in runtime config files (best effort).
+
+    Checks both RUNTIME_ROOT/<id> and DB-stored runtime_dir to handle path inconsistencies.
+    """
     from ..database import get_connection
 
-    # Check both RUNTIME_ROOT/<id> and DB-stored runtime_dir
-    runtime_dir = RUNTIME_ROOT / instance_id
+    # Collect all candidate runtime dirs
+    candidates = {RUNTIME_ROOT / instance_id}
     try:
         conn = get_connection()
         cur = conn.cursor(dictionary=True)
@@ -311,12 +314,18 @@ def _update_agent_name_in_config(instance_id: str, new_name: str) -> None:
         cur.close()
         conn.close()
         if row and row.get("runtime_dir"):
-            db_path = Path(row["runtime_dir"])
-            if db_path.exists() and db_path != runtime_dir:
-                runtime_dir = db_path
+            candidates.add(Path(row["runtime_dir"]))
     except Exception:
         pass
 
+    for runtime_dir in candidates:
+        if not runtime_dir.exists():
+            continue
+        _do_update_agent_name_in_dir(runtime_dir, new_name, instance_id)
+
+
+def _do_update_agent_name_in_dir(runtime_dir: Path, new_name: str, instance_id: str) -> None:
+    """Update agent_name in all config files under a runtime directory."""
     # OpenClaw: openclaw.json
     oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
     if oc_cfg.exists():
