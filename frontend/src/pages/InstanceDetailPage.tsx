@@ -12,11 +12,13 @@ import type { InstanceDetail, TelegramConfigResponse } from "../types";
 const PRODUCT_LABELS: Record<string, string> = {
   openclaw: "OpenClaw",
   zylos: "Zylos",
+  hermes: "Hermes Agent",
 };
 
 const PRODUCT_REPOS: Record<string, string> = {
   openclaw: "https://github.com/openclaw/openclaw",
   zylos: "https://github.com/zylos-ai/zylos-core",
+  hermes: "https://github.com/NousResearch/hermes-agent",
 };
 
 function formatDate(iso: string) {

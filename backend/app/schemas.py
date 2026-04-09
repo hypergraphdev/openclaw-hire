@@ -92,6 +92,21 @@ PRODUCTS: list[ProductCatalog] = [
             "Prometheus metrics endpoint",
         ],
     ),
+    ProductCatalog(
+        id="hermes",
+        name="Hermes Agent",
+        description="A self-improving AI agent by Nous Research with autonomous skill creation, persistent memory, and multi-platform messaging.",
+        tagline="Self-improving AI agent — no model lock-in",
+        repo_url="https://github.com/NousResearch/hermes-agent",
+        tags=["AI", "Self-improving", "Multi-model", "Autonomous"],
+        features=[
+            "Autonomous skill creation & self-improvement",
+            "200+ models via OpenRouter, no lock-in",
+            "Persistent memory with FTS5 search",
+            "7+ messaging platforms (Telegram, Discord, Slack, WhatsApp)",
+            "Browser automation with Playwright",
+        ],
+    ),
 ]
 
 PRODUCT_MAP = {p.id: p for p in PRODUCTS}

@@ -408,4 +408,9 @@ export const en: Record<string, string> = {
   "qc.draftRestored": "Draft restored from last edit",
   "qc.confirmClose": "Unsaved content. Close anyway?",
   "qc.mentionHint": "Type @ to mention",
+
+  // Hermes Agent
+  "hermes.gateway": "Hermes Gateway",
+  "hermes.gatewayHint": "Hermes Agent uses a built-in Gateway service supporting Telegram, Discord, Slack, WhatsApp, and more.",
+  "hermes.noHxa": "Hermes Agent uses its own Gateway. HXA configuration is not needed.",
 };

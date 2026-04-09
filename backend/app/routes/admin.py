@@ -792,7 +792,7 @@ def list_docker_containers(
 
     # 1. Get all relevant containers
     raw_containers: list[dict] = []
-    for prefix in ("hire_", "zylos_"):
+    for prefix in ("hire_", "zylos_", "hermes_"):
         rc, out = _docker_run(
             ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.State}}\t{{.Status}}", "--filter", f"name={prefix}"],
             timeout=10,
@@ -828,7 +828,10 @@ def list_docker_containers(
     for c in raw_containers:
         name = c["name"]
         # Determine product and project from container name
-        if name.startswith("zylos_"):
+        if name.startswith("hermes_"):
+            project = name
+            product = "hermes"
+        elif name.startswith("zylos_"):
             # zylos_{instance_id} — the entire name IS the project
             project = name
             product = "zylos"
@@ -1015,8 +1018,8 @@ def docker_cleanup(
                 break
     # Also check DB directly by project name pattern
     if not matched_inst_id:
-        # hire_inst_xxx → inst_xxx, zylos_inst_xxx → inst_xxx
-        for prefix in ("hire_", "zylos_"):
+        # hire_inst_xxx → inst_xxx, zylos_inst_xxx → inst_xxx, hermes_inst_xxx → inst_xxx
+        for prefix in ("hire_", "zylos_", "hermes_"):
             if project.startswith(prefix):
                 candidate = project[len(prefix):]
                 if not candidate.startswith("inst_"):

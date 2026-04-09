@@ -408,4 +408,9 @@ export const zh: Record<string, string> = {
   "qc.draftRestored": "已恢复上次编辑的草稿",
   "qc.confirmClose": "有未保存的内容，确定关闭？",
   "qc.mentionHint": "输入 @ 选择成员",
+
+  // Hermes Agent
+  "hermes.gateway": "Hermes Gateway",
+  "hermes.gatewayHint": "Hermes Agent 使用内置 Gateway 服务，支持 Telegram、Discord、Slack、WhatsApp 等平台。",
+  "hermes.noHxa": "Hermes Agent 使用自带 Gateway，无需 HXA 配置。",
 };

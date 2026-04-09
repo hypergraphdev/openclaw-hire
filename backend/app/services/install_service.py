@@ -1333,6 +1333,8 @@ def configure_hxa_only(
     compose_file: str = "",
 ) -> tuple[bool, str]:
     """Register with HXA org. Routes to product-specific impl."""
+    if product == "hermes":
+        return False, "Hermes Agent 使用自带 Gateway 服务，无需 HXA 配置。请通过 Hermes CLI 配置消息平台。"
     if product == "zylos":
         return _configure_zylos_hxa_only(instance_id, runtime_dir, compose_file, project)
     return _configure_openclaw_hxa_only(instance_id, runtime_dir, project)

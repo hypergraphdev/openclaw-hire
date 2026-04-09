@@ -438,8 +438,8 @@ export function AdminPage() {
                         </span>
                       </td>
                       <td className="py-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${g.product === "openclaw" ? "bg-blue-900/40 text-blue-300" : g.product === "zylos" ? "bg-purple-900/40 text-purple-300" : "bg-gray-800 text-gray-500"}`}>
-                          {g.product === "openclaw" ? "OC" : g.product === "zylos" ? "ZY" : "?"}
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${g.product === "openclaw" ? "bg-blue-900/40 text-blue-300" : g.product === "zylos" ? "bg-purple-900/40 text-purple-300" : g.product === "hermes" ? "bg-green-900/40 text-green-300" : "bg-gray-800 text-gray-500"}`}>
+                          {g.product === "openclaw" ? "OC" : g.product === "zylos" ? "ZY" : g.product === "hermes" ? "HM" : "?"}
                         </span>
                       </td>
                       <td className="py-2">

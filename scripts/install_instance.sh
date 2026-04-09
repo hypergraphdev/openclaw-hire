@@ -20,6 +20,9 @@ case "$PRODUCT" in
   openclaw)
     exec "$SCRIPT_DIR/install_openclaw_instance.sh" "$INSTANCE_ID" "$PRODUCT" "$REPO_URL" "$RUNTIME_ROOT"
     ;;
+  hermes)
+    exec "$SCRIPT_DIR/install_hermes_instance.sh" "$INSTANCE_ID" "$PRODUCT" "$REPO_URL" "$RUNTIME_ROOT"
+    ;;
   *)
     echo "ERROR: unsupported product '$PRODUCT'" >&2
     exit 3

@@ -18,6 +18,8 @@ def docker_run(cmd: list[str], timeout: int = 10, cwd: str | None = None) -> tup
 
 def get_container_name(instance_id: str, product: str) -> str:
     """Derive docker container name from instance_id and product type."""
+    if product == "hermes":
+        return f"hermes_{instance_id}"
     if product == "zylos":
         return f"zylos_{instance_id}"
     project_raw = f"hire_{instance_id.replace('-', '')}"
@@ -27,6 +29,8 @@ def get_container_name(instance_id: str, product: str) -> str:
 
 def get_compose_project(instance_id: str, product: str) -> str:
     """Derive docker compose project name."""
+    if product == "hermes":
+        return f"hermes_{instance_id}"
     if product == "zylos":
         return f"zylos_{instance_id}"
     project_raw = f"hire_{instance_id.replace('-', '')}"

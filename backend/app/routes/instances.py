@@ -1281,6 +1281,12 @@ from ..services.docker_utils import docker_run as _docker_run, get_container_nam
 
 def _get_sessions_paths(product: str) -> tuple[str, str]:
     """Return (sessions_json_path, sessions_dir) inside the container for each product."""
+    if product == "hermes":
+        # Hermes uses its own session storage under HERMES_HOME
+        return (
+            "/opt/data/sessions/sessions.json",
+            "/opt/data/sessions",
+        )
     if product == "zylos":
         return (
             "/home/zylos/.claude/projects/-home-zylos-zylos/.sessions.json",
