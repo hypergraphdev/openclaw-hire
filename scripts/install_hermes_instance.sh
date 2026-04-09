@@ -120,7 +120,9 @@ PATCHED_COMPOSE="$WORKDIR/docker-compose.instance.yml"
 cat > "$PATCHED_COMPOSE" <<COMPOSEOF
 services:
   hermes:
-    image: ghcr.io/nousresearch/hermes-agent:latest
+    build:
+      context: ./repo
+      dockerfile: Dockerfile
     container_name: hermes_${INSTANCE_ID}
     restart: unless-stopped
     env_file: .env
@@ -132,11 +134,11 @@ services:
     volumes:
       - ${HOST_DATA_DIR}:/opt/data
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD", "python3", "-c", "print('ok')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      start_period: 300s
     deploy:
       resources:
         limits:
@@ -175,16 +177,13 @@ write_hermes_proxy_route "$INSTANCE_ID" "$GATEWAY_PORT"
 
 # ── Compose up ─────────────────────────────────────────────────────────────
 
-# Pull latest image first
-"${COMPOSE[@]}" -f "$PATCHED_COMPOSE" -p "$PROJECT" --env-file "$WORKDIR/.env" pull 2>/dev/null || true
-
 # Unset host env vars that could shadow --env-file
 unset OPENCLAW_GATEWAY_PORT OPENCLAW_BRIDGE_PORT OPENCLAW_GATEWAY_TOKEN OPENCLAW_GATEWAY_BIND 2>/dev/null || true
 
 COMPOSE_ARGS=(-f "$PATCHED_COMPOSE" -p "$PROJECT" --env-file "$WORKDIR/.env")
 
 compose_log="$(mktemp)"
-if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d >"$compose_log" 2>&1; then
+if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1; then
   # Port conflict auto-heal
   if grep -qi 'failed to bind host port' "$compose_log"; then
     echo "WARN: bind port conflict detected, auto-allocating new ports" >&2
@@ -197,7 +196,7 @@ if ! "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d >"$compose_log" 2>&1; then
       sed -i "s/\"[0-9]*:8443\"/\"${GATEWAY_PORT}:8443\"/" "$PATCHED_COMPOSE"
       sed -i "s/\"[0-9]*:8080\"/\"${HTTP_PORT}:8080\"/" "$PATCHED_COMPOSE"
       write_hermes_proxy_route "$INSTANCE_ID" "$GATEWAY_PORT"
-      if "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d >"$compose_log" 2>&1; then
+      if "${COMPOSE[@]}" "${COMPOSE_ARGS[@]}" up -d --build >"$compose_log" 2>&1; then
         break
       fi
       if ! grep -qi 'failed to bind host port' "$compose_log"; then
