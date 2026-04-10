@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
-from ..database import site_base_url, runtime_root
+from ..database import site_base_url, runtime_root, get_user_setting, set_user_setting
 from ..deps import get_current_user, get_db
 from ..schemas import (
     PRODUCT_MAP,
@@ -2332,3 +2332,55 @@ def self_check_repair(
                 repairs.append({"name": "ai_runtime", "action": "已执行 zylos init --runtime codex"})
 
     return {"repairs": repairs, "count": len(repairs)}
+
+
+# ---------------------------------------------------------------------------
+#  User Settings (per-user API keys, model preferences)
+# ---------------------------------------------------------------------------
+
+_USER_SETTING_KEYS = {
+    "anthropic_base_url", "anthropic_auth_token",
+    "openai_base_url", "openai_api_key", "default_model",
+}
+
+
+@router.get("/user-settings")
+def get_user_settings_endpoint(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get current user's settings (API keys, model preferences)."""
+    user_id = current_user["id"]
+    result: dict[str, str] = {}
+    from ..database import get_connection
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT `key`, value FROM user_settings WHERE user_id = %s", (user_id,))
+        for row in cursor.fetchall():
+            if row["key"] in _USER_SETTING_KEYS:
+                result[row["key"]] = row["value"] or ""
+        cursor.close()
+    finally:
+        conn.close()
+    return result
+
+
+class _UserSettingsRequest(_BaseModel):
+    anthropic_base_url: str | None = None
+    anthropic_auth_token: str | None = None
+    openai_base_url: str | None = None
+    openai_api_key: str | None = None
+    default_model: str | None = None
+
+
+@router.put("/user-settings")
+def update_user_settings_endpoint(
+    req: _UserSettingsRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update current user's settings."""
+    user_id = current_user["id"]
+    updates = {k: v for k, v in req.model_dump().items() if v is not None and k in _USER_SETTING_KEYS}
+    for key, value in updates.items():
+        set_user_setting(user_id, key, value)
+    return {"ok": True, "updated": list(updates.keys())}

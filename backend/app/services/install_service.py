@@ -401,7 +401,7 @@ def _run_install(instance_id: str) -> None:
     conn = get_connection()
     try:
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, product, repo_url FROM instances WHERE id = %s", (instance_id,))
+        cursor.execute("SELECT id, product, repo_url, owner_id FROM instances WHERE id = %s", (instance_id,))
         row = cursor.fetchone()
         cursor.close()
     finally:
@@ -411,6 +411,7 @@ def _run_install(instance_id: str) -> None:
 
     product = row["product"]
     repo_url = row["repo_url"]
+    owner_id = row.get("owner_id", "")
 
     try:
         _runtime_root_path().mkdir(parents=True, exist_ok=True)
@@ -423,19 +424,20 @@ def _run_install(instance_id: str) -> None:
         _set_instance_state(instance_id, "starting")
 
         # Find scripts/ by walking up from __file__ until we find it
-        # Docker: /app/app/services/install_service.py → parent*3 = /app/
-        # Manual: /xxx/openclaw-hire/backend/app/services/install_service.py → parent*4 = /xxx/openclaw-hire/
         _p = Path(__file__).resolve().parent
         while _p != _p.parent:
             if (_p / "scripts" / "install_instance.sh").exists():
                 break
             _p = _p.parent
         script = _p / "scripts" / "install_instance.sh"
-        # Inject admin-configurable settings from DB into installer env
-        db_anthropic_base = get_setting("anthropic_base_url", "")
-        db_anthropic_token = get_setting("anthropic_auth_token", "")
-        db_openai_base = get_setting("openai_base_url", "")
-        db_openai_key = get_setting("openai_api_key", "")
+        # Inject settings: user settings take priority over admin global settings
+        from ..database import get_user_setting
+        def _get(key: str) -> str:
+            return get_user_setting(owner_id, key, "") if owner_id else get_setting(key, "")
+        db_anthropic_base = _get("anthropic_base_url")
+        db_anthropic_token = _get("anthropic_auth_token")
+        db_openai_base = _get("openai_base_url")
+        db_openai_key = _get("openai_api_key")
         db_hxa_org_id = get_setting("hxa_org_id", "")
         db_hxa_org_secret = get_setting("hxa_org_secret", "")
         install_extra_env: dict[str, str] = {}

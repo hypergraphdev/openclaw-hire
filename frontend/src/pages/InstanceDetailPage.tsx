@@ -21,6 +21,72 @@ const PRODUCT_REPOS: Record<string, string> = {
   hermes: "https://github.com/NousResearch/hermes-agent",
 };
 
+// ── User Settings Card (per-user API keys) ──
+function UserSettingsCard() {
+  const t = useT();
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    api.getUserSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await api.updateUserSettings(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch { /* */ }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <h2 className="text-sm font-medium text-gray-300">{t("userSettings.title")}</h2>
+        <span className="text-xs text-gray-500">{expanded ? "▼" : "▶"}</span>
+      </div>
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-gray-500">{t("userSettings.hint")}</p>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Base URL (ANTHROPIC_BASE_URL)</label>
+            <input value={settings.anthropic_base_url || ""} onChange={e => setSettings(s => ({ ...s, anthropic_base_url: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="https://api.anthropic.com" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Auth Token (ANTHROPIC_AUTH_TOKEN)</label>
+            <input type="password" value={settings.anthropic_auth_token || ""} onChange={e => setSettings(s => ({ ...s, anthropic_auth_token: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="sk-..." />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">OpenAI Base URL</label>
+            <input value={settings.openai_base_url || ""} onChange={e => setSettings(s => ({ ...s, openai_base_url: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="https://api.openai.com/v1" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">OpenAI API Key</label>
+            <input type="password" value={settings.openai_api_key || ""} onChange={e => setSettings(s => ({ ...s, openai_api_key: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="sk-..." />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">{t("userSettings.defaultModel")}</label>
+            <input value={settings.default_model || ""} onChange={e => setSettings(s => ({ ...s, default_model: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="claude-sonnet-4-5" />
+          </div>
+          <button onClick={handleSave} disabled={saving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors">
+            {saving ? t("common.loading") : saved ? t("adminSettings.saved") : t("common.save")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString([], {
     month: "short",
@@ -943,6 +1009,9 @@ export function InstanceDetailPage() {
               )}
             </div>
           </div>
+
+          {/* User Settings (API Keys) */}
+          <UserSettingsCard />
 
           </>)}
         </div>

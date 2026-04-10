@@ -409,6 +409,11 @@ export const en: Record<string, string> = {
   "qc.confirmClose": "Unsaved content. Close anyway?",
   "qc.mentionHint": "Type @ to mention",
 
+  // User Settings
+  "userSettings.title": "API Configuration",
+  "userSettings.hint": "Set your own API keys. Takes priority over admin global settings. Leave blank to use global defaults.",
+  "userSettings.defaultModel": "Default AI Model",
+
   // Hermes Agent
   "hermes.gateway": "Hermes Gateway",
   "hermes.gatewayHint": "Hermes Agent uses a built-in Gateway service supporting Telegram, Discord, Slack, WhatsApp, and more.",

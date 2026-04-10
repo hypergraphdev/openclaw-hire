@@ -57,6 +57,41 @@ def get_setting(key: str, default: str = "") -> str:
         return default
 
 
+def get_user_setting(user_id: str, key: str, default: str = "") -> str:
+    """Read a user-level setting. Falls back to global server_settings, then default."""
+    try:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT value FROM user_settings WHERE user_id = %s AND `key` = %s", (user_id, key))
+            row = cursor.fetchone()
+            cursor.close()
+            if row and row["value"]:
+                return row["value"]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return get_setting(key, default)
+
+
+def set_user_setting(user_id: str, key: str, value: str) -> None:
+    """Upsert a user-level setting."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO user_settings (user_id, `key`, value, updated_at) VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)",
+            (user_id, key, value, now),
+        )
+        cursor.close()
+    finally:
+        conn.close()
+
+
 def get_config(key: str, default: str = "") -> str:
     """Read a config value: DB setting > env var > default."""
     db_val = get_setting(key, "")
@@ -308,6 +343,17 @@ def init_db() -> None:
                 evaluator_api_key VARCHAR(512) DEFAULT NULL,
                 created_at VARCHAR(64) NOT NULL,
                 updated_at VARCHAR(64) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        # ── User Settings (per-user API keys etc.) ──
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id VARCHAR(64) NOT NULL,
+                `key` VARCHAR(128) NOT NULL,
+                value TEXT,
+                updated_at VARCHAR(64) DEFAULT NULL,
+                PRIMARY KEY (user_id, `key`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 

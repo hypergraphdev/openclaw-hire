@@ -409,6 +409,11 @@ export const zh: Record<string, string> = {
   "qc.confirmClose": "有未保存的内容，确定关闭？",
   "qc.mentionHint": "输入 @ 选择成员",
 
+  // User Settings
+  "userSettings.title": "API 配置",
+  "userSettings.hint": "配置您自己的 API Key，优先于管理员全局配置使用。留空则使用全局配置。",
+  "userSettings.defaultModel": "默认 AI 模型",
+
   // Hermes Agent
   "hermes.gateway": "Hermes Gateway",
   "hermes.gatewayHint": "Hermes Agent 使用内置 Gateway 服务，支持 Telegram、Discord、Slack、WhatsApp 等平台。",

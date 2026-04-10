@@ -434,4 +434,9 @@ export const api = {
     }),
   marketplaceInstallLog: (instanceId: string, itemId: string) =>
     request<MarketplaceInstall>(`/api/marketplace/install-log?instance_id=${instanceId}&item_id=${itemId}`),
+
+  // User settings (per-user API keys)
+  getUserSettings: () => request<Record<string, string>>("/api/instances/user-settings"),
+  updateUserSettings: (settings: Record<string, string>) =>
+    request<{ ok: boolean }>("/api/instances/user-settings", { method: "PUT", body: JSON.stringify(settings) }),
 };
