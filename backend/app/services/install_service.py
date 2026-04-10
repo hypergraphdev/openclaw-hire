@@ -1221,6 +1221,7 @@ def _configure_hermes_telegram_only(
     if env_path.exists():
         env = _read_env_file(env_path)
         env["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
+        env["GATEWAY_ALLOW_ALL_USERS"] = "true"
         _write_env_file(env_path, env)
 
     # Write to hermes-data/.env (container volume)
@@ -1228,10 +1229,11 @@ def _configure_hermes_telegram_only(
     if data_env.exists():
         env2 = _read_env_file(data_env)
         env2["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
+        env2["GATEWAY_ALLOW_ALL_USERS"] = "true"
         _write_env_file(data_env, env2)
     else:
         data_env.parent.mkdir(parents=True, exist_ok=True)
-        data_env.write_text(f"TELEGRAM_BOT_TOKEN={telegram_bot_token}\n")
+        data_env.write_text(f"TELEGRAM_BOT_TOKEN={telegram_bot_token}\nGATEWAY_ALLOW_ALL_USERS=true\n")
 
     # Restart container to pick up new env
     rc, out = _run(["docker", "restart", container], cwd=Path(runtime_dir))

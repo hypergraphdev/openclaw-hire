@@ -160,11 +160,48 @@ COMPOSEOF
 
 # ── Write .env ─────────────────────────────────────────────────────────────
 
+# Read user-level API settings from DB (priority over admin global settings)
+_USER_OPENAI_KEY=""
+_USER_OPENAI_BASE=""
+_USER_MODEL=""
+if command -v python3 >/dev/null 2>&1; then
+  _OWNER_ID="$(cd "$(dirname "$0")/../backend" 2>/dev/null && python3 -c "
+from app.database import get_connection
+conn = get_connection()
+cur = conn.cursor(dictionary=True)
+cur.execute('SELECT owner_id FROM instances WHERE id = %s', ('$INSTANCE_ID',))
+r = cur.fetchone()
+print(r['owner_id'] if r else '')
+cur.close(); conn.close()
+" 2>/dev/null || true)"
+  if [[ -n "$_OWNER_ID" ]]; then
+    eval "$(cd "$(dirname "$0")/../backend" 2>/dev/null && python3 -c "
+from app.database import get_user_setting
+uid = '$_OWNER_ID'
+k = get_user_setting(uid, 'openai_api_key', '')
+b = get_user_setting(uid, 'openai_base_url', '')
+m = get_user_setting(uid, 'default_model', '')
+print(f'_USER_OPENAI_KEY={k}')
+print(f'_USER_OPENAI_BASE={b}')
+print(f'_USER_MODEL={m}')
+" 2>/dev/null || true)"
+  fi
+fi
+
+# Resolve final values: user settings > env vars > empty
+_FINAL_API_KEY="${_USER_OPENAI_KEY:-${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}}"
+_FINAL_BASE_URL="${_USER_OPENAI_BASE:-${OPENAI_BASE_URL:-}}"
+_FINAL_MODEL="${_USER_MODEL:-deepseek-chat}"
+
 cat > "$WORKDIR/.env" <<ENVEOF
 # Hermes Agent Configuration
 HERMES_HOME=/opt/data
-# LLM Provider — OpenRouter (compatible with OpenAI format)
-OPENROUTER_API_KEY=${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+# LLM Provider
+OPENROUTER_API_KEY=${_FINAL_API_KEY}
+OPENAI_API_KEY=${_FINAL_API_KEY}
+OPENAI_BASE_URL=${_FINAL_BASE_URL}
+# Gateway
+GATEWAY_ALLOW_ALL_USERS=true
 # Fallback providers
 GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
 # Messaging platforms
@@ -239,6 +276,39 @@ done
 
 if [[ "$ok" -ne 1 ]]; then
   echo "WARN: hermes container not ready yet, may need more time" >&2
+fi
+
+# ── Patch config.yaml with user's LLM settings ───────────────────────────────
+
+if [[ -n "$_FINAL_API_KEY" || -n "$_FINAL_BASE_URL" || -n "$_FINAL_MODEL" ]]; then
+  # Wait for entrypoint to create config.yaml
+  for _ in $(seq 1 15); do
+    [[ -f "$HERMES_DATA_DIR/config.yaml" ]] && break
+    sleep 2
+  done
+  if [[ -f "$HERMES_DATA_DIR/config.yaml" ]]; then
+    # Determine provider from base_url
+    _PROVIDER="auto"
+    case "$_FINAL_BASE_URL" in
+      *deepseek*|*openai*|*api.together*|*api.groq*) _PROVIDER="openai" ;;
+      *openrouter*) _PROVIDER="openrouter" ;;
+      *anthropic*) _PROVIDER="anthropic" ;;
+    esac
+    docker exec "hermes_${INSTANCE_ID}" python3 -c "
+import yaml
+from pathlib import Path
+p = Path('/opt/data/config.yaml')
+cfg = yaml.safe_load(p.read_text())
+cfg.setdefault('model', {})
+cfg['model']['default'] = '${_FINAL_MODEL}'
+cfg['model']['provider'] = '${_PROVIDER}'
+if '${_FINAL_BASE_URL}':
+    cfg['model']['base_url'] = '${_FINAL_BASE_URL}'
+p.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+" 2>/dev/null || true
+    # Restart to pick up new config
+    docker restart "hermes_${INSTANCE_ID}" >/dev/null 2>&1 || true
+  fi
 fi
 
 # ── Output machine-readable metadata ───────────────────────────────────────
