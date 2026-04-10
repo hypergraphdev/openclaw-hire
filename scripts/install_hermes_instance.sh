@@ -135,6 +135,7 @@ $(echo -e "$HERMES_IMAGE_SECTION")
     env_file: .env
     stdin_open: true
     tty: true
+    command: ["gateway"]
     environment:
       HERMES_HOME: /opt/data
     ports:
