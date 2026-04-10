@@ -132,7 +132,7 @@ function MarketplaceGrid({ type }: { type: "plugin" | "skill" }) {
             </div>
 
             <div className="text-xs text-gray-500 space-y-1 mb-4">
-              <div>{t("marketplace.compatibleWith")}: <span className="text-gray-300">{item.product === "all" ? "OpenClaw, Zylos" : item.product === "openclaw" ? "OpenClaw" : "Zylos"}</span></div>
+              <div>{t("marketplace.compatibleWith")}: <span className="text-gray-300">{item.product === "all" ? "OpenClaw, Zylos, Hermes" : item.product === "openclaw" ? "OpenClaw" : item.product === "hermes" ? "Hermes Agent" : "Zylos"}</span></div>
               {item.install_time && <div>{t("marketplace.installTime")}: <span className="text-gray-300">{item.install_time}</span></div>}
             </div>
 
