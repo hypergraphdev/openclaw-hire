@@ -64,6 +64,21 @@ MARKETPLACE_ITEMS = [
         "note_zh": "安装后插件会输出二维码，请用微信扫码完成绑定。可在日志中查看扫码链接。",
     },
     {
+        "id": "weixin-hermes-plugin",
+        "type": "plugin",
+        "name": "WeChat Integration (Hermes)",
+        "name_zh": "微信插件 Hermes版",
+        "description": "Connect your Hermes Agent to WeChat. QR code login, long-poll messaging, media support via HTTP bridge.",
+        "description_zh": "将 Hermes Agent 连接微信。扫码登录、长轮询收消息、HTTP bridge 桥接。",
+        "icon": "💬",
+        "product": "hermes",
+        "tags": ["微信", "聊天", "社交"],
+        "version": "1.0.0",
+        "install_time": "~60s",
+        "note": "Installs from GitHub. After install, use WeChat login to scan QR code.",
+        "note_zh": "从 GitHub 安装。安装后使用微信登录功能扫码绑定。",
+    },
+    {
         "id": "edge-tts-skill",
         "type": "skill",
         "name": "Text to Speech",
@@ -229,6 +244,9 @@ def _run_install(instance_id: str, item_id: str, container: str):
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "weixin-zylos-plugin":
             ok, log = _install_weixin_zylos(container, instance_id, item_id)
+            _update_install(instance_id, item_id, "installed" if ok else "failed", log)
+        elif item_id == "weixin-hermes-plugin":
+            ok, log = _install_weixin_hermes(container, instance_id)
             _update_install(instance_id, item_id, "installed" if ok else "failed", log)
         elif item_id == "edge-tts-skill":
             ok, log = _install_edge_tts(container)
@@ -858,6 +876,76 @@ chmod +x {cleanup_script}"""], timeout=10)
     rc, out = _exec(["pm2", "show", "zylos-weixin", "--no-color"], timeout=10)
     if "online" in out.lower():
         _log("\n✅ 微信插件已安装并启动。请查看日志中的二维码链接完成绑定。")
+        return True, "".join(logs)
+    else:
+        _log(f"\n⚠️ 插件已安装但状态异常:\n{out}")
+        return False, "".join(logs)
+
+
+def _install_weixin_hermes(container: str, instance_id: str = "") -> tuple[bool, str]:
+    """Install hermes-weixin from GitHub into a Hermes container."""
+    logs: list[str] = []
+
+    def _log(msg: str) -> None:
+        logs.append(msg + "\n")
+        print(f"[marketplace:weixin-hermes] {msg}")
+
+    def _exec(cmd: list[str], timeout: int = 120) -> tuple[int, str]:
+        from ..services.docker_utils import docker_run
+        full_cmd = ["docker", "exec", container] + cmd
+        rc, out = docker_run(full_cmd, timeout=timeout)
+        return rc, out
+
+    _log("Step 1: Cloning hermes-weixin from GitHub...")
+    SKILL_DIR = "/opt/data/skills/hermes-weixin"
+    DATA_DIR = "/opt/data/components/weixin"
+
+    rc, out = _exec(["sh", "-c", f"""
+        if [ -d {SKILL_DIR}/.git ]; then
+            cd {SKILL_DIR} && git pull --ff-only 2>&1
+        else
+            rm -rf {SKILL_DIR}
+            git clone --depth 1 https://github.com/hypergraphdev/hermes-weixin.git {SKILL_DIR} 2>&1
+        fi
+    """], timeout=60)
+    if rc != 0:
+        _log(f"Clone failed: {out}")
+        return False, "".join(logs)
+    _log(f"Clone OK: {out[:200]}")
+
+    _log("Step 2: Installing npm dependencies...")
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install --omit=dev 2>&1"], timeout=120)
+    if rc != 0:
+        _log(f"npm install failed: {out}")
+        return False, "".join(logs)
+    _log("npm install OK")
+
+    _log("Step 3: Building TypeScript...")
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npx tsc 2>&1"], timeout=60)
+    if rc != 0:
+        _log(f"Build failed: {out}")
+        return False, "".join(logs)
+    _log("Build OK")
+
+    _log("Step 4: Creating data directories...")
+    _exec(["sh", "-c", f"mkdir -p {DATA_DIR}/logs {DATA_DIR}/accounts {DATA_DIR}/sync-buffers"], timeout=10)
+
+    _log("Step 5: Starting hermes-weixin via PM2...")
+    # Set environment for the PM2 process
+    env_cmd = (
+        f"cd {SKILL_DIR} && "
+        f"HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} WEIXIN_SKILL_DIR={SKILL_DIR} "
+        f"pm2 delete hermes-weixin 2>/dev/null; "
+        f"HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} WEIXIN_SKILL_DIR={SKILL_DIR} "
+        f"pm2 start ecosystem.config.cjs 2>&1 && pm2 save 2>&1"
+    )
+    rc, out = _exec(["sh", "-c", env_cmd], timeout=30)
+    _log(f"PM2 start: {out[:300]}")
+
+    # Verify
+    rc, out = _exec(["sh", "-c", "pm2 show hermes-weixin --no-color 2>&1"], timeout=10)
+    if "online" in out.lower():
+        _log("\n✅ 微信插件 (Hermes版) 已安装并启动。")
         return True, "".join(logs)
     else:
         _log(f"\n⚠️ 插件已安装但状态异常:\n{out}")

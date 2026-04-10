@@ -547,7 +547,17 @@ def weixin_login(
         return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
 
     if product == "hermes":
-        raise HTTPException(status_code=400, detail="Hermes 微信集成开发中，请先使用 Telegram 或其他内置平台。")
+        container = f"hermes_{instance_id}"
+        # Clear accounts and restart hermes-weixin to trigger QR login
+        subprocess.run(
+            ["docker", "exec", container, "sh", "-c",
+             "rm -f /opt/data/components/weixin/accounts.json; "
+             "rm -f /opt/data/components/weixin/accounts/*.json; "
+             "truncate -s 0 /opt/data/components/weixin/logs/out.log 2>/dev/null; "
+             "pm2 restart hermes-weixin 2>/dev/null || true"],
+            capture_output=True, timeout=15,
+        )
+        return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
     if product != "openclaw":
         raise HTTPException(status_code=400, detail="WeChat login not supported for this product.")
 
@@ -602,8 +612,14 @@ def weixin_login_log(
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     product = inst.get("product", "openclaw")
 
-    if product == "zylos":
-        # Read PM2 log via docker exec
+    if product == "hermes":
+        container = f"hermes_{instance_id}"
+        r = subprocess.run(
+            ["docker", "exec", container, "tail", "-200", "/opt/data/components/weixin/logs/out.log"],
+            capture_output=True, text=True, timeout=10,
+        )
+        content = r.stdout if r.returncode == 0 else ""
+    elif product == "zylos":
         container = f"zylos_{instance_id}"
         r = subprocess.run(
             ["docker", "exec", container, "tail", "-200", "/home/zylos/zylos/components/weixin/logs/out.log"],
