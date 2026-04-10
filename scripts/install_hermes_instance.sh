@@ -117,12 +117,19 @@ fi
 # ── Generate docker-compose.instance.yml ───────────────────────────────────
 
 PATCHED_COMPOSE="$WORKDIR/docker-compose.instance.yml"
+
+# Use pre-built image if available, otherwise build from source
+if docker image inspect hermes-agent:latest >/dev/null 2>&1; then
+  HERMES_IMAGE_SECTION="    image: hermes-agent:latest"
+else
+  echo "WARN: hermes-agent:latest not found locally, will build from source (slow)" >&2
+  HERMES_IMAGE_SECTION="    build:\n      context: ./repo\n      dockerfile: Dockerfile"
+fi
+
 cat > "$PATCHED_COMPOSE" <<COMPOSEOF
 services:
   hermes:
-    build:
-      context: ./repo
-      dockerfile: Dockerfile
+$(echo -e "$HERMES_IMAGE_SECTION")
     container_name: hermes_${INSTANCE_ID}
     restart: unless-stopped
     env_file: .env
