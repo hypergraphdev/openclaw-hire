@@ -402,7 +402,7 @@ export type MarketplaceItem = {
   description: string;
   description_zh?: string;
   icon: string;
-  product: "openclaw" | "zylos" | "all";
+  product: "openclaw" | "zylos" | "hermes" | "all";
   tags: string[];
   version: string;
   install_time?: string;
