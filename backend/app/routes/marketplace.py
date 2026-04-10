@@ -944,15 +944,40 @@ def _install_weixin_hermes(container: str, instance_id: str = "") -> tuple[bool,
     rc, out = _exec(["sh", "-c", start_cmd], timeout=15)
     _log(f"Start: {out[:200]}")
 
-    # Verify process is running
+    # Wait for QR code to appear in logs (up to 30s)
     import time
-    time.sleep(2)
-    rc, out = _exec(["sh", "-c", f"kill -0 $(cat {DATA_DIR}/hermes-weixin.pid 2>/dev/null) 2>/dev/null && echo running || echo stopped"], timeout=5)
-    if "running" in out:
-        _log("\n✅ 微信插件 (Hermes版) 已安装并启动。")
+    _log("Step 6: Waiting for WeChat QR code...")
+    qr_url = ""
+    for _ in range(15):
+        time.sleep(2)
+        rc, logout = _exec(["sh", "-c", f"tail -30 {DATA_DIR}/logs/out.log 2>/dev/null"], timeout=5)
+        if "liteapp.weixin" in logout or "二维码" in logout:
+            # Extract QR URL
+            for line in logout.splitlines():
+                if "liteapp.weixin" in line or "https://" in line:
+                    url = line.strip()
+                    if url.startswith("http"):
+                        qr_url = url
+                        break
+            if qr_url:
+                break
+        # Check if process died
+        rc2, _ = _exec(["sh", "-c", f"kill -0 $(cat {DATA_DIR}/hermes-weixin.pid 2>/dev/null) 2>/dev/null && echo ok || echo dead"], timeout=3)
+        if "dead" in _:
+            rc3, errlog = _exec(["sh", "-c", f"tail -10 {DATA_DIR}/logs/error.log 2>/dev/null"], timeout=5)
+            _log(f"\n⚠️ 插件进程已退出:\n{errlog}")
+            return False, "".join(logs)
+
+    if qr_url:
+        _log(f"\n✅ 微信插件已安装并启动！")
+        _log(f"\n📱 请用微信扫描以下链接完成绑定：")
+        _log(f"\n{qr_url}")
+        _log(f"\n（或在实例详情页点击「扫码登录」重新获取二维码）")
         return True, "".join(logs)
     else:
-        # Check logs for error
-        rc2, errlog = _exec(["sh", "-c", f"tail -10 {DATA_DIR}/logs/error.log 2>/dev/null"], timeout=5)
-        _log(f"\n⚠️ 插件已安装但进程未运行:\n{errlog}")
-        return False, "".join(logs)
+        # QR didn't appear but process running
+        rc, logout = _exec(["sh", "-c", f"tail -20 {DATA_DIR}/logs/out.log 2>/dev/null"], timeout=5)
+        _log(f"\n✅ 微信插件已安装并启动。")
+        _log(f"\n请在实例详情页点击「扫码登录」获取二维码。")
+        _log(f"\n日志:\n{logout}")
+        return True, "".join(logs)
