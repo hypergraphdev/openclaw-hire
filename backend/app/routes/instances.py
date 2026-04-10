@@ -946,7 +946,35 @@ RUNTIME_ROOT = Path(runtime_root())
 
 def _read_runtime_agent_name(instance_id: str) -> str:
     """Read agent name from runtime config files (source of truth)."""
+    from ..database import get_connection as _gc
     runtime_dir = RUNTIME_ROOT / instance_id
+    # Also check DB runtime_dir
+    try:
+        _conn = _gc()
+        _cur = _conn.cursor(dictionary=True)
+        _cur.execute("SELECT runtime_dir FROM instances WHERE id = %s", (instance_id,))
+        _row = _cur.fetchone()
+        _cur.close()
+        _conn.close()
+        if _row and _row.get("runtime_dir"):
+            db_path = Path(_row["runtime_dir"])
+            if db_path.exists() and db_path != runtime_dir:
+                runtime_dir = db_path
+    except Exception:
+        pass
+
+    # Hermes: token.json
+    hermes_cfg = runtime_dir / "hermes-data" / "components" / "hxa-connect" / "token.json"
+    if not hermes_cfg.exists():
+        hermes_cfg = runtime_dir / "components" / "hxa-connect" / "token.json"
+    if hermes_cfg.exists():
+        try:
+            cfg = json.loads(hermes_cfg.read_text())
+            name = cfg.get("bot_name", "")
+            if name:
+                return name
+        except Exception:
+            pass
 
     # OpenClaw: openclaw-config/openclaw.json
     oc_cfg = runtime_dir / "openclaw-config" / "openclaw.json"
