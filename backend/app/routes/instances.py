@@ -1647,6 +1647,8 @@ def restart_plugins(
 # ── File Browser ─────────────────────────────────────────────────────────────
 
 def _workspace_root(product: str) -> str:
+    if product == "hermes":
+        return "/opt/data"
     if product == "zylos":
         return "/home/zylos/zylos"
     return "/home/node/.openclaw/workspace"
