@@ -224,6 +224,8 @@ def _get_container_name(inst: dict) -> str:
     inst_id = inst["id"]
     project = inst.get("compose_project", "")
 
+    if product == "hermes":
+        return f"hermes_{inst_id}"
     if product == "zylos":
         return f"zylos_{inst_id}"
     elif product == "openclaw" and project:
