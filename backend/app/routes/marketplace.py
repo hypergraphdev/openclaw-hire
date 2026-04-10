@@ -932,23 +932,27 @@ def _install_weixin_hermes(container: str, instance_id: str = "") -> tuple[bool,
     _log("Step 4: Creating data directories...")
     _exec(["sh", "-c", f"mkdir -p {DATA_DIR}/logs {DATA_DIR}/accounts {DATA_DIR}/sync-buffers"], timeout=10)
 
-    _log("Step 5: Starting hermes-weixin via PM2...")
-    # Set environment for the PM2 process
-    env_cmd = (
+    _log("Step 5: Starting hermes-weixin...")
+    # Use nohup + node directly (Hermes container has no pm2)
+    start_cmd = (
         f"cd {SKILL_DIR} && "
-        f"HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} WEIXIN_SKILL_DIR={SKILL_DIR} "
-        f"pm2 delete hermes-weixin 2>/dev/null; "
-        f"HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} WEIXIN_SKILL_DIR={SKILL_DIR} "
-        f"pm2 start ecosystem.config.cjs 2>&1 && pm2 save 2>&1"
+        f"kill $(cat {DATA_DIR}/hermes-weixin.pid 2>/dev/null) 2>/dev/null; "
+        f"HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} "
+        f"nohup node dist/bot.js > {DATA_DIR}/logs/out.log 2> {DATA_DIR}/logs/error.log & "
+        f"echo $! > {DATA_DIR}/hermes-weixin.pid && echo started"
     )
-    rc, out = _exec(["sh", "-c", env_cmd], timeout=30)
-    _log(f"PM2 start: {out[:300]}")
+    rc, out = _exec(["sh", "-c", start_cmd], timeout=15)
+    _log(f"Start: {out[:200]}")
 
-    # Verify
-    rc, out = _exec(["sh", "-c", "pm2 show hermes-weixin --no-color 2>&1"], timeout=10)
-    if "online" in out.lower():
+    # Verify process is running
+    import time
+    time.sleep(2)
+    rc, out = _exec(["sh", "-c", f"kill -0 $(cat {DATA_DIR}/hermes-weixin.pid 2>/dev/null) 2>/dev/null && echo running || echo stopped"], timeout=5)
+    if "running" in out:
         _log("\n✅ 微信插件 (Hermes版) 已安装并启动。")
         return True, "".join(logs)
     else:
-        _log(f"\n⚠️ 插件已安装但状态异常:\n{out}")
+        # Check logs for error
+        rc2, errlog = _exec(["sh", "-c", f"tail -10 {DATA_DIR}/logs/error.log 2>/dev/null"], timeout=5)
+        _log(f"\n⚠️ 插件已安装但进程未运行:\n{errlog}")
         return False, "".join(logs)

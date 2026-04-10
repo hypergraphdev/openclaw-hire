@@ -548,13 +548,18 @@ def weixin_login(
 
     if product == "hermes":
         container = f"hermes_{instance_id}"
-        # Clear accounts and restart hermes-weixin to trigger QR login
+        DATA_DIR = "/opt/data/components/weixin"
+        SKILL_DIR = "/opt/data/skills/hermes-weixin"
+        # Clear accounts, kill old process, restart to trigger QR login
         subprocess.run(
             ["docker", "exec", container, "sh", "-c",
-             "rm -f /opt/data/components/weixin/accounts.json; "
-             "rm -f /opt/data/components/weixin/accounts/*.json; "
-             "truncate -s 0 /opt/data/components/weixin/logs/out.log 2>/dev/null; "
-             "pm2 restart hermes-weixin 2>/dev/null || true"],
+             f"rm -f {DATA_DIR}/accounts.json; "
+             f"rm -f {DATA_DIR}/accounts/*.json; "
+             f"truncate -s 0 {DATA_DIR}/logs/out.log 2>/dev/null; "
+             f"kill $(cat {DATA_DIR}/hermes-weixin.pid 2>/dev/null) 2>/dev/null; "
+             f"cd {SKILL_DIR} && HERMES_HOME=/opt/data WEIXIN_DATA_DIR={DATA_DIR} "
+             f"nohup node dist/bot.js > {DATA_DIR}/logs/out.log 2> {DATA_DIR}/logs/error.log & "
+             f"echo $! > {DATA_DIR}/hermes-weixin.pid"],
             capture_output=True, timeout=15,
         )
         return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
