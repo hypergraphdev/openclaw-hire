@@ -1424,6 +1424,24 @@ def _configure_hermes_hxa(instance_id: str, runtime_dir: str) -> tuple[bool, str
         try:
             token_data = json.loads(out)
             bot_name = token_data.get("bot_name", agent_name)
+            bot_token = token_data.get("token", "")
+            # Write token to DB so ws-ticket and other features work
+            if bot_token:
+                conn = get_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """INSERT INTO instance_configs (instance_id, agent_name, org_id, org_token, hub_url, plugin_name, configured_at, updated_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                           ON DUPLICATE KEY UPDATE agent_name=VALUES(agent_name), org_id=VALUES(org_id),
+                           org_token=VALUES(org_token), hub_url=VALUES(hub_url), configured_at=VALUES(configured_at), updated_at=VALUES(updated_at)""",
+                        (instance_id, bot_name, org_id, bot_token, hub_url, "hermes-hxa-connect", _utc_now(), _utc_now()),
+                    )
+                    cursor.execute("UPDATE instances SET agent_name=%s, updated_at=%s WHERE id=%s",
+                                   (bot_name, _utc_now(), instance_id))
+                    cursor.close()
+                finally:
+                    conn.close()
             _add_install_event(instance_id, "running", f"HXA configured (Hermes). Agent: {bot_name}")
             return True, f"HXA connected. Agent: {bot_name}"
         except Exception:

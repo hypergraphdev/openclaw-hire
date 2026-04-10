@@ -270,6 +270,19 @@ def _get_agent_token(instance_id: str) -> str:
             except Exception:
                 pass
 
+        # Hermes
+        hermes_cfg = runtime_dir / "hermes-data" / "components" / "hxa-connect" / "token.json"
+        if not hermes_cfg.exists():
+            hermes_cfg = runtime_dir / "components" / "hxa-connect" / "token.json"
+        if hermes_cfg.exists():
+            try:
+                cfg = json.loads(hermes_cfg.read_text())
+                token = cfg.get("token", "")
+                if token:
+                    return token
+            except Exception:
+                pass
+
         # Zylos
         zy_cfg = runtime_dir / "zylos-data" / "components" / "hxa-connect" / "config.json"
         if zy_cfg.exists():
