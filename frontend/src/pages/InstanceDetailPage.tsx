@@ -72,12 +72,12 @@ function UserSettingsCard({ product }: { product: string }) {
 
           {/* OpenAI / OpenRouter fields — all products, label differs */}
           <div>
-            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter / OpenAI Base URL" : "OpenAI Base URL"}</label>
+            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter Base URL" : "OpenAI Base URL"}</label>
             <input value={settings.openai_base_url || ""} onChange={e => setSettings(s => ({ ...s, openai_base_url: e.target.value }))}
               className={inputCls} placeholder={isHermes ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1"} />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter / OpenAI API Key" : "OpenAI API Key"}</label>
+            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter API Key" : "OpenAI API Key"}</label>
             <input type="password" value={settings.openai_api_key || ""} onChange={e => setSettings(s => ({ ...s, openai_api_key: e.target.value }))}
               className={inputCls} placeholder="sk-..." />
           </div>
