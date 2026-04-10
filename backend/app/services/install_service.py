@@ -1201,10 +1201,45 @@ def configure_telegram_only(
     if duplicated_by:
         return False, f"Telegram bot token is already used by instance {duplicated_by}."
 
+    if product == "hermes":
+        return _configure_hermes_telegram_only(instance_id, telegram_bot_token, runtime_dir)
     if product == "zylos":
         return _configure_zylos_telegram_only(instance_id, telegram_bot_token, runtime_dir, compose_file, project)
+    return _configure_openclaw_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
+
+
+def _configure_hermes_telegram_only(
+    instance_id: str,
+    telegram_bot_token: str,
+    runtime_dir: str,
+) -> tuple[bool, str]:
+    """Configure Telegram for Hermes: write to .env and hermes-data/.env, restart container."""
+    container = f"hermes_{instance_id}"
+
+    # Write to host .env
+    env_path = Path(runtime_dir) / ".env"
+    if env_path.exists():
+        env = _read_env_file(env_path)
+        env["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
+        _write_env_file(env_path, env)
+
+    # Write to hermes-data/.env (container volume)
+    data_env = Path(runtime_dir) / "hermes-data" / ".env"
+    if data_env.exists():
+        env2 = _read_env_file(data_env)
+        env2["TELEGRAM_BOT_TOKEN"] = telegram_bot_token
+        _write_env_file(data_env, env2)
     else:
-        return _configure_openclaw_telegram_only(instance_id, telegram_bot_token, runtime_dir, project)
+        data_env.parent.mkdir(parents=True, exist_ok=True)
+        data_env.write_text(f"TELEGRAM_BOT_TOKEN={telegram_bot_token}\n")
+
+    # Restart container to pick up new env
+    rc, out = _run(["docker", "restart", container], cwd=Path(runtime_dir))
+    if rc != 0:
+        return False, f"Container restart failed: {out[:500]}"
+
+    _add_install_event(instance_id, "running", "Telegram configured (Hermes).")
+    return True, "Telegram configured. Hermes Gateway will connect on restart."
 
 
 def _configure_openclaw_telegram_only(
