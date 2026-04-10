@@ -916,14 +916,14 @@ def _install_weixin_hermes(container: str, instance_id: str = "") -> tuple[bool,
     _log(f"Clone OK: {out[:200]}")
 
     _log("Step 2: Installing npm dependencies...")
-    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install --omit=dev 2>&1"], timeout=120)
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npm install 2>&1"], timeout=120)
     if rc != 0:
         _log(f"npm install failed: {out}")
         return False, "".join(logs)
     _log("npm install OK")
 
     _log("Step 3: Building TypeScript...")
-    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && npx tsc 2>&1"], timeout=60)
+    rc, out = _exec(["sh", "-c", f"cd {SKILL_DIR} && ./node_modules/.bin/tsc 2>&1"], timeout=60)
     if rc != 0:
         _log(f"Build failed: {out}")
         return False, "".join(logs)
