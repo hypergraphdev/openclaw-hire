@@ -1364,6 +1364,80 @@ def _configure_zylos_telegram_only(
 
 # ── Standalone HXA-only configuration ────────────────────────────────────────
 
+def _configure_hermes_hxa(instance_id: str, runtime_dir: str) -> tuple[bool, str]:
+    """Install hermes-hxa-connect from GitHub and start HXA bot in Hermes container."""
+    container = f"hermes_{instance_id}"
+    agent_name = _safe_agent_name(instance_id)
+    org_secret = _get_org_secret()
+    org_id = _get_org_id()
+    hub_url = _get_hub_url()
+
+    if not org_secret or not org_id:
+        return False, "Server missing org_secret/org_id. Configure HXA organization first."
+
+    # Step 1: Clone hermes-hxa-connect from GitHub
+    SKILL_DIR = "/opt/data/skills/hermes-hxa-connect"
+    DATA_DIR = "/opt/data/components/hxa-connect"
+    rc, out = _run(["docker", "exec", container, "sh", "-c",
+        f"if [ -d {SKILL_DIR}/.git ]; then cd {SKILL_DIR} && git pull --ff-only 2>&1; "
+        f"else rm -rf {SKILL_DIR} && git clone --depth 1 https://github.com/hypergraphdev/hermes-hxa-connect.git {SKILL_DIR} 2>&1; fi"
+    ])
+    if rc != 0:
+        return False, f"Clone failed: {out[:500]}"
+
+    # Step 2: Install dependencies
+    _run(["docker", "exec", container, "sh", "-c",
+        f"cd {SKILL_DIR} && pip install websockets --break-system-packages -q 2>/dev/null && "
+        f"pip install -e . --break-system-packages -q 2>/dev/null"
+    ])
+
+    # Step 3: Create data dir and config
+    _run(["docker", "exec", container, "sh", "-c", f"mkdir -p {DATA_DIR}"])
+    config = json.dumps({
+        "hub_url": hub_url,
+        "org_id": org_id,
+        "org_secret": org_secret,
+        "agent_name": agent_name,
+        "data_dir": DATA_DIR,
+        "bridge_port": 9200,
+    }, indent=2)
+    _run(["docker", "exec", container, "sh", "-c",
+        f"cat > {DATA_DIR}/config.json << 'CFGEOF'\n{config}\nCFGEOF"
+    ])
+
+    # Step 4: Start hxa bot process
+    _run(["docker", "exec", container, "sh", "-c",
+        f"kill $(cat {DATA_DIR}/hxa-bot.pid 2>/dev/null) 2>/dev/null; "
+        f"fuser -k 9200/tcp 2>/dev/null; sleep 1; "
+        f"cd {SKILL_DIR} && PYTHONPATH={SKILL_DIR} HXA_CONFIG_FILE={DATA_DIR}/config.json "
+        f"nohup python3 -m hxa_connect.bot > {DATA_DIR}/hxa-bot.log 2>&1 & "
+        f"echo $! > {DATA_DIR}/hxa-bot.pid"
+    ])
+
+    # Step 5: Wait for registration and verify
+    import time
+    time.sleep(5)
+    rc, out = _run(["docker", "exec", container, "sh", "-c",
+        f"cat {DATA_DIR}/token.json 2>/dev/null"
+    ])
+    if rc == 0 and "token" in out:
+        try:
+            token_data = json.loads(out)
+            bot_name = token_data.get("bot_name", agent_name)
+            _add_install_event(instance_id, "running", f"HXA configured (Hermes). Agent: {bot_name}")
+            return True, f"HXA connected. Agent: {bot_name}"
+        except Exception:
+            pass
+
+    # Check log for errors
+    rc2, log = _run(["docker", "exec", container, "sh", "-c", f"tail -10 {DATA_DIR}/hxa-bot.log 2>/dev/null"])
+    if "SUCCESS" in log or "Bot ready" in log:
+        _add_install_event(instance_id, "running", f"HXA configured (Hermes). Agent: {agent_name}")
+        return True, f"HXA connected. Agent: {agent_name}"
+
+    return False, f"HXA bot started but registration not confirmed. Log:\n{log[:500]}"
+
+
 def configure_hxa_only(
     instance_id: str,
     runtime_dir: str,
@@ -1373,8 +1447,8 @@ def configure_hxa_only(
 ) -> tuple[bool, str]:
     """Register with HXA org. Routes to product-specific impl."""
     if product == "hermes":
-        return False, "Hermes Agent 使用自带 Gateway 服务，无需 HXA 配置。请通过 Hermes CLI 配置消息平台。"
-    if product == "zylos":
+        return _configure_hermes_hxa(instance_id, runtime_dir)
+    elif product == "zylos":
         return _configure_zylos_hxa_only(instance_id, runtime_dir, compose_file, project)
     return _configure_openclaw_hxa_only(instance_id, runtime_dir, project)
 
