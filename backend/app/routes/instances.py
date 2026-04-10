@@ -546,6 +546,8 @@ def weixin_login(
         )
         return {"ok": True, "message": "WeChat login started. Poll /weixin-login-log for QR code."}
 
+    if product == "hermes":
+        raise HTTPException(status_code=400, detail="Hermes 微信集成开发中，请先使用 Telegram 或其他内置平台。")
     if product != "openclaw":
         raise HTTPException(status_code=400, detail="WeChat login not supported for this product.")
 
