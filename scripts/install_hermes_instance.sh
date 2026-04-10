@@ -133,6 +133,8 @@ $(echo -e "$HERMES_IMAGE_SECTION")
     container_name: hermes_${INSTANCE_ID}
     restart: unless-stopped
     env_file: .env
+    stdin_open: true
+    tty: true
     environment:
       HERMES_HOME: /opt/data
     ports:
