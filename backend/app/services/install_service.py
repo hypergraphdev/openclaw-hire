@@ -1687,6 +1687,19 @@ def _configure_openclaw_hxa_only(
     if not token:
         return False, f"HXA registration failed: {err}"
 
+    # Install latest openclaw-hxa-connect from GitHub (if not already installed)
+    ext_hxa = config_dir / "extensions" / "openclaw-hxa-connect"
+    if not ext_hxa.exists():
+        # Try openclaw plugins install first, fallback to git clone
+        rc_install, _ = _run(["docker", "exec", "-u", "root", gateway_container, "sh", "-c",
+            "chown -R 1000:1000 /home/node/.npm 2>/dev/null; "
+            "chown -R 1000:1000 /home/node/.openclaw/extensions 2>/dev/null"])
+        rc_install, out_install = _run(["docker", "exec", gateway_container, "sh", "-c",
+            "cd /home/node/.openclaw/extensions && "
+            "git clone --depth 1 https://github.com/coco-xyz/openclaw-hxa-connect.git openclaw-hxa-connect 2>&1 && "
+            "cd openclaw-hxa-connect && npm install 2>&1"
+        ])
+
     # Write agentToken to HOST openclaw.json
     try:
         cfg = json.loads(openclaw_json.read_text())
@@ -1695,14 +1708,20 @@ def _configure_openclaw_hxa_only(
     if not cfg.get("channels"):
         cfg["channels"] = {}
     cfg["channels"]["hxa-connect"] = {
-        "enabled": True,
         "hubUrl": _get_hub_url(),
         "agentToken": token,
         "agentName": agent_name,
         "agentId": agent_id,
         "orgId": _live_org_id,
-        "access": {"dmPolicy": "open", "groupPolicy": "open", "threads": {}},
+        "useWebSocket": True,
+        "access": {"dmPolicy": "open", "groupPolicy": "open", "threadMode": "mention"},
     }
+    # Register plugin in entries
+    if not cfg.get("plugins"):
+        cfg["plugins"] = {}
+    if not cfg["plugins"].get("entries"):
+        cfg["plugins"]["entries"] = {}
+    cfg["plugins"]["entries"]["openclaw-hxa-connect"] = {"enabled": True}
     openclaw_json.write_text(json.dumps(cfg, indent=2) + "\n")
 
     _run(["docker", "restart", gateway_container])

@@ -271,7 +271,7 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
     """
     import time as _time
     logs: list[str] = []
-    PLUGIN_VERSION = "2.0.1"
+    PLUGIN_VERSION = "latest"
     EXT_DIR = "/home/node/.openclaw/extensions/openclaw-weixin"
     CONFIG_PATH = "/home/node/.openclaw/openclaw.json"
 
@@ -312,40 +312,26 @@ def _install_weixin(container: str, instance_id: str = "", item_id: str = "") ->
     # Step 1.5: Fix npm cache permissions (may be root-owned after upgrade)
     _exec(["chown", "-R", "1000:1000", "/home/node/.npm"], user="root", timeout=15)
 
-    # Step 2: Download and extract plugin
-    _log("\n=== 安装微信插件 %s ===" % PLUGIN_VERSION)
+    # Step 2: Install via openclaw plugins install (official method)
+    _log("\n=== 安装微信插件 (latest) ===")
     _flush()
-    rc, out = _exec(["sh", "-c", f"mkdir -p {EXT_DIR} && cd {EXT_DIR} && npm pack @tencent-weixin/openclaw-weixin@{PLUGIN_VERSION} 2>&1"], timeout=60)
-    _log(out)
+    # Remove old version if exists
+    _exec(["sh", "-c", f"rm -rf {EXT_DIR}"], user="root", timeout=10)
+    rc, out = _exec(["openclaw", "plugins", "install", f"@tencent-weixin/openclaw-weixin@{PLUGIN_VERSION}"], timeout=120)
+    _log(out[-500:] if len(out) > 500 else out)
     _flush()
-    if rc != 0 or ".tgz" not in out:
-        _log("❌ 下载插件包失败")
-        return False, "".join(logs)
-
-    tgz_file = ""
-    for line in out.strip().split("\n"):
-        line = line.strip()
-        if line.endswith(".tgz") and not line.startswith("npm"):
-            tgz_file = line
-            break
-    if not tgz_file:
-        _log("❌ 未找到 tgz 文件名，npm pack 输出:\n" + out)
-        return False, "".join(logs)
-
-    rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && tar xzf {tgz_file} --strip-components=1 && rm -f {tgz_file}"])
-    if rc != 0:
-        _log(f"❌ 解压失败: {out}")
-        return False, "".join(logs)
-    _log("解压完成")
-
-    _log("安装依赖...")
-    _flush()
-    rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && npm install --production 2>&1 | tail -5"], timeout=120)
-    _log(out)
-    _flush()
+    if "Installed plugin" not in out and not os.path.exists(f"{EXT_DIR}/package.json"):
+        # Fallback: manual npm install
+        _log("官方安装失败，尝试手动安装...")
+        _exec(["sh", "-c", f"mkdir -p {EXT_DIR}"], timeout=5)
+        rc, out = _exec(["sh", "-c", f"cd {EXT_DIR} && npm pack @tencent-weixin/openclaw-weixin@latest 2>&1 && "
+                         f"tgz=$(ls *.tgz | head -1) && tar xzf $tgz --strip-components=1 && rm -f $tgz && "
+                         f"npm install --production 2>&1 | tail -5"], timeout=120)
+        _log(out[-300:] if len(out) > 300 else out)
+        _flush()
 
     # Verify version
-    rc, out = _exec(["sh", "-c", f"cat {EXT_DIR}/package.json | grep '\"version\"' | head -1"])
+    rc, out = _exec(["sh", "-c", f"cat {EXT_DIR}/package.json 2>/dev/null | grep '\"version\"' | head -1"])
     _log(f"插件版本: {out.strip()}")
 
     # Step 3: Ensure channel config
