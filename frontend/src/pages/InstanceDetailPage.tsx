@@ -22,12 +22,13 @@ const PRODUCT_REPOS: Record<string, string> = {
 };
 
 // ── User Settings Card (per-user API keys) ──
-function UserSettingsCard() {
+function UserSettingsCard({ product }: { product: string }) {
   const t = useT();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const isHermes = product === "hermes";
 
   useEffect(() => {
     api.getUserSettings().then(setSettings).catch(() => {});
@@ -43,6 +44,8 @@ function UserSettingsCard() {
     finally { setSaving(false); }
   }
 
+  const inputCls = "w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono";
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
       <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpanded(!expanded)}>
@@ -52,30 +55,37 @@ function UserSettingsCard() {
       {expanded && (
         <div className="mt-3 space-y-3">
           <p className="text-xs text-gray-500">{t("userSettings.hint")}</p>
+
+          {/* Anthropic fields — OpenClaw / Zylos only */}
+          {!isHermes && (<>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Anthropic Base URL</label>
+              <input value={settings.anthropic_base_url || ""} onChange={e => setSettings(s => ({ ...s, anthropic_base_url: e.target.value }))}
+                className={inputCls} placeholder="https://api.anthropic.com" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Anthropic Auth Token</label>
+              <input type="password" value={settings.anthropic_auth_token || ""} onChange={e => setSettings(s => ({ ...s, anthropic_auth_token: e.target.value }))}
+                className={inputCls} placeholder="sk-..." />
+            </div>
+          </>)}
+
+          {/* OpenAI / OpenRouter fields — all products, label differs */}
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Base URL (ANTHROPIC_BASE_URL)</label>
-            <input value={settings.anthropic_base_url || ""} onChange={e => setSettings(s => ({ ...s, anthropic_base_url: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="https://api.anthropic.com" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Auth Token (ANTHROPIC_AUTH_TOKEN)</label>
-            <input type="password" value={settings.anthropic_auth_token || ""} onChange={e => setSettings(s => ({ ...s, anthropic_auth_token: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="sk-..." />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">OpenAI Base URL</label>
+            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter / OpenAI Base URL" : "OpenAI Base URL"}</label>
             <input value={settings.openai_base_url || ""} onChange={e => setSettings(s => ({ ...s, openai_base_url: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="https://api.openai.com/v1" />
+              className={inputCls} placeholder={isHermes ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1"} />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">OpenAI API Key</label>
+            <label className="text-xs text-gray-500 block mb-1">{isHermes ? "OpenRouter / OpenAI API Key" : "OpenAI API Key"}</label>
             <input type="password" value={settings.openai_api_key || ""} onChange={e => setSettings(s => ({ ...s, openai_api_key: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="sk-..." />
+              className={inputCls} placeholder="sk-..." />
           </div>
+
           <div>
             <label className="text-xs text-gray-500 block mb-1">{t("userSettings.defaultModel")}</label>
             <input value={settings.default_model || ""} onChange={e => setSettings(s => ({ ...s, default_model: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 font-mono" placeholder="claude-sonnet-4-5" />
+              className={inputCls} placeholder={isHermes ? "anthropic/claude-sonnet-4-5" : "claude-sonnet-4-5"} />
           </div>
           <button onClick={handleSave} disabled={saving}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-md transition-colors">
@@ -1011,7 +1021,7 @@ export function InstanceDetailPage() {
           </div>
 
           {/* User Settings (API Keys) */}
-          <UserSettingsCard />
+          <UserSettingsCard product={instance.product} />
 
           </>)}
         </div>
