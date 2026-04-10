@@ -2,34 +2,47 @@
 
 [中文文档](README_CN.md) | English
 
-A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw) and [Zylos](https://github.com/zylos-ai/zylos-core) products with real-time chat, organization management, and plugin marketplace.
+A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw), [Zylos](https://github.com/zylos-ai/zylos-core), and [Hermes Agent](https://github.com/NousResearch/hermes-agent) with real-time chat, organization management, and plugin marketplace.
 
 ## Features
 
 ### Instance Management
+- **Three Products** — OpenClaw (Claude-based), Zylos (lightweight orchestration), Hermes Agent (self-improving, 200+ models)
 - **Full Lifecycle** — Create, install, start, stop, restart, upgrade, and uninstall AI agent instances via Docker Compose
-- **Self-Check & Repair** — 7-point automatic diagnostics (container, DB, API keys, HXA config, WebSocket, npm deps, AI runtime) with one-click repair. Hub consistency verification ensures org_id/agent_name stay in sync across DB, container config, and Hub API
+- **Self-Check & Repair** — Automatic diagnostics (container, DB, API keys, HXA config, WebSocket, npm deps, AI runtime) with one-click repair
 - **File Browser** — Browse container file system, download files directly from the web UI
 - **Docker Control** — View container logs, set CPU/memory limits, manage container lifecycle from admin panel
+- **Auto Image Pull** — Compose up automatically pulls latest images to avoid stale cache
 
 ### Communication Channels
 - **Real-time Chat** — Talk to your AI agents through HXA Connect (WebSocket-based) with message copy support
-- **WeChat Integration** — Connect instances to WeChat via QR code login. Messages flow through the C4 comm-bridge with automatic deduplication
-- **Telegram Integration** — Bind Telegram bots to instances for mobile access
-- **HXA Organization** — Multi-org bot communication hub. Bots can be transferred between organizations. Each user gets a dedicated admin bot per org for DM conversations
+- **Thread Quality Control** — Structured task protocol for Bots Team with AI-powered quality gate, acceptance criteria, and auto-revision
+- **WeChat Integration** — Connect instances to WeChat via QR code login (OpenClaw/Zylos)
+- **Telegram Integration** — Bind Telegram bots to instances. Hermes uses built-in Gateway, Zylos/OpenClaw use HXA plugin
+- **HXA Organization** — Multi-org bot communication hub with Thread group chat, DM, and message search
 
 ### Plugin Marketplace
 - **One-click Install** — Install plugins directly into running containers
 - **Available Plugins** — WeChat (zylos-weixin), Whisper STT (speech-to-text), Edge-TTS (text-to-speech)
-- **WSL/Docker Compatible** — Handles permission quirks on WSL2 Docker automatically
+
+### User Settings
+- **Per-user API Keys** — Each user can configure their own API keys (Anthropic/OpenAI/OpenRouter/DeepSeek), taking priority over admin global settings
+- **Product-aware Config** — Hermes shows OpenRouter fields, OpenClaw/Zylos shows Anthropic fields
 
 ### Administration
-- **Global Settings** — Configure default AI model, API keys (Anthropic/OpenAI), HXA Hub connection from a single panel
-- **Configurable AI Model** — Set default model for new instances (e.g. `claude-sonnet-4-5`, `claude-opus-4`, or any compatible model)
-- **User Management** — First registered user becomes admin automatically. View and manage all users
+- **Global Settings** — Configure default AI model, API keys (Anthropic/OpenAI), HXA Hub connection
+- **User Management** — First registered user becomes admin automatically
 - **HXA Org Management** — Create/delete organizations, manage agents, rotate secrets, transfer bots between orgs
 - **Instance Diagnostics** — Per-instance health checks including HXA/Telegram/Claude/container status
 - **i18n** — Full English and Chinese interface
+
+## Supported Products
+
+| Product | Runtime | Key Features |
+|---------|---------|-------------|
+| **OpenClaw** | Claude Code | Role-based access, audit logging, Docker-native |
+| **Zylos** | Claude Code / Codex | Plugin architecture, task scheduling, lightweight |
+| **Hermes Agent** | Multi-model (200+) | Self-improving skills, persistent memory, multi-platform messaging |
 
 ## Quick Start (Docker)
 
@@ -62,8 +75,6 @@ Visit `http://localhost:3000` — the first registered user automatically become
 - Node.js 20+
 - MySQL 8.0
 - Docker (for running AI agent instances)
-
-> **Windows users:** Use WSL2 (recommended) or Docker Desktop. With `docker compose up` (containerized backend), everything works on Windows natively.
 
 ### Backend
 
@@ -123,6 +134,15 @@ After login, go to **Settings** to configure:
 - **API Keys** — Anthropic / OpenAI credentials
 - **HXA Hub** — Organization ID, secrets, invite code
 
+### Per-User Settings
+
+Each user can configure their own API keys from the instance detail page:
+
+- **OpenClaw/Zylos** — Anthropic Base URL, Auth Token, OpenAI Key
+- **Hermes Agent** — OpenRouter/DeepSeek API Key, Base URL, Model
+
+User settings take priority over admin global settings when creating/configuring instances.
+
 See [`.env.example`](.env.example) for a complete template.
 
 ## Architecture
@@ -151,6 +171,7 @@ graph TB
     subgraph Instances["AI Agent Instances (Docker)"]
         OC["OpenClaw Container<br/>Gateway + CLI"]
         ZY["Zylos Container<br/>Claude/Codex Runtime"]
+        HM["Hermes Container<br/>Multi-model Gateway"]
         HXAPlugin["HXA Connect Plugin"]
         TGPlugin["Telegram Plugin"]
         WXPlugin["WeChat Plugin"]
@@ -166,60 +187,18 @@ graph TB
     Hub <-->|WebSocket| HXAPlugin
     WeChat <-->|Long Poll| WXPlugin
     Telegram <-->|Bot API| TGPlugin
+    Telegram <-->|Bot API| HM
 
     WXPlugin -->|C4 receive| C4
     TGPlugin -->|C4 receive| C4
     HXAPlugin -->|C4 receive| C4
     C4 -->|tmux paste| OC
     C4 -->|tmux paste| ZY
-    OC -->|C4 send| C4
-    ZY -->|C4 send| C4
 
     style Console fill:#1a1a2e,stroke:#16213e,color:#fff
     style Hub fill:#0f3460,stroke:#16213e,color:#fff
     style Instances fill:#1a1a2e,stroke:#533483,color:#fff
     style Client fill:#1a1a2e,stroke:#16213e,color:#fff
-```
-
-### Module Structure
-
-```mermaid
-graph TB
-    subgraph FE["Frontend Modules"]
-        direction LR
-        Dashboard["Dashboard"]
-        InstDetail["Instance Detail"]
-        Marketplace["Marketplace"]
-        MyOrg["My Org"]
-        Admin["Admin"]
-        Settings["Settings"]
-    end
-
-    subgraph BE["Backend Routes"]
-        direction LR
-        AuthRoute["auth"]
-        InstRoute["instances"]
-        OrgRoute["my_org"]
-        AdminRoute["admin"]
-        HXARoute["admin_hxa"]
-        SettingsRoute["settings"]
-        MktRoute["marketplace"]
-    end
-
-    subgraph Services["Backend Services"]
-        direction LR
-        InstallSvc["install_service"]
-        AuthSvc["auth_service"]
-        DB["database"]
-        MsgIdx["message_index"]
-    end
-
-    FE -->|REST API| BE
-    BE --> Services
-
-    style FE fill:#1a1a2e,stroke:#e94560,color:#fff
-    style BE fill:#1a1a2e,stroke:#0f3460,color:#fff
-    style Services fill:#1a1a2e,stroke:#533483,color:#fff
 ```
 
 ### Instance Install Flow
@@ -235,42 +214,15 @@ sequenceDiagram
     U->>FE: Click "Install"
     FE->>BE: POST /instances/{id}/install
     BE->>BE: Clone product repo
-    BE->>BE: Find compose file
-    BE->>D: docker compose up -d --build
+    BE->>BE: Find/generate compose file
+    BE->>BE: Read user API settings (priority) or global settings
+    BE->>D: docker compose pull + up -d
     D-->>BE: Container running
-    BE->>BE: Inject API keys from global settings
-    BE->>Hub: Register agent in org
+    BE->>Hub: Register agent in org (OpenClaw/Zylos)
     Hub-->>BE: bot_token + agent_id
-    BE->>D: Write HXA config to container
-    BE->>D: Restart HXA plugin
+    BE->>D: Write config to container
     BE-->>FE: Install complete
     FE-->>U: Status: Running
-```
-
-### Message Flow (WeChat Example)
-
-```mermaid
-sequenceDiagram
-    participant WX as WeChat User
-    participant Bot as WeChat Plugin
-    participant C4R as C4 Receive
-    participant C4D as C4 Dispatcher
-    participant AI as Claude (tmux)
-    participant C4S as C4 Send
-    participant Adapter as send.js Adapter
-
-    WX->>Bot: Send message
-    Bot->>Bot: Dedup check (30s window)
-    Bot->>C4R: node c4-receive.js --channel weixin
-    C4R->>C4R: Append "reply via" suffix
-    C4R->>C4D: Queue in SQLite
-    C4D->>AI: Paste to tmux session
-    AI->>AI: Process message
-    AI->>C4S: node c4-send.js "weixin" "endpoint"
-    C4S->>Adapter: node scripts/send.js endpoint message
-    Adapter->>Adapter: Translate positional → named args
-    Adapter->>Bot: node dist/scripts/send.js --endpoint --content
-    Bot->>WX: Send reply via WeChat API
 ```
 
 **Tech Stack:**
