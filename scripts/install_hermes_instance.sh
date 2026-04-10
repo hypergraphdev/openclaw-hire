@@ -287,13 +287,9 @@ if [[ -n "$_FINAL_API_KEY" || -n "$_FINAL_BASE_URL" || -n "$_FINAL_MODEL" ]]; th
     sleep 2
   done
   if [[ -f "$HERMES_DATA_DIR/config.yaml" ]]; then
-    # Determine provider from base_url
+    # Provider: use "auto" — Hermes auto-detects from base_url
+    # Known providers: openrouter, gemini, anthropic, deepseek, kimi-coding, minimax, etc.
     _PROVIDER="auto"
-    case "$_FINAL_BASE_URL" in
-      *deepseek*|*openai*|*api.together*|*api.groq*) _PROVIDER="openai" ;;
-      *openrouter*) _PROVIDER="openrouter" ;;
-      *anthropic*) _PROVIDER="anthropic" ;;
-    esac
     docker exec "hermes_${INSTANCE_ID}" python3 -c "
 import yaml
 from pathlib import Path
