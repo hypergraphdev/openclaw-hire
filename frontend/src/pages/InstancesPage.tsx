@@ -25,8 +25,9 @@ function InstallDot({ state }: { state: string }) {
 
 /** Colored dot for config + org online state */
 function ConfigDot({ inst }: { inst: Instance }) {
-  if (!inst.agent_name) return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" title="未配置组织" />;
-  return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" title="已配置" />;
+  const t = useT();
+  if (!inst.agent_name) return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" title={t("instances.orgNotConfigured")} />;
+  return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" title={t("instances.configured")} />;
 }
 
 // ─── Three-dot dropdown menu ────────────────────────────────────────
@@ -84,7 +85,7 @@ function ActionMenu({
               className="block w-full text-left px-3 py-2 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
               onClick={() => { setOpen(false); onRename(); }}
             >
-              改名
+              {t("instances.rename")}
             </button>
           )}
           <button
@@ -111,13 +112,14 @@ function RenameDialog({
   onClose: () => void;
   onRenamed: (id: string, newName: string) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSave() {
     const trimmed = name.trim();
-    if (!trimmed || trimmed.length < 2) { setError("名称至少2个字符"); return; }
+    if (!trimmed || trimmed.length < 2) { setError(t("instances.nameMinLength")); return; }
     setSaving(true);
     setError("");
     try {
@@ -125,7 +127,7 @@ function RenameDialog({
       onRenamed(inst.id, res.agent_name);
       onClose();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "改名失败");
+      setError(e instanceof Error ? e.message : t("instances.renameFailed"));
     } finally {
       setSaving(false);
     }
@@ -134,27 +136,27 @@ function RenameDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-medium text-white mb-3">修改组织内名称</h3>
+        <h3 className="text-sm font-medium text-white mb-3">{t("instances.renameTitle")}</h3>
         <p className="text-xs text-gray-500 mb-2">当前: <span className="font-mono text-gray-400">{inst.agent_name}</span></p>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="输入新名称..."
+          placeholder={t("instances.namePlaceholder")}
           className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 placeholder-gray-500"
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
           autoFocus
         />
-        <p className="text-[11px] text-gray-600 mt-1">名称未以 _Bot 结尾时会自动补全</p>
+        <p className="text-[11px] text-gray-600 mt-1">{t("instances.nameHint")}</p>
         {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5">取消</button>
+          <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5">{t("common.cancel")}</button>
           <button
             onClick={handleSave}
             disabled={saving || !name.trim()}
             className="text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-1.5 rounded transition-colors"
           >
-            {saving ? "保存中..." : "确定"}
+            {saving ? t("instances.saving") : t("common.ok")}
           </button>
         </div>
       </div>
@@ -176,6 +178,7 @@ function InstanceCard({
   deleting: boolean;
 }) {
   const navigate = useNavigate();
+  const t = useT();
   const isRunning = inst.install_state === "running";
   const isConfigured = inst.is_telegram_configured && !!inst.agent_name;
   const productIcon = inst.product === "zylos" ? "🤖" : "🔷";
@@ -202,7 +205,7 @@ function InstanceCard({
           {inst.install_state}
         </span>
         <span className={`text-[11px] px-2 py-0.5 rounded-full ${isConfigured ? "bg-blue-900/30 text-blue-400" : "bg-amber-900/30 text-amber-400"}`}>
-          {isConfigured ? "已配置" : inst.agent_name ? "TG未配置" : "未配置"}
+          {isConfigured ? t("instances.configured") : inst.agent_name ? t("instances.tgNotConfigured") : t("instances.orgNotConfigured")}
         </span>
         <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 capitalize">{inst.product}</span>
       </div>
@@ -217,25 +220,25 @@ function InstanceCard({
         )}
         {inst.org_name && (
           <div className="flex justify-between">
-            <span className="text-gray-500">组织</span>
+            <span className="text-gray-500">{t("instances.org")}</span>
             <span className="text-blue-400 truncate ml-2">{inst.org_name}</span>
           </div>
         )}
         {inst.web_console_port && (
           <div className="flex justify-between">
-            <span className="text-gray-500">端口</span>
+            <span className="text-gray-500">{t("instances.ports")}</span>
             <span className="text-gray-300 font-mono">{inst.web_console_port}{inst.http_port ? ` / ${inst.http_port}` : ""}</span>
           </div>
         )}
         <div className="flex justify-between">
-          <span className="text-gray-500">部署</span>
+          <span className="text-gray-500">{t("instances.deploy")}</span>
           <span className="text-gray-400">{formatDate(inst.created_at)}</span>
         </div>
       </div>
 
       {/* Quick actions bar */}
       <div className="mt-3 pt-3 border-t border-gray-800 flex items-center justify-between">
-        <button onClick={() => navigate(`/instances/${inst.id}`)} className="text-[11px] text-blue-400 hover:text-blue-300">管理 →</button>
+        <button onClick={() => navigate(`/instances/${inst.id}`)} className="text-[11px] text-blue-400 hover:text-blue-300">{t("instances.manage")}</button>
         <button onClick={() => navigate(`/instances/${inst.id}#chat`)} className="text-[11px] text-gray-500 hover:text-gray-300">💬 聊天</button>
       </div>
     </div>
@@ -387,9 +390,9 @@ export function InstancesPage() {
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.name")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.product")}</th>
-                  <th className="text-center px-3 py-3 text-xs text-gray-500 font-medium" title="安装状态">状态</th>
+                  <th className="text-center px-3 py-3 text-xs text-gray-500 font-medium">{t("admin.state")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.configured")}</th>
-                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">组织</th>
+                  <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.org")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.orgName")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.ports")}</th>
                   <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">{t("instances.deployed")}</th>

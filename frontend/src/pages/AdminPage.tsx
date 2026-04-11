@@ -24,6 +24,7 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
   const values = config.values || {};
 
   // Editable fields: keys that are marked configurable OR the known hardcoded ones we want to expose
+  const t = useT();
   const editableKeys = [
     { key: "periodic_probe_interval", label: "定期探针间隔", hardcoded: 180 },
     { key: "health_check_interval", label: "健康检查间隔", hardcoded: 21600 },
@@ -49,25 +50,25 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
     try {
       const r = await api.adminZylosConfig(instanceId, updates, restart);
       const msgs: string[] = [];
-      if (r.patched) msgs.push("源码已自动 patch");
-      msgs.push(restart ? "pm2 已重启，立即生效" : "已保存（需重启生效）");
+      if (r.patched) msgs.push(t("admin.patchedAuto"));
+      msgs.push(restart ? t("admin.pm2Restarted") : t("admin.savedNeedRestart"));
       setMsg(msgs.join("，"));
       onUpdated();
     } catch (e: unknown) {
-      setMsg((e as Error).message || "保存失败");
+      setMsg((e as Error).message || t("admin.saveFailed"));
     }
     setSaving(false);
   }
 
   function formatInterval(sec: number): string {
-    if (sec >= 3600) return `${(sec / 3600).toFixed(sec % 3600 ? 1 : 0)}小时`;
-    if (sec >= 60) return `${Math.floor(sec / 60)}分钟`;
-    return `${sec}秒`;
+    if (sec >= 3600) return t("admin.hours", { n: (sec / 3600).toFixed(sec % 3600 ? 1 : 0) });
+    if (sec >= 60) return t("admin.minutes", { n: Math.floor(sec / 60) });
+    return t("admin.secs", { n: sec });
   }
 
   return (
     <div className="bg-gray-800/50 rounded p-3">
-      <h4 className="text-gray-400 font-medium mb-2 text-xs">Activity Monitor 配置
+      <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.activityMonitorConfig")}
         <span className="text-gray-600 ml-2 font-mono text-[10px]">{config.path}</span>
       </h4>
       <div className="space-y-2">
@@ -80,20 +81,20 @@ function ZylosConfigPanel({ config, instanceId, onUpdated }: { config: any; inst
               <input type="number" min={10} value={drafts[key]}
                 onChange={(e) => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
                 className="w-24 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 focus:outline-none focus:border-gray-500" />
-              <span className="text-gray-600">秒</span>
+              <span className="text-gray-600">{t("admin.seconds")}</span>
               <span className="text-gray-600">= {formatInterval(currentVal)}</span>
-              {meta && <span className="text-gray-700 text-[10px]">默认 {meta.default}</span>}
+              {meta && <span className="text-gray-700 text-[10px]">{t("admin.default", { value: meta.default })}</span>}
             </div>
           );
         })}
         <div className="flex items-center gap-2 pt-1">
           <button onClick={() => handleSave(false)} disabled={saving}
             className="px-3 py-1 text-xs rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
-            {saving ? "..." : "仅保存"}
+            {saving ? "..." : t("admin.saveOnly")}
           </button>
           <button onClick={() => handleSave(true)} disabled={saving}
             className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
-            {saving ? "..." : "保存并重启 ✓"}
+            {saving ? "..." : t("admin.saveAndRestart")}
           </button>
           {msg && <span className={`text-xs ${msg.includes("生效") || msg.includes("patch") ? "text-green-400" : msg.startsWith("已") ? "text-green-400" : "text-red-400"}`}>{msg}</span>}
         </div>
@@ -255,7 +256,7 @@ export function AdminPage() {
   async function handleTransfer(inst: Instance) {
     if (!transferTarget) return;
     const targetName = orgMap[transferTarget] || transferTarget;
-    if (!confirm(`确定将 "${inst.agent_name}" 转移到组织 "${targetName}"？Bot 将重新注册。`)) return;
+    if (!confirm(t("admin.confirmTransfer", { name: inst.agent_name || "", target: targetName }))) return;
     setTransferring(true);
     try {
       await api.hxaTransferBot(inst.id, transferTarget);
@@ -291,8 +292,8 @@ export function AdminPage() {
   }
 
   async function handleControl(instId: string, action: string) {
-    const labels: Record<string, string> = { stop: "停止", start: "启动", restart: "重启", kill_claude: "杀掉 Claude" };
-    if (!confirm(`确定要 ${labels[action] || action} 这个实例？`)) return;
+    const labels: Record<string, string> = { stop: t("admin.actionStop"), start: t("admin.actionStart"), restart: t("admin.actionRestart"), kill_claude: t("admin.actionKillClaude") };
+    if (!confirm(`${labels[action] || action}?`)) return;
     setControlLoading(action);
     try {
       const res = await api.adminInstanceControl(instId, action);
@@ -349,10 +350,10 @@ export function AdminPage() {
 
   function formatUptime(seconds: number | null): string {
     if (seconds === null || seconds === undefined) return "-";
-    if (seconds < 60) return `${seconds}秒`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时 ${Math.floor((seconds % 3600) / 60)}分`;
-    return `${Math.floor(seconds / 86400)}天 ${Math.floor((seconds % 86400) / 3600)}小时`;
+    if (seconds < 60) return t("admin.secs", { n: seconds });
+    if (seconds < 3600) return t("admin.minutes", { n: Math.floor(seconds / 60) });
+    if (seconds < 86400) return t("admin.hoursMin", { h: Math.floor(seconds / 3600), m: Math.floor((seconds % 3600) / 60) });
+    return t("admin.days", { n: Math.floor(seconds / 86400), h: Math.floor((seconds % 86400) / 3600) });
   }
 
   return (
@@ -383,36 +384,36 @@ export function AdminPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-gray-400">
-              共 <span className="text-white font-medium">{dockerGroups.length}</span> 组
+              {t("admin.totalGroups", { count: dockerGroups.length })}
               {" · "}
-              <span className="text-amber-400 font-medium">{dockerGroups.filter(g => g.is_orphan).length}</span> 孤儿
+              <span className="text-amber-400 font-medium">{dockerGroups.filter(g => g.is_orphan).length}</span> {t("admin.orphan")}
               {" · "}
-              <span className="text-purple-400 font-medium">{dockerGroups.filter(g => g.is_ghost).length}</span> 幽灵
+              <span className="text-purple-400 font-medium">{dockerGroups.filter(g => g.is_ghost).length}</span> {t("admin.ghost")}
               {" · "}
-              <span className="text-gray-500">{dockerGroups.filter(g => g.containers.length > 0 && g.containers.every(c => c.state !== "running")).length}</span> 已停止
+              <span className="text-gray-500">{dockerGroups.filter(g => g.containers.length > 0 && g.containers.every(c => c.state !== "running")).length}</span> {t("status.stopped")}
             </div>
             <button onClick={loadDockerContainers} disabled={dockerLoading}
               className="px-3 py-1 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-50">
-              {dockerLoading ? "加载中..." : "🔄 刷新"}
+              {dockerLoading ? t("common.loading") : "🔄 " + t("session.refresh")}
             </button>
           </div>
 
           {dockerLoading && dockerGroups.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+            <div className="text-sm text-gray-500 text-center py-8">{t("common.loading")}</div>
           ) : dockerGroups.length === 0 ? (
-            <div className="text-sm text-gray-500 text-center py-8">暂无容器</div>
+            <div className="text-sm text-gray-500 text-center py-8">{t("admin.noContainers")}</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-gray-500 text-xs border-b border-gray-800">
                   <th className="text-left pb-2 w-8"></th>
-                  <th className="text-left pb-2">容器组</th>
-                  <th className="text-left pb-2">产品</th>
-                  <th className="text-left pb-2">关联实例</th>
-                  <th className="text-left pb-2">所有者</th>
+                  <th className="text-left pb-2">{t("admin.containerGroups")}</th>
+                  <th className="text-left pb-2">{t("admin.product")}</th>
+                  <th className="text-left pb-2">{t("admin.linkedInstance")}</th>
+                  <th className="text-left pb-2">{t("admin.owner")}</th>
                   <th className="text-left pb-2">Runtime</th>
-                  <th className="text-left pb-2">容器</th>
-                  <th className="text-right pb-2">操作</th>
+                  <th className="text-left pb-2">{t("admin.containers")}</th>
+                  <th className="text-right pb-2">{t("adminHxa.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -424,12 +425,12 @@ export function AdminPage() {
                       className={`border-b border-gray-800/50 ${g.is_orphan ? "border-l-2 border-l-amber-500 bg-amber-900/10" : g.is_ghost ? "border-l-2 border-l-purple-500 bg-purple-900/10" : ""}`}>
                       <td className="py-2 pl-2">
                         {g.is_ghost ? (
-                          <span className="inline-block w-2 h-2 rounded-full bg-purple-500" title="幽灵：DB有记录但无容器" />
+                          <span className="inline-block w-2 h-2 rounded-full bg-purple-500" title={t("admin.ghost")} />
                         ) : isOrphanDir ? (
-                          <span className="inline-block w-2 h-2 rounded-full bg-gray-600" title="仅目录" />
+                          <span className="inline-block w-2 h-2 rounded-full bg-gray-600" title={t("admin.dirOnly")} />
                         ) : (
                           <span className={`inline-block w-2 h-2 rounded-full ${isRunning ? "bg-green-400" : "bg-gray-600"}`}
-                            title={isRunning ? "运行中" : "已停止"} />
+                            title={isRunning ? t("status.running") : t("status.stopped")} />
                         )}
                       </td>
                       <td className="py-2">
@@ -454,9 +455,9 @@ export function AdminPage() {
                       <td className="py-2 text-gray-400 text-xs">{g.owner_email || "-"}</td>
                       <td className="py-2">
                         {g.runtime_exists ? (
-                          <span className="text-green-400 text-xs" title={g.runtime_dir || ""}>✓ 存在</span>
+                          <span className="text-green-400 text-xs" title={g.runtime_dir || ""}>{t("admin.exists")}</span>
                         ) : g.runtime_dir ? (
-                          <span className="text-red-400 text-xs">✗ 不存在</span>
+                          <span className="text-red-400 text-xs">{t("admin.notExists")}</span>
                         ) : (
                           <span className="text-gray-600 text-xs">-</span>
                         )}
@@ -468,7 +469,7 @@ export function AdminPage() {
                             {c.name.replace(g.project + "-", "").replace(g.project, "(main)")} <span className="text-gray-700">{c.status}</span>
                           </div>
                         ))}
-                        {g.containers.length === 0 && <span className="text-gray-700">{g.is_ghost ? "无容器" : "仅目录"}</span>}
+                        {g.containers.length === 0 && <span className="text-gray-700">{g.is_ghost ? t("admin.noContainers") : t("admin.dirOnly")}</span>}
                       </td>
                       <td className="py-2 text-right relative">
                         <button onClick={() => setDockerMenuProject(dockerMenuProject === g.project ? "" : g.project)}
@@ -480,11 +481,11 @@ export function AdminPage() {
                               <>
                                 <button onClick={() => openDockerDiag(g.instance_id!)}
                                   className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
-                                  📋 详情
+                                  {t("admin.details")}
                                 </button>
                                 <Link to={`/instances/${g.instance_id}`} onClick={() => setDockerMenuProject("")}
                                   className="block px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">
-                                  ↗ 跳转实例
+                                  {t("admin.goToInstance")}
                                 </Link>
                               </>
                             )}
@@ -492,11 +493,11 @@ export function AdminPage() {
                               <button onClick={() => { setDockerMenuProject(""); handleDockerCleanup(g.project); }}
                                 disabled={cleaningProject === g.project}
                                 className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700 disabled:opacity-50">
-                                🗑 {cleaningProject === g.project ? "清理中..." : g.is_ghost ? "清理幽灵" : "清理"}
+                                🗑 {cleaningProject === g.project ? t("common.loading") : g.is_ghost ? t("admin.cleanGhost") : t("admin.clean")}
                               </button>
                             )}
                             {!g.instance_id && !g.is_orphan && !g.is_ghost && (
-                              <div className="px-3 py-1.5 text-xs text-gray-600">无操作</div>
+                              <div className="px-3 py-1.5 text-xs text-gray-600">{t("admin.noAction")}</div>
                             )}
                           </div>
                         )}
@@ -515,29 +516,29 @@ export function AdminPage() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setDockerDiagId("")}>
           <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[680px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-white">实例诊断</h3>
+              <h3 className="text-sm font-medium text-white">{t("admin.diagnostics")}</h3>
               <button onClick={() => setDockerDiagId("")} className="text-gray-500 hover:text-white text-lg">✕</button>
             </div>
             {dockerDiagLoading ? (
-              <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+              <div className="text-sm text-gray-500 text-center py-8">{t("common.loading")}</div>
             ) : dockerDiagData ? (
               <div className="space-y-3">
                 {/* Basic Info */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2 text-xs">基本信息</h4>
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.basicInfo")}</h4>
                     <div className="space-y-1 text-xs">
-                      <div><span className="text-gray-500">实例名</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.name}</span></div>
-                      <div><span className="text-gray-500">产品</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.product}</span></div>
+                      <div><span className="text-gray-500">{t("admin.instanceName")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.name}</span></div>
+                      <div><span className="text-gray-500">{t("admin.product")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.product}</span></div>
                       <div><span className="text-gray-500">ID</span> <span className="text-gray-200 ml-2 font-mono">{dockerDiagData.basic_info?.instance_id}</span></div>
-                      <div><span className="text-gray-500">所有者</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.owner_name}</span></div>
-                      <div><span className="text-gray-500">状态</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.install_state} / {dockerDiagData.basic_info?.status}</span></div>
+                      <div><span className="text-gray-500">{t("admin.owner")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.owner_name}</span></div>
+                      <div><span className="text-gray-500">{t("admin.state")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.basic_info?.install_state} / {dockerDiagData.basic_info?.status}</span></div>
                     </div>
                   </div>
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2 text-xs">HXA 插件</h4>
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.hxaPlugin")}</h4>
                     <div className="space-y-1 text-xs">
-                      <div><span className="text-gray-500">安装</span> <StatusDot ok={dockerDiagData.hxa_plugin?.installed} /> <span className="ml-1">{dockerDiagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span></div>
+                      <div><span className="text-gray-500">{t("admin.state")}</span> <StatusDot ok={dockerDiagData.hxa_plugin?.installed} /> <span className="ml-1">{dockerDiagData.hxa_plugin?.installed ? t("admin.installed") : t("admin.notInstalled")}</span></div>
                       <div><span className="text-gray-500">状态</span> <span className="text-gray-200 ml-2">{dockerDiagData.hxa_plugin?.status}</span></div>
                       <div><span className="text-gray-500">Agent</span> <span className="text-blue-400 ml-2">{dockerDiagData.hxa_plugin?.agent_name || "-"}</span></div>
                       <div><span className="text-gray-500">组织</span> <span className="text-gray-200 ml-2 font-mono text-[10px]">{dockerDiagData.hxa_plugin?.org_id || "-"}</span></div>
@@ -547,27 +548,27 @@ export function AdminPage() {
                 {/* Container + Resources */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2 text-xs">容器</h4>
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.container")}</h4>
                     <div className="space-y-1 text-xs">
-                      <div><span className="text-gray-500">状态</span> <StatusDot ok={dockerDiagData.container?.running} /> <span className="ml-1">{dockerDiagData.container?.running ? "运行中" : "已停止"}</span></div>
-                      <div><span className="text-gray-500">磁盘</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.disk_usage_mb ?? "-"} MB</span></div>
-                      <div><span className="text-gray-500">内存限制</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.memory_limit_mb ?? "-"} MB</span></div>
-                      <div><span className="text-gray-500">CPU 限制</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.cpu_limit ?? "-"} 核</span></div>
+                      <div><span className="text-gray-500">{t("admin.state")}</span> <StatusDot ok={dockerDiagData.container?.running} /> <span className="ml-1">{dockerDiagData.container?.running ? t("status.running") : t("status.stopped")}</span></div>
+                      <div><span className="text-gray-500">{t("admin.disk")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.disk_usage_mb ?? "-"} MB</span></div>
+                      <div><span className="text-gray-500">{t("admin.memLimit")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.memory_limit_mb ?? "-"} MB</span></div>
+                      <div><span className="text-gray-500">{t("admin.cpuLimit")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.container?.cpu_limit ?? "-"} 核</span></div>
                     </div>
                   </div>
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2 text-xs">资源使用</h4>
+                    <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.resourceUsage")}</h4>
                     <div className="space-y-1 text-xs">
-                      <div><span className="text-gray-500">CPU</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.cpu_percent ?? "-"}%</span></div>
-                      <div><span className="text-gray-500">内存</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.mem_used_mb ?? "-"} MB / {dockerDiagData.resource_usage?.mem_total_mb ?? "-"} MB</span></div>
+                      <div><span className="text-gray-500">{t("admin.cpu")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.cpu_percent ?? "-"}%</span></div>
+                      <div><span className="text-gray-500">{t("admin.mem")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.resource_usage?.mem_used_mb ?? "-"} MB / {dockerDiagData.resource_usage?.mem_total_mb ?? "-"} MB</span></div>
                     </div>
                   </div>
                 </div>
                 {/* Config Files */}
                 <div className="bg-gray-800/50 rounded p-3">
-                  <h4 className="text-gray-400 font-medium mb-2 text-xs">配置文件</h4>
+                  <h4 className="text-gray-400 font-medium mb-2 text-xs">{t("admin.configFiles")}</h4>
                   <div className="space-y-1 text-xs">
-                    <div><span className="text-gray-500">Runtime 目录</span> <span className="text-gray-200 ml-2 font-mono text-[10px]">{dockerDiagData.runtime_dir || "-"}</span></div>
+                    <div><span className="text-gray-500">{t("admin.runtimeDir")}</span> <span className="text-gray-200 ml-2 font-mono text-[10px]">{dockerDiagData.runtime_dir || "-"}</span></div>
                     {(dockerDiagData.config_files || []).length > 0 ? (
                       (dockerDiagData.config_files as { label: string; path: string }[]).map((f) => (
                         <div key={f.path}>
@@ -584,11 +585,11 @@ export function AdminPage() {
                 <div className="bg-gray-800/50 rounded p-3">
                   <h4 className="text-gray-400 font-medium mb-2 text-xs">Claude 进程</h4>
                   <div className="space-y-1 text-xs">
-                    <div><span className="text-gray-500">状态</span> <StatusDot ok={dockerDiagData.claude?.running} /> <span className="ml-1">{dockerDiagData.claude?.running ? "运行中" : "未运行"}</span></div>
+                    <div><span className="text-gray-500">{t("admin.state")}</span> <StatusDot ok={dockerDiagData.claude?.running} /> <span className="ml-1">{dockerDiagData.claude?.running ? t("status.running") : t("status.stopped")}</span></div>
                     {dockerDiagData.claude?.running && (
                       <>
                         <div><span className="text-gray-500">PID</span> <span className="text-gray-200 ml-2">{dockerDiagData.claude?.pid || "-"}</span></div>
-                        <div><span className="text-gray-500">内存</span> <span className="text-gray-200 ml-2">{dockerDiagData.claude?.memory_mb || "-"} MB</span></div>
+                        <div><span className="text-gray-500">{t("admin.mem")}</span> <span className="text-gray-200 ml-2">{dockerDiagData.claude?.memory_mb || "-"} MB</span></div>
                       </>
                     )}
                   </div>
@@ -665,8 +666,8 @@ export function AdminPage() {
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.name")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.product")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.state")}</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">组织</th>
-                        <th className="text-left py-2 pr-3 text-xs text-gray-500">组内名称</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.org")}</th>
+                        <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("instances.orgName")}</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">TG</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">HXA</th>
                         <th className="text-left py-2 pr-3 text-xs text-gray-500">{t("admin.created")}</th>
@@ -756,7 +757,7 @@ export function AdminPage() {
                               <div className="inline-flex items-center gap-1">
                                 <select value={transferTarget} onChange={(e) => setTransferTarget(e.target.value)}
                                   className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-1 py-0.5">
-                                  <option value="">选择组织</option>
+                                  <option value="">{t("adminHxa.transferTo")}</option>
                                   {orgs.filter((o) => o.id !== i.org_id).map((o) => (
                                     <option key={o.id} value={o.id}>{o.name}</option>
                                   ))}
@@ -776,12 +777,12 @@ export function AdminPage() {
                                 {menuId === i.id && (
                                   <div className="absolute right-0 bottom-full mb-1 z-50 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 min-w-[100px]">
                                     <button onClick={() => openDiagnostics(i.id)}
-                                      className="block w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">详情</button>
+                                      className="block w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700">{t("admin.details")}</button>
                                     <Link to={`/instances/${i.id}`} onClick={() => setMenuId("")}
-                                      className="block w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-gray-700">实例</Link>
+                                      className="block w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-gray-700">{t("admin.goToInstance")}</Link>
                                     {i.agent_name && orgs.length > 1 && (
                                       <button onClick={() => { setTransferId(i.id); setMenuId(""); }}
-                                        className="block w-full text-left px-3 py-1.5 text-xs text-yellow-400 hover:bg-gray-700">转移</button>
+                                        className="block w-full text-left px-3 py-1.5 text-xs text-yellow-400 hover:bg-gray-700">{t("adminHxa.transfer")}</button>
                                     )}
                                   </div>
                                 )}
@@ -804,23 +805,23 @@ export function AdminPage() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setDiagId("")}>
           <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-[720px] max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-white">实例诊断</h3>
+              <h3 className="text-sm font-medium text-white">{t("admin.diagnostics")}</h3>
               <button onClick={() => setDiagId("")} className="text-gray-500 hover:text-gray-300">✕</button>
             </div>
 
             {diagLoading ? (
-              <div className="text-sm text-gray-500 text-center py-8">加载中...</div>
+              <div className="text-sm text-gray-500 text-center py-8">{t("common.loading")}</div>
             ) : diagData ? (
               <div className="space-y-3 text-xs">
                 {/* Row 1: Basic Info + HXA */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2">基本信息</h4>
+                    <h4 className="text-gray-400 font-medium mb-2">{t("admin.basicInfo")}</h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                      <span className="text-gray-500">实例名</span><span className="text-gray-200">{diagData.basic_info?.name}</span>
-                      <span className="text-gray-500">产品</span><span className="text-gray-200 capitalize">{diagData.basic_info?.product}</span>
+                      <span className="text-gray-500">{t("admin.instanceName")}</span><span className="text-gray-200">{diagData.basic_info?.name}</span>
+                      <span className="text-gray-500">{t("admin.product")}</span><span className="text-gray-200 capitalize">{diagData.basic_info?.product}</span>
                       <span className="text-gray-500">ID</span><span className="text-gray-200 font-mono text-[10px]">{diagData.basic_info?.instance_id}</span>
-                      <span className="text-gray-500">所有者</span><span className="text-gray-200 truncate">{diagData.basic_info?.owner_name}</span>
+                      <span className="text-gray-500">{t("admin.owner")}</span><span className="text-gray-200 truncate">{diagData.basic_info?.owner_name}</span>
                       <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.basic_info?.install_state} / {diagData.basic_info?.status}</span>
                       {(diagData.openclaw_version || diagData.zylos_version) && (<>
                         <span className="text-gray-500">版本</span>
@@ -843,10 +844,10 @@ export function AdminPage() {
                     </div>
                   </div>
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2">HXA 插件</h4>
+                    <h4 className="text-gray-400 font-medium mb-2">{t("admin.hxaPlugin")}</h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                      <span className="text-gray-500">安装</span>
-                      <span className="flex items-center gap-1"><StatusDot ok={diagData.hxa_plugin?.installed} /> {diagData.hxa_plugin?.installed ? "已安装" : "未安装"}</span>
+                      <span className="text-gray-500">{t("admin.state")}</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.hxa_plugin?.installed} /> {diagData.hxa_plugin?.installed ? t("admin.installed") : t("admin.notInstalled")}</span>
                       <span className="text-gray-500">状态</span><span className="text-gray-200">{diagData.hxa_plugin?.status || "-"}</span>
                       <span className="text-gray-500">Agent</span><span className="text-green-400 truncate">{diagData.hxa_plugin?.agent_name || "-"}</span>
                       <span className="text-gray-500">组织</span><span className="text-gray-200 font-mono text-[10px] truncate">{diagData.hxa_plugin?.org_id ? diagData.hxa_plugin.org_id.substring(0, 12) + "..." : "-"}</span>
@@ -875,10 +876,10 @@ export function AdminPage() {
                     </h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                       <span className="text-gray-500">状态</span>
-                      <span className="flex items-center gap-1"><StatusDot ok={diagData.claude?.running} /> {diagData.claude?.running ? "运行中" : "未运行"}</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.claude?.running} /> {diagData.claude?.running ? t("status.running") : t("status.stopped")}</span>
                       <span className="text-gray-500">PID</span><span className="text-gray-200">{diagData.claude?.pid ?? "-"}</span>
-                      <span className="text-gray-500">运行</span><span className="text-gray-200">{formatUptime(diagData.claude?.uptime_seconds)}</span>
-                      <span className="text-gray-500">内存</span><span className="text-gray-200">{diagData.claude?.memory_mb ? `${diagData.claude.memory_mb} MB` : "-"}</span>
+                      <span className="text-gray-500">Uptime</span><span className="text-gray-200">{formatUptime(diagData.claude?.uptime_seconds)}</span>
+                      <span className="text-gray-500">{t("admin.mem")}</span><span className="text-gray-200">{diagData.claude?.memory_mb ? `${diagData.claude.memory_mb} MB` : "-"}</span>
                     </div>
                   </div>
                 </div>
@@ -886,21 +887,21 @@ export function AdminPage() {
                 {/* Row 3: Container + Resource Usage */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2">容器</h4>
+                    <h4 className="text-gray-400 font-medium mb-2">{t("admin.container")}</h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                      <span className="text-gray-500">状态</span>
-                      <span className="flex items-center gap-1"><StatusDot ok={diagData.container?.running} /> {diagData.container?.running ? "运行中" : "已停止"}</span>
-                      <span className="text-gray-500">磁盘</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
-                      <span className="text-gray-500">内存限制</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "无限制"}</span>
-                      <span className="text-gray-500">CPU 限制</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit} 核` : "无限制"}</span>
+                      <span className="text-gray-500">{t("admin.state")}</span>
+                      <span className="flex items-center gap-1"><StatusDot ok={diagData.container?.running} /> {diagData.container?.running ? t("status.running") : t("status.stopped")}</span>
+                      <span className="text-gray-500">{t("admin.disk")}</span><span className="text-gray-200">{diagData.container?.disk_usage_mb ? `${diagData.container.disk_usage_mb} MB` : "-"}</span>
+                      <span className="text-gray-500">{t("admin.memLimit")}</span><span className="text-gray-200">{diagData.container?.memory_limit_mb ? `${diagData.container.memory_limit_mb} MB` : "-"}</span>
+                      <span className="text-gray-500">{t("admin.cpuLimit")}</span><span className="text-gray-200">{diagData.container?.cpu_limit ? `${diagData.container.cpu_limit}` : "-"}</span>
                     </div>
                   </div>
                   <div className="bg-gray-800/50 rounded p-3">
-                    <h4 className="text-gray-400 font-medium mb-2">资源使用</h4>
+                    <h4 className="text-gray-400 font-medium mb-2">{t("admin.resourceUsage")}</h4>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                      <span className="text-gray-500">CPU</span>
+                      <span className="text-gray-500">{t("admin.cpu")}</span>
                       <span className="text-gray-200">{diagData.resource_usage?.cpu_percent != null ? `${diagData.resource_usage.cpu_percent}%` : "-"}</span>
-                      <span className="text-gray-500">内存</span>
+                      <span className="text-gray-500">{t("admin.mem")}</span>
                       <span className="text-gray-200">
                         {diagData.resource_usage?.mem_used_mb != null
                           ? `${diagData.resource_usage.mem_used_mb} MB / ${diagData.resource_usage.mem_total_mb ?? "?"} MB`
@@ -954,31 +955,31 @@ export function AdminPage() {
                 <div className="flex gap-2 pt-2 border-t border-gray-800">
                   <button onClick={() => handleControl(diagId, "restart")} disabled={!!controlLoading}
                     className="px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50">
-                    {controlLoading === "restart" ? "..." : "重启"}
+                    {controlLoading === "restart" ? "..." : t("admin.actionRestart")}
                   </button>
                   <button onClick={() => handleControl(diagId, "stop")} disabled={!!controlLoading}
                     className="px-3 py-1.5 text-xs rounded bg-red-600 hover:bg-red-500 text-white disabled:opacity-50">
-                    {controlLoading === "stop" ? "..." : "停止"}
+                    {controlLoading === "stop" ? "..." : t("admin.actionStop")}
                   </button>
                   <button onClick={() => handleControl(diagId, "start")} disabled={!!controlLoading}
                     className="px-3 py-1.5 text-xs rounded bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
-                    {controlLoading === "start" ? "..." : "启动"}
+                    {controlLoading === "start" ? "..." : t("admin.actionStart")}
                   </button>
                   <button onClick={() => handleControl(diagId, "kill_claude")} disabled={!!controlLoading}
                     className="px-3 py-1.5 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50">
-                    {controlLoading === "kill_claude" ? "..." : "杀掉 Claude"}
+                    {controlLoading === "kill_claude" ? "..." : t("admin.actionKillClaude")}
                   </button>
                   <button onClick={async () => {
                     setDiagLoading(true);
                     try { setDiagData(await api.adminInstanceDiagnostics(diagId)); } catch {}
                     setDiagLoading(false);
                   }} className="ml-auto px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-800">
-                    刷新
+                    {t("session.refresh")}
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-gray-500 text-center py-8">无数据</div>
+              <div className="text-sm text-gray-500 text-center py-8">-</div>
             )}
           </div>
         </div>

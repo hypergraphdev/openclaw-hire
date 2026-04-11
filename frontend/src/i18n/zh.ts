@@ -557,4 +557,82 @@ export const zh: Record<string, string> = {
   "connectivity.title": "连通性测试",
   "connectivity.testing": "测试中...",
   "connectivity.testAll": "全部测试",
+
+  // Admin - Docker containers
+  "admin.containerGroups": "容器组",
+  "admin.orphan": "孤儿",
+  "admin.ghost": "幽灵",
+  "admin.dirOnly": "仅目录",
+  "admin.noContainers": "暂无容器",
+  "admin.containers": "容器",
+  "admin.product": "产品",
+  "admin.linkedInstance": "关联实例",
+  "admin.owner": "所有者",
+  "admin.runtime": "Runtime",
+  "admin.exists": "✓ 存在",
+  "admin.notExists": "✗ 不存在",
+  "admin.details": "📋 详情",
+  "admin.goToInstance": "↗ 跳转实例",
+  "admin.cleanGhost": "🗑 清理幽灵",
+  "admin.clean": "清理",
+  "admin.noAction": "无操作",
+  "admin.totalGroups": "共 {count} 组",
+  "admin.actionStop": "停止",
+  "admin.actionStart": "启动",
+  "admin.actionRestart": "重启",
+  "admin.actionKillClaude": "杀掉 Claude",
+
+  // Admin - Diagnostics
+  "admin.diagnostics": "实例诊断",
+  "admin.basicInfo": "基本信息",
+  "admin.hxaPlugin": "HXA 插件",
+  "admin.container": "容器",
+  "admin.resourceUsage": "资源使用",
+  "admin.configFiles": "配置文件",
+  "admin.instanceName": "实例名",
+  "admin.installed": "已安装",
+  "admin.notInstalled": "未安装",
+  "admin.disk": "磁盘",
+  "admin.memLimit": "内存限制",
+  "admin.cpuLimit": "CPU 限制",
+  "admin.cpu": "CPU",
+  "admin.mem": "内存",
+  "admin.runtimeDir": "Runtime 目录",
+
+  // Admin - Zylos config
+  "admin.activityMonitorConfig": "Activity Monitor 配置",
+  "admin.seconds": "秒",
+  "admin.default": "默认 {value}",
+  "admin.saveOnly": "仅保存",
+  "admin.saveAndRestart": "保存并重启 ✓",
+  "admin.patchedAuto": "源码已自动 patch",
+  "admin.pm2Restarted": "pm2 已重启，立即生效",
+  "admin.savedNeedRestart": "已保存（需重启生效）",
+  "admin.saveFailed": "保存失败",
+
+  // Admin - Time formatting
+  "admin.hours": "{n}小时",
+  "admin.minutes": "{n}分钟",
+  "admin.secs": "{n}秒",
+  "admin.days": "{n}天 {h}小时",
+  "admin.hoursMin": "{h}小时 {m}分",
+
+  // Admin - Transfer
+  "admin.confirmTransfer": "确定将 \"{name}\" 转移到组织 \"{target}\"？Bot 将重新注册。",
+
+  // Instances page
+  "instances.orgNotConfigured": "未配置组织",
+  "instances.tgNotConfigured": "TG未配置",
+  "instances.rename": "改名",
+  "instances.renameTitle": "修改组织内名称",
+  "instances.namePlaceholder": "输入新名称...",
+  "instances.nameHint": "名称未以 _Bot 结尾时会自动补全",
+  "instances.nameMinLength": "名称至少2个字符",
+  "instances.renameFailed": "改名失败",
+  "instances.saving": "保存中...",
+  "instances.org": "组织",
+  "instances.deploy": "部署",
+
+  // Register page
+  "register.usernameHint": "用户名需唯一，建议使用企业邮箱用户名",
 };

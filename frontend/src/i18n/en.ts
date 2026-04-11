@@ -557,4 +557,82 @@ export const en: Record<string, string> = {
   "connectivity.title": "Connectivity Test",
   "connectivity.testing": "Testing...",
   "connectivity.testAll": "Test All",
+
+  // Admin - Docker containers
+  "admin.containerGroups": "Container Groups",
+  "admin.orphan": "Orphan",
+  "admin.ghost": "Ghost",
+  "admin.dirOnly": "Dir only",
+  "admin.noContainers": "No containers",
+  "admin.containers": "Containers",
+  "admin.product": "Product",
+  "admin.linkedInstance": "Linked Instance",
+  "admin.owner": "Owner",
+  "admin.runtime": "Runtime",
+  "admin.exists": "✓ Exists",
+  "admin.notExists": "✗ Not found",
+  "admin.details": "📋 Details",
+  "admin.goToInstance": "↗ Go to instance",
+  "admin.cleanGhost": "🗑 Clean ghost",
+  "admin.clean": "Clean",
+  "admin.noAction": "No action",
+  "admin.totalGroups": "{count} groups",
+  "admin.actionStop": "Stop",
+  "admin.actionStart": "Start",
+  "admin.actionRestart": "Restart",
+  "admin.actionKillClaude": "Kill Claude",
+
+  // Admin - Diagnostics
+  "admin.diagnostics": "Instance Diagnostics",
+  "admin.basicInfo": "Basic Info",
+  "admin.hxaPlugin": "HXA Plugin",
+  "admin.container": "Container",
+  "admin.resourceUsage": "Resource Usage",
+  "admin.configFiles": "Config Files",
+  "admin.instanceName": "Instance Name",
+  "admin.installed": "Installed",
+  "admin.notInstalled": "Not Installed",
+  "admin.disk": "Disk",
+  "admin.memLimit": "Mem Limit",
+  "admin.cpuLimit": "CPU Limit",
+  "admin.cpu": "CPU",
+  "admin.mem": "Memory",
+  "admin.runtimeDir": "Runtime Dir",
+
+  // Admin - Zylos config
+  "admin.activityMonitorConfig": "Activity Monitor Config",
+  "admin.seconds": "sec",
+  "admin.default": "Default {value}",
+  "admin.saveOnly": "Save only",
+  "admin.saveAndRestart": "Save & restart ✓",
+  "admin.patchedAuto": "Source auto-patched",
+  "admin.pm2Restarted": "pm2 restarted, effective immediately",
+  "admin.savedNeedRestart": "Saved (restart needed)",
+  "admin.saveFailed": "Save failed",
+
+  // Admin - Time formatting
+  "admin.hours": "{n}h",
+  "admin.minutes": "{n}m",
+  "admin.secs": "{n}s",
+  "admin.days": "{n}d {h}h",
+  "admin.hoursMin": "{h}h {m}m",
+
+  // Admin - Transfer
+  "admin.confirmTransfer": "Transfer \"{name}\" to org \"{target}\"? Bot will be re-registered.",
+
+  // Instances page
+  "instances.orgNotConfigured": "Org not configured",
+  "instances.tgNotConfigured": "TG not configured",
+  "instances.rename": "Rename",
+  "instances.renameTitle": "Rename in Organization",
+  "instances.namePlaceholder": "Enter new name...",
+  "instances.nameHint": "Auto-appends _Bot if missing",
+  "instances.nameMinLength": "Name must be at least 2 characters",
+  "instances.renameFailed": "Rename failed",
+  "instances.saving": "Saving...",
+  "instances.org": "Org",
+  "instances.deploy": "Deploy",
+
+  // Register page
+  "register.usernameHint": "Username must be unique. We recommend using your corporate email username.",
 };
