@@ -478,6 +478,7 @@ export const zh: Record<string, string> = {
   "chatPanel.imageCaption": "添加图片说明...",
   "chatPanel.uploading": "上传中...",
   "chatPanel.copied": "已复制",
+  "chatPanel.copy": "复制",
   "chatPanel.me": "我",
   "chatPanel.image": "图片",
 
@@ -505,6 +506,10 @@ export const zh: Record<string, string> = {
   "telegram.restartPlugin": "重启 Telegram",
 
   // Status (extras)
+  "status.online": "在线",
+  "status.offline": "离线",
+  "status.error": "异常",
+  "status.stopped": "已停止",
   "status.busy": "忙碌",
   "status.waiting": "等待中",
 

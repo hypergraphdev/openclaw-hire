@@ -3,6 +3,7 @@
  */
 import { useState } from "react";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 
 type TestResult = {
   ok: boolean;
@@ -14,6 +15,7 @@ type TestResult = {
 type TestState = "idle" | "testing" | "done";
 
 export function ConnectivityTest({ instanceId }: { instanceId: string }) {
+  const t = useT();
   const [results, setResults] = useState<Record<string, TestResult>>({});
   const [states, setStates] = useState<Record<string, TestState>>({});
 
@@ -39,7 +41,7 @@ export function ConnectivityTest({ instanceId }: { instanceId: string }) {
         <span className="text-xs text-gray-300 min-w-[60px]">{label}</span>
         <span className="ml-auto text-xs">
           {state === "idle" && <span className="text-gray-600">--</span>}
-          {state === "testing" && <span className="text-blue-400 animate-pulse">测试中...</span>}
+          {state === "testing" && <span className="text-blue-400 animate-pulse">{t("connectivity.testing")}</span>}
           {state === "done" && result && (
             result.ok ? (
               <span className="text-green-400" title={result.detail || ""}>
@@ -60,13 +62,13 @@ export function ConnectivityTest({ instanceId }: { instanceId: string }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-gray-400">连通性测试</h4>
+        <h4 className="text-xs font-medium text-gray-400">{t("connectivity.title")}</h4>
         <button
           onClick={runAll}
           disabled={Object.values(states).some((s) => s === "testing")}
           className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
         >
-          全部测试
+          {t("connectivity.testAll")}
         </button>
       </div>
       {renderBadge("claude", "Claude", "🧠")}

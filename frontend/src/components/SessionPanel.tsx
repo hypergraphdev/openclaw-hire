@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 import type { ClaudeSession, SessionsResponse } from "../types";
 
 function formatActivity(ts: string): string {
@@ -29,6 +30,7 @@ function formatTokens(n: number): string {
 }
 
 export function SessionPanel({ instanceId }: { instanceId: string }) {
+  const t = useT();
   const [data, setData] = useState<SessionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
@@ -41,7 +43,7 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
       const res = await api.instanceSessions(instanceId);
       setData(res);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "加载会话失败");
+      setError(err instanceof Error ? err.message : t("session.loadFailed"));
     }
     setLoading(false);
   }
@@ -61,11 +63,11 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
     try {
       const res = await api.instanceSessionsClear(instanceId);
       if (!res.ok) {
-        setError(res.detail || "清除失败");
+        setError(res.detail || t("session.clearFailed"));
       }
       await load();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "清除失败");
+      setError(err instanceof Error ? err.message : t("session.clearFailed"));
     } finally {
       setClearing(false);
       setConfirmClear(false);
@@ -77,7 +79,7 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-300">Claude 会话</span>
+          <span className="text-xs font-medium text-gray-300">{t("session.title")}</span>
           {data && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
               {data.count}
@@ -90,7 +92,7 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
             disabled={loading}
             className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
           >
-            {loading ? "加载中..." : "刷新"}
+            {loading ? t("common.loading") : t("session.refresh")}
           </button>
           {confirmClear ? (
             <div className="flex items-center gap-1">
@@ -99,13 +101,13 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
                 disabled={clearing}
                 className="text-xs px-2 py-1 rounded bg-red-700 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
               >
-                {clearing ? "清除中..." : "确认清除"}
+                {clearing ? t("session.clearing") : t("session.confirmClear")}
               </button>
               <button
                 onClick={() => setConfirmClear(false)}
                 className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 transition-colors"
               >
-                取消
+                {t("common.cancel")}
               </button>
             </div>
           ) : (
@@ -114,7 +116,7 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
               disabled={clearing || !data || data.count === 0}
               className="text-xs px-2 py-1 rounded bg-gray-800 text-red-400 hover:text-red-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
-              清除全部
+              {t("session.clearAll")}
             </button>
           )}
         </div>
@@ -129,9 +131,9 @@ export function SessionPanel({ instanceId }: { instanceId: string }) {
 
       {/* Content */}
       {loading && !data ? (
-        <div className="text-center text-gray-600 text-xs py-4">加载中...</div>
+        <div className="text-center text-gray-600 text-xs py-4">{t("common.loading")}</div>
       ) : !data || data.count === 0 ? (
-        <div className="text-center text-gray-600 text-xs py-4">暂无会话</div>
+        <div className="text-center text-gray-600 text-xs py-4">{t("session.noSessions")}</div>
       ) : (
         <div className="space-y-1.5 max-h-60 overflow-y-auto">
           {data.sessions.map((s: ClaudeSession, idx: number) => (

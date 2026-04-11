@@ -478,6 +478,7 @@ export const en: Record<string, string> = {
   "chatPanel.imageCaption": "Add caption...",
   "chatPanel.uploading": "Uploading...",
   "chatPanel.copied": "Copied",
+  "chatPanel.copy": "Copy",
   "chatPanel.me": "Me",
   "chatPanel.image": "image",
 
@@ -505,6 +506,10 @@ export const en: Record<string, string> = {
   "telegram.restartPlugin": "Restart Telegram",
 
   // Status (extras — some already defined above)
+  "status.online": "Online",
+  "status.offline": "Offline",
+  "status.error": "Error",
+  "status.stopped": "Stopped",
   "status.busy": "Busy",
   "status.waiting": "Waiting",
 

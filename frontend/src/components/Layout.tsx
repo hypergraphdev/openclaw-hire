@@ -94,7 +94,7 @@ export function Layout({ children }: { children: ReactNode }) {
               </div>
             )}
             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors" title={sidebarCollapsed ? "展开" : "收缩"}>
+              className="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors" title={sidebarCollapsed ? t("layout.expand") : t("layout.collapse")}>
               {sidebarCollapsed ? "»" : "«"}
             </button>
           </div>

@@ -214,11 +214,11 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setSendError("只支持图片文件");
+      setSendError(t("chatPanel.imageOnly"));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setSendError("图片大小不能超过 10MB");
+      setSendError(t("chatPanel.imageTooLarge"));
       return;
     }
     setSendError("");
@@ -438,7 +438,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
                   const result = await api.myOrgFileUpload(f);
                   const link = `\u{1F4CE} [${result.filename}](${result.url}) (${result.size_kb}KB)`;
                   setInput((v) => v ? v + "\n" + link : link);
-                } catch (err: unknown) { setSendError((err as Error).message || "上传失败"); }
+                } catch (err: unknown) { setSendError((err as Error).message || t("chatPanel.uploadFailed")); }
                 finally { setUploading(false); }
               }}
             />
@@ -447,7 +447,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               onClick={handlePickImage}
               disabled={sending || !!pendingImage}
               className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40 transition-colors"
-              title="发送图片"
+              title={t("chatPanel.sendImage")}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" />
@@ -458,7 +458,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               onClick={() => generalFileRef.current?.click()}
               disabled={sending || uploading}
               className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40 transition-colors"
-              title="上传文件"
+              title={t("chatPanel.uploadFile")}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
@@ -471,7 +471,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
             </div>
             <textarea
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500 placeholder-gray-500 resize-none overflow-y-auto"
-              placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")}
+              placeholder={pendingImage ? t("chatPanel.imageCaption") : t("chat.inputPlaceholder")}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -485,7 +485,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               disabled={(!input.trim() && !pendingImage) || sending}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded-lg transition-colors"
             >
-              {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
+              {uploading ? t("chatPanel.uploading") : sending ? t("chat.sending") : t("chat.send")}
             </button>
           </div>
         </div>
@@ -564,6 +564,7 @@ function RenderTextWithFileLinks({ text, instanceId }: { text: string; instanceI
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+  const t = useT();
   return (
     <button
       onClick={async (e) => {
@@ -571,7 +572,7 @@ function CopyButton({ text }: { text: string }) {
         try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
       }}
       className="absolute bottom-1 right-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
-      title="复制"
+      title={t("chatPanel.copy")}
     >
       {copied ? (
         <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -585,6 +586,7 @@ function CopyButton({ text }: { text: string }) {
 // ─── Message Bubble ─────────────────────────────────────────────────
 
 function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; isSelf: boolean; instanceId: string }) {
+  const t = useT();
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const content = extractContent(message);
   const { imageUrl, text } = parseImageContent(content);
@@ -593,7 +595,7 @@ function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; 
     <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
       <div className="flex items-center gap-2 mb-0.5">
         <span className={`text-[11px] font-medium ${isSelf ? "text-blue-400" : "text-gray-400"}`}>
-          {isSelf ? "我" : message.sender_name}
+          {isSelf ? t("chatPanel.me") : message.sender_name}
         </span>
         <span className="text-[10px] text-gray-600">{time}</span>
       </div>
@@ -607,7 +609,7 @@ function MessageBubble({ message, isSelf, instanceId }: { message: ChatMessage; 
         {imageUrl && (
           <img
             src={imageUrl}
-            alt="图片"
+            alt={t("chatPanel.image")}
             className="max-w-full max-h-64 rounded mb-1 cursor-pointer"
             onClick={() => window.open(imageUrl, "_blank")}
           />
