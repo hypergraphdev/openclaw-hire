@@ -4,14 +4,15 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 import { StatusIndicator } from "./StatusIndicator";
 import type { AgentActivityResponse } from "../types";
 
-const STATE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  idle: { bg: "bg-yellow-900/40", text: "text-yellow-400", label: "空闲" },
-  busy: { bg: "bg-green-900/40", text: "text-green-400", label: "忙碌" },
-  waiting: { bg: "bg-blue-900/40", text: "text-blue-400", label: "等待中" },
-  offline: { bg: "bg-gray-800/40", text: "text-gray-500", label: "离线" },
+const STATE_BADGE_STYLE: Record<string, { bg: string; text: string; key: string }> = {
+  idle: { bg: "bg-yellow-900/40", text: "text-yellow-400", key: "status.idle" },
+  busy: { bg: "bg-green-900/40", text: "text-green-400", key: "status.busy" },
+  waiting: { bg: "bg-blue-900/40", text: "text-blue-400", key: "status.waiting" },
+  offline: { bg: "bg-gray-800/40", text: "text-gray-500", key: "status.offline" },
 };
 
 function formatUptime(seconds: number | null): string {
@@ -23,6 +24,7 @@ function formatUptime(seconds: number | null): string {
 }
 
 export function AgentActivity({ instanceId }: { instanceId: string }) {
+  const t = useT();
   const [data, setData] = useState<AgentActivityResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export function AgentActivity({ instanceId }: { instanceId: string }) {
       setData(res);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "加载失败");
+      setError(e instanceof Error ? e.message : t("agent.loadFailed"));
     }
     setLoading(false);
   }
@@ -48,7 +50,7 @@ export function AgentActivity({ instanceId }: { instanceId: string }) {
   if (loading && !data) {
     return (
       <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
-        <div className="text-center text-gray-600 text-sm py-4">加载 Agent 活动...</div>
+        <div className="text-center text-gray-600 text-sm py-4">{t("agent.loading")}</div>
       </div>
     );
   }
@@ -63,28 +65,28 @@ export function AgentActivity({ instanceId }: { instanceId: string }) {
 
   if (!data) return null;
 
-  const badge = STATE_BADGE[data.state] || STATE_BADGE.offline;
+  const badge = STATE_BADGE_STYLE[data.state] || STATE_BADGE_STYLE.offline;
 
   return (
     <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3 space-y-3">
       {/* Header: title + state badge */}
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-300">Agent 活动</h4>
+        <h4 className="text-sm font-medium text-gray-300">{t("agent.title")}</h4>
         <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${badge.bg} ${badge.text}`}>
-          {badge.label}
+          {t(badge.key)}
         </span>
       </div>
 
       {/* Claude process */}
       <div className="flex items-center gap-3 flex-wrap">
-        <StatusIndicator status={data.claude.running ? "running" : "offline"} label={data.claude.running ? "Claude 运行中" : "Claude 未运行"} />
+        <StatusIndicator status={data.claude.running ? "running" : "offline"} label={data.claude.running ? t("agent.claudeRunning") : t("agent.claudeStopped")} />
         {data.claude.running && (
           <>
             <span className="text-[10px] text-gray-500">
               PID {data.claude.pid}
             </span>
             <span className="text-[10px] text-gray-500">
-              运行 {formatUptime(data.claude.uptime_seconds)}
+              {t("agent.running", { uptime: formatUptime(data.claude.uptime_seconds) })}
             </span>
             {data.claude.memory_mb != null && (
               <span className="text-[10px] text-gray-500">
@@ -101,11 +103,11 @@ export function AgentActivity({ instanceId }: { instanceId: string }) {
           <table className="w-full text-[11px]">
             <thead>
               <tr className="text-gray-500 border-b border-gray-800">
-                <th className="text-left py-1 pr-2 font-normal">服务</th>
-                <th className="text-left py-1 pr-2 font-normal">状态</th>
-                <th className="text-right py-1 pr-2 font-normal">运行时间</th>
-                <th className="text-right py-1 pr-2 font-normal">内存</th>
-                <th className="text-right py-1 font-normal">重启</th>
+                <th className="text-left py-1 pr-2 font-normal">{t("agent.service")}</th>
+                <th className="text-left py-1 pr-2 font-normal">{t("admin.state")}</th>
+                <th className="text-right py-1 pr-2 font-normal">{t("agent.uptime")}</th>
+                <th className="text-right py-1 pr-2 font-normal">Memory</th>
+                <th className="text-right py-1 font-normal">{t("agent.restarts")}</th>
               </tr>
             </thead>
             <tbody>
@@ -132,7 +134,7 @@ export function AgentActivity({ instanceId }: { instanceId: string }) {
       )}
 
       {data.services.length === 0 && !data.claude.running && (
-        <div className="text-center text-gray-600 text-[11px] py-2">无活动进程</div>
+        <div className="text-center text-gray-600 text-[11px] py-2">{t("agent.noProcesses")}</div>
       )}
     </div>
   );

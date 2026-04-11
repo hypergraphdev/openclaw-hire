@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useT } from "../contexts/LanguageContext";
 import { AgentActivity } from "./AgentActivity";
 import { TrendChart } from "./charts/TrendChart";
 import { ConnectivityTest } from "./ConnectivityTest";
@@ -12,6 +13,7 @@ import { StatusIndicator } from "./StatusIndicator";
 import type { MetricsResponse } from "../types";
 
 export function MonitorTab({ instanceId }: { instanceId: string }) {
+  const t = useT();
   const [data, setData] = useState<MetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [hours, setHours] = useState(24);
@@ -46,7 +48,7 @@ export function MonitorTab({ instanceId }: { instanceId: string }) {
 
       {/* Time range selector */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-300">资源监控</h3>
+        <h3 className="text-sm font-medium text-gray-300">{t("monitor.title")}</h3>
         <div className="flex gap-1">
           {[1, 6, 24, 72, 168].map((h) => (
             <button key={h} onClick={() => setHours(h)}
@@ -58,26 +60,26 @@ export function MonitorTab({ instanceId }: { instanceId: string }) {
       </div>
 
       {loading && !data ? (
-        <div className="text-center text-gray-600 text-sm py-8">加载中...</div>
+        <div className="text-center text-gray-600 text-sm py-8">{t("common.loading")}</div>
       ) : (
         <>
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
-              <TrendChart data={cpuData} color="#60a5fa" unit="%" label="CPU 使用率" />
+              <TrendChart data={cpuData} color="#60a5fa" unit="%" label={t("monitor.cpuUsage")} />
             </div>
             <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
-              <TrendChart data={memData} color="#a78bfa" unit="MB" label="内存使用" />
+              <TrendChart data={memData} color="#a78bfa" unit="MB" label={t("monitor.memUsage")} />
             </div>
           </div>
 
           {/* Summary cards */}
           {data?.summary && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <SummaryCard label="平均 CPU" value={`${data.summary.avg_cpu}%`} color="text-blue-400" />
-              <SummaryCard label="峰值 CPU" value={`${data.summary.max_cpu}%`} color="text-blue-300" />
-              <SummaryCard label="平均内存" value={`${data.summary.avg_mem}MB`} color="text-purple-400" />
-              <SummaryCard label="峰值内存" value={`${data.summary.max_mem}MB`} color="text-purple-300" />
+              <SummaryCard label={t("monitor.avgCpu")} value={`${data.summary.avg_cpu}%`} color="text-blue-400" />
+              <SummaryCard label={t("monitor.peakCpu")} value={`${data.summary.max_cpu}%`} color="text-blue-300" />
+              <SummaryCard label={t("monitor.avgMem")} value={`${data.summary.avg_mem}MB`} color="text-purple-400" />
+              <SummaryCard label={t("monitor.peakMem")} value={`${data.summary.max_mem}MB`} color="text-purple-300" />
             </div>
           )}
 
@@ -87,13 +89,13 @@ export function MonitorTab({ instanceId }: { instanceId: string }) {
             return (
               <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400">Claude 进程</span>
+                  <span className="text-xs text-gray-400">{t("monitor.claudeProcess")}</span>
                   <StatusIndicator status={latest.claude_running ? "running" : "offline"} />
                   {latest.claude_mem_mb != null && (
-                    <span className="text-xs text-gray-500">内存: {latest.claude_mem_mb}MB</span>
+                    <span className="text-xs text-gray-500">{t("monitor.memory", { mb: latest.claude_mem_mb })}</span>
                   )}
                   <span className="text-xs text-gray-600 ml-auto">
-                    数据点: {data.summary?.data_points || 0}
+                    {t("monitor.dataPoints", { count: data.summary?.data_points || 0 })}
                   </span>
                 </div>
               </div>

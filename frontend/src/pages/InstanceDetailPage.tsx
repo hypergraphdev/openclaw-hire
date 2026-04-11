@@ -273,10 +273,10 @@ export function InstanceDetailPage() {
     try {
       // Restart the container to reload weixin plugin
       await api.restartInstance(instanceId);
-      setWeixinRestartMsg("✅ 微信插件已重启");
+      setWeixinRestartMsg(t("weixin.restarted"));
       setTimeout(() => fetchDetail(), 3000);
     } catch (err: unknown) {
-      setWeixinRestartMsg(`❌ ${err instanceof Error ? err.message : "重启失败"}`);
+      setWeixinRestartMsg(`${err instanceof Error ? err.message : t("weixin.restartFailed")}`);
     }
     setWeixinRestarting(false);
   }
@@ -789,30 +789,30 @@ export function InstanceDetailPage() {
           {/* WeChat Integration */}
           {(instance.product === "openclaw" || instance.product === "zylos" || instance.product === "hermes") && (
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-              <h2 className="text-sm font-medium text-gray-300 mb-3">💬 微信绑定</h2>
+              <h2 className="text-sm font-medium text-gray-300 mb-3">{t("weixin.title")}</h2>
               {(detail as Record<string, unknown>)?.is_weixin_installed ? (
                 <div className="space-y-3">
                   <div className="p-3 bg-green-900/30 border border-green-700 rounded-md text-green-300 text-xs">
-                    微信插件已安装
+                    {t("weixin.installed")}
                   </div>
                   <div className="flex items-center gap-4">
                     <button onClick={handleWeixinLogin} className="text-xs text-blue-400 hover:text-blue-300 underline">
-                      重新绑定微信
+                      {t("weixin.rebind")}
                     </button>
                     <button onClick={handleWeixinRestart} disabled={weixinRestarting} className="text-xs text-gray-400 hover:text-gray-200 underline disabled:opacity-50">
-                      {weixinRestarting ? "重启中..." : "重启微信插件"}
+                      {weixinRestarting ? t("weixin.restarting") : t("weixin.restartPlugin")}
                     </button>
                   </div>
                   {weixinRestartMsg && <p className={`text-xs ${weixinRestartMsg.startsWith("✅") ? "text-green-400" : "text-red-400"}`}>{weixinRestartMsg}</p>}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">将此实例连接微信，扫码绑定后可通过微信与 AI Agent 对话。</p>
+                  <p className="text-xs text-gray-500">{t("weixin.desc")}</p>
                   <button
                     onClick={() => navigate("/marketplace")}
                     className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md"
                   >
-                    前往插件市场安装
+                    {t("weixin.goMarketplace")}
                   </button>
                 </div>
               )}
@@ -824,21 +824,21 @@ export function InstanceDetailPage() {
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
               <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-white">微信扫码登录</h3>
+                  <h3 className="text-lg font-semibold text-white">{t("weixin.qrLogin")}</h3>
                   <span className={`text-xs px-2 py-1 rounded-full ${
                     weixinLogStatus === "success" ? "bg-green-900/40 text-green-400" :
                     weixinLogStatus === "failed" ? "bg-red-900/40 text-red-400" :
                     "bg-yellow-900/40 text-yellow-400"
                   }`}>
-                    {weixinLogStatus === "success" ? "绑定成功" :
-                     weixinLogStatus === "failed" ? "绑定失败" : "等待扫码..."}
+                    {weixinLogStatus === "success" ? t("weixin.bindSuccess") :
+                     weixinLogStatus === "failed" ? t("weixin.bindFailed") : t("weixin.waitingScan")}
                   </span>
                 </div>
                 <pre className="flex-1 overflow-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre">
-                  {weixinLog || "正在启动..."}
+                  {weixinLog || t("weixin.starting")}
                 </pre>
                 <button onClick={closeWeixinLog} className="mt-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm py-2 rounded-lg">
-                  {weixinLogStatus === "waiting" || weixinLogStatus === "qr_ready" ? "关闭（后台继续）" : "关闭"}
+                  {weixinLogStatus === "waiting" || weixinLogStatus === "qr_ready" ? t("weixin.closeBackground") : t("common.close")}
                 </button>
               </div>
             </div>
@@ -972,10 +972,10 @@ export function InstanceDetailPage() {
                       setPluginRestartMsg("");
                       try {
                         const res = await api.restartPlugins(instanceId);
-                        setPluginRestartMsg(res.ok ? "Telegram 已重启" : res.detail);
+                        setPluginRestartMsg(res.ok ? t("telegram.restarted") : res.detail);
                         if (res.ok) setTimeout(() => fetchDetail(), 5000);
                       } catch (err: unknown) {
-                        setPluginRestartMsg(err instanceof Error ? err.message : "重启失败");
+                        setPluginRestartMsg(err instanceof Error ? err.message : t("telegram.restartFailed"));
                       } finally {
                         setPluginRestarting(false);
                       }
@@ -983,7 +983,7 @@ export function InstanceDetailPage() {
                     disabled={pluginRestarting}
                     className="text-xs text-gray-500 hover:text-gray-300 underline ml-3"
                   >
-                    {pluginRestarting ? "重启中..." : "重启 Telegram"}
+                    {pluginRestarting ? t("telegram.restarting") : t("telegram.restartPlugin")}
                   </button>
                   {pluginRestartMsg && (
                     <p className="text-xs text-yellow-400 mt-1">{pluginRestartMsg}</p>

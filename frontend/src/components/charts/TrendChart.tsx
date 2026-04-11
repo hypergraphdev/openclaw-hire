@@ -2,6 +2,8 @@
  * TrendChart — SVG line chart with axes for metrics display.
  * Ported from OpenClaw-bot-review's TrendChart component.
  */
+import { useT } from "../../contexts/LanguageContext";
+
 export function TrendChart({
   data,
   height = 160,
@@ -15,10 +17,12 @@ export function TrendChart({
   unit?: string;
   label?: string;
 }) {
+  const t = useT();
+
   if (!data || data.length < 2) {
     return (
       <div className="flex items-center justify-center text-gray-600 text-xs" style={{ height }}>
-        暂无数据
+        {t("monitor.noData")}
       </div>
     );
   }
