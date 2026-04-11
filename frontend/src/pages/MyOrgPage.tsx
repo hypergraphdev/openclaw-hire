@@ -8,16 +8,16 @@ import ThreadTaskPanel from "../components/ThreadTaskPanel";
 
 const EMOJI_LIST = ["😀","😂","🤣","😊","😍","🥰","😘","😎","🤔","😅","😢","😭","😤","🔥","❤️","👍","👎","👋","🎉","🙏","💯","✨","⭐","🚀","💡","📎","✅","❌","⚡","🌟"];
 
-function friendlyTime(ts: number | string | undefined): string {
+function friendlyTime(ts: number | string | undefined, t?: (k: string, p?: Record<string, string | number>) => string): string {
   if (!ts) return "";
   const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
   if (isNaN(d.getTime())) return "";
   const now = Date.now();
   const diff = Math.floor((now - d.getTime()) / 1000);
-  if (diff < 10) return "刚刚";
-  if (diff < 60) return `${diff}秒前`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+  if (diff < 10) return t ? t("time.justNow") : "just now";
+  if (diff < 60) return t ? t("time.secondsAgo", { n: diff }) : `${diff}s ago`;
+  if (diff < 3600) return t ? t("time.minutesAgo", { n: Math.floor(diff / 60) }) : `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return t ? t("time.hoursAgo", { n: Math.floor(diff / 3600) }) : `${Math.floor(diff / 3600)}h ago`;
   const month = d.getMonth() + 1;
   const day = d.getDate();
   const h = String(d.getHours()).padStart(2, "0");
@@ -400,7 +400,7 @@ export function MyOrgPage() {
                 const lastCd = threadLoopCooldown.current[loopKey] || 0;
                 if (threadMsgTimestamps.current[loopKey].length >= 4 && now - lastCd > 300000 && !isMyBot) {
                   threadLoopCooldown.current[loopKey] = now;
-                  api.myOrgChatSend(senderName, "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。", orgIdRef.current).catch(() => {});
+                  api.myOrgChatSend(senderName, "⚠️ Conversation loop detected. Please stop unless there is substantive content to discuss.", orgIdRef.current).catch(() => {});
                 }
               }
 
@@ -486,7 +486,7 @@ export function MyOrgPage() {
                   // Auto-send stop message
                   api.myOrgThreadSend(
                     msgThreadId,
-                    "⚠️ 检测到对话循环。请停止当前对话，除非有实质性内容和实际任务需要讨论。",
+                    "⚠️ Conversation loop detected. Please stop unless there is substantive content to discuss.",
                     undefined,
                     threadBotId || undefined,
                     orgIdRef.current,
