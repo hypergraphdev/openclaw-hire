@@ -587,7 +587,7 @@ export function MyOrgPage() {
 
   async function handleLeaveThread() {
     if (!target || target.type !== "thread") return;
-    if (!confirm("确定退出群聊？")) return;
+    if (!confirm(t("myOrg.confirmLeave"))) return;
     try { await api.myOrgThreadLeave(target.thread.id, orgIdRef.current); setTarget(null); const r = await api.myOrgThreads(orgIdRef.current); setThreads(r.threads || []); }
     catch (e: unknown) { alert((e as Error).message || "Failed"); }
   }
@@ -701,7 +701,7 @@ export function MyOrgPage() {
               <select value={data.org_id || ""} onChange={(e) => { setActiveOrgId(e.target.value); setTarget(null); setLoading(true); }}
                 className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500">
                 {data.orgs.map((o) => (
-                  <option key={o.org_id} value={o.org_id}>{o.org_name}{o.is_default ? " (默认)" : ""}</option>
+                  <option key={o.org_id} value={o.org_id}>{o.org_name}{o.is_default ? t("myOrg.default") : ""}</option>
                 ))}
               </select>
             ) : (
@@ -713,15 +713,15 @@ export function MyOrgPage() {
             onClick={() => setShowOffice((v) => !v)}
             className={`shrink-0 text-xs px-2.5 py-1.5 rounded-md border transition-colors ${showOffice ? "bg-blue-600/20 border-blue-600 text-blue-400" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600"}`}
           >
-            {showOffice ? "🏢 收起视图" : "🏢 办公视图"}
+            {showOffice ? t("myOrg.collapseOffice") : t("myOrg.expandOffice")}
           </button>
           <div className="relative w-80">
             <input type="text" value={globalSearchQuery}
               onChange={(e) => handleSearchInputChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleGlobalSearch(); }}
-              placeholder="搜索消息... (支持 in:@name from:@name to:@name)"
+              placeholder={t("myOrg.searchPlaceholder")}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500 placeholder-gray-600" />
-            {(searching || syncing) && <span className="absolute right-2 top-1.5 text-[10px] text-yellow-400">{syncing ? "同步中..." : "搜索中..."}</span>}
+            {(searching || syncing) && <span className="absolute right-2 top-1.5 text-[10px] text-yellow-400">{syncing ? t("myOrg.syncing") : t("myOrg.searching")}</span>}
             {showSearchSuggestions && searchSuggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-32 overflow-auto w-full">
                 {searchSuggestions.slice(0, 8).map((s) => (
@@ -736,11 +736,11 @@ export function MyOrgPage() {
         {showSearchResults && (
           <div className="mt-2 bg-gray-800 border border-gray-700 rounded-lg p-3 max-h-60 overflow-auto">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">搜索结果 ({searchResults.length})</span>
-              <button onClick={() => setShowSearchResults(false)} className="text-xs text-gray-500 hover:text-gray-300">✕ 关闭</button>
+              <span className="text-xs text-gray-400">{t("myOrg.searchResults", { count: searchResults.length })}</span>
+              <button onClick={() => setShowSearchResults(false)} className="text-xs text-gray-500 hover:text-gray-300">{t("myOrg.closeSearch")}</button>
             </div>
             {searchResults.length === 0 ? (
-              <div className="text-xs text-gray-500 text-center py-2">无结果</div>
+              <div className="text-xs text-gray-500 text-center py-2">{t("myOrg.noResults")}</div>
             ) : searchResults.map((r) => (
               <div key={r.id} className="px-2 py-1.5 hover:bg-gray-700 rounded text-xs cursor-pointer" onClick={async () => {
                 // Jump to conversation and scroll to message
@@ -850,7 +850,7 @@ export function MyOrgPage() {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs text-gray-400">{t("myOrg.selectParticipants")}</label>
-                    <button onClick={selectAllParticipants} className="text-[10px] text-blue-400 hover:text-blue-300">全选</button>
+                    <button onClick={selectAllParticipants} className="text-[10px] text-blue-400 hover:text-blue-300">{t("myOrg.selectAll")}</button>
                   </div>
                   <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
                     {allBots.map((bot) => (
@@ -895,13 +895,13 @@ export function MyOrgPage() {
                         if (bot) { selectDM(bot); setShowMembers(false); }
                       }} className="flex items-center gap-2 flex-1 text-left">
                         <OnlineDot online={p.online} /><span className="text-sm text-gray-200">{p.name || p.bot_id.substring(0, 8)}</span>
-                        {isCreator && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">创建者</span>}
+                        {isCreator && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-700/50 text-amber-200">{t("myOrg.creator")}</span>}
                         {isMine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
                       </button>
                       <span className="text-[10px] text-gray-600 cursor-pointer" onClick={() => {
                         const bot = allBots.find((b) => b.name === p.name);
                         if (bot) { selectDM(bot); setShowMembers(false); }
-                      }}>私聊 →</span>
+                      }}>{t("myOrg.dmLink")}</span>
                       {!isCreator && myBotIsCreator && (
                         <button onClick={async (e) => {
                           e.stopPropagation();
@@ -910,7 +910,7 @@ export function MyOrgPage() {
                             await api.myOrgThreadKick(target!.type === "thread" ? (target as { type: "thread"; thread: OrgThread }).thread.id : "", p.bot_id, orgIdRef.current);
                             await loadThreadDetail((target as { type: "thread"; thread: OrgThread }).thread.id);
                           } catch (err: unknown) { alert((err as Error).message || "Failed"); }
-                        }} className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-300">移除</button>
+                        }} className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-300">{t("myOrg.remove")}</button>
                       )}
                     </div>
                     );
@@ -925,7 +925,7 @@ export function MyOrgPage() {
           {showInvite && target?.type === "thread" && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowInvite(false)}>
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-3" onClick={(e) => e.stopPropagation()}>
-                <h3 className="text-sm font-medium text-white">邀请成员加入群聊</h3>
+                <h3 className="text-sm font-medium text-white">{t("myOrg.inviteTitle")}</h3>
                 <div className="max-h-48 overflow-auto space-y-1">
                   {allBots.filter((b) => !threadMemberNames?.has(b.name)).map((bot) => (
                     <button key={bot.bot_id} onClick={async () => {
@@ -940,7 +940,7 @@ export function MyOrgPage() {
                     </button>
                   ))}
                   {allBots.filter((b) => !threadMemberNames?.has(b.name)).length === 0 && (
-                    <div className="text-xs text-gray-500 text-center py-2">所有成员都已在群中</div>
+                    <div className="text-xs text-gray-500 text-center py-2">{t("myOrg.allInGroup")}</div>
                   )}
                 </div>
                 <button onClick={() => setShowInvite(false)} className="text-xs text-gray-500 hover:text-gray-300 w-full text-center">{t("common.close")}</button>
@@ -952,7 +952,7 @@ export function MyOrgPage() {
           {showRenameTopic && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowRenameTopic(false)}>
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 space-y-3" onClick={(e) => e.stopPropagation()}>
-                <h3 className="text-sm font-medium text-white">修改群名</h3>
+                <h3 className="text-sm font-medium text-white">{t("myOrg.renameTopic")}</h3>
                 <input type="text" value={topicDraft} onChange={(e) => setTopicDraft(e.target.value)}
                   className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
                   onKeyDown={(e) => e.key === "Enter" && handleRenameTopic()} />
@@ -970,7 +970,7 @@ export function MyOrgPage() {
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-96 space-y-3" onClick={(e) => e.stopPropagation()}>
                 <h3 className="text-sm font-medium text-white">群公告</h3>
                 <textarea value={announcementDraft} onChange={(e) => setAnnouncementDraft(e.target.value)} rows={4}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none" placeholder="输入群公告内容..." />
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none" placeholder={t("myOrg.announcementPlaceholder")} />
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowAnnouncement(false)} className="text-xs text-gray-500">{t("common.cancel")}</button>
                   <button onClick={handleSaveAnnouncement} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded">{t("common.save")}</button>
@@ -1004,13 +1004,13 @@ export function MyOrgPage() {
                     <button onClick={() => setShowThreadMenu(!showThreadMenu)} className="text-gray-400 hover:text-gray-200 p-1">⋯</button>
                     {showThreadMenu && (
                       <div className="absolute right-0 top-8 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1 w-36">
-                        <button onClick={() => { setShowMembers(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">👥 成员列表</button>
-                        <button onClick={() => { setShowSearch(!showSearch); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">🔍 消息搜索</button>
+                        <button onClick={() => { setShowMembers(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">{t("myOrg.menuMembers")}</button>
+                        <button onClick={() => { setShowSearch(!showSearch); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">{t("myOrg.menuSearch")}</button>
                         {isThreadCreator && <>
-                          <button onClick={() => { setTopicDraft(target.thread.topic); setShowRenameTopic(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">✏️ 修改群名</button>
-                          <button onClick={() => { setAnnouncementDraft(announcement); setShowAnnouncement(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">📢 群公告</button>
+                          <button onClick={() => { setTopicDraft(target.thread.topic); setShowRenameTopic(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">{t("myOrg.menuRename")}</button>
+                          <button onClick={() => { setAnnouncementDraft(announcement); setShowAnnouncement(true); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700">{t("myOrg.menuAnnouncement")}</button>
                         </>}
-                        {!isThreadCreator && <button onClick={() => { handleLeaveThread(); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700">🚪 退出群聊</button>}
+                        {!isThreadCreator && <button onClick={() => { handleLeaveThread(); setShowThreadMenu(false); }} className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-gray-700">{t("myOrg.menuLeave")}</button>}
                       </div>
                     )}
                   </div>
@@ -1034,7 +1034,7 @@ export function MyOrgPage() {
               {/* Search bar */}
               {showSearch && (
                 <div className="px-4 py-2 border-b border-gray-800">
-                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜索消息内容..."
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={t("myOrg.searchInThread")}
                     className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
                 </div>
               )}
@@ -1042,7 +1042,7 @@ export function MyOrgPage() {
               {/* Messages */}
               <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-3 space-y-2">
                 {hasMore && <button onClick={loadMore} className="text-xs text-blue-400 hover:text-blue-300 block mx-auto mb-2">{t("chat.loadMore")}</button>}
-                {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? "无搜索结果" : t("chat.noMessages")}</div>}
+                {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? t("myOrg.noSearchResults") : t("chat.noMessages")}</div>}
                 {filteredMessages.map((msg) => {
                   const senderName = (msg as ChatMessage).sender_name || "";
                   // Build set of all "my" identities: agent names + admin bot name + instance bot name
@@ -1086,7 +1086,7 @@ export function MyOrgPage() {
                     </div>
                   );
                 })}
-                {botTyping && <div className="flex justify-start"><div className="bg-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm"><span className="animate-pulse">正在输入...</span></div></div>}
+                {botTyping && <div className="flex justify-start"><div className="bg-gray-800 text-gray-400 rounded-lg px-3 py-2 text-sm"><span className="animate-pulse">{t("myOrg.typing")}</span></div></div>}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -1098,7 +1098,7 @@ export function MyOrgPage() {
                 const myBotsInThread = (data?.my_bots || []).filter((b: { agent_name: string }) => threadMemberNames?.has(b.agent_name));
                 return myBotsInThread.length > 1 ? (
                   <div className="px-4 py-1.5 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
-                    <span>发言身份:</span>
+                    <span>{t("myOrg.identity")}</span>
                     <select value={threadBotId || myBotsInThread[0]?.instance_id || ""}
                       onChange={(e) => setThreadBotId(e.target.value)}
                       className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200">
@@ -1121,13 +1121,13 @@ export function MyOrgPage() {
                       const result = await api.myOrgFileUpload(f);
                       const link = `📎 [${result.filename}](${result.url}) (${result.size_kb}KB)`;
                       setInput((v) => v ? v + "\n" + link : link);
-                    } catch (err: unknown) { alert((err as Error).message || "上传失败"); }
+                    } catch (err: unknown) { alert((err as Error).message || t("myOrg.uploadFailed")); }
                     finally { setUploading(false); }
                   }} />
-                  <button onClick={() => fileInputRef.current?.click()} disabled={sending} className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title="上传图片">
+                  <button onClick={() => fileInputRef.current?.click()} disabled={sending} className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title={t("myOrg.uploadImage")}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Zm16.5-13.5a1.125 1.125 0 1 1-2.25 0 1.125 1.125 0 0 1 2.25 0Z" /></svg>
                   </button>
-                  <button onClick={() => generalFileRef.current?.click()} disabled={sending || uploading} className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title="上传文件">
+                  <button onClick={() => generalFileRef.current?.click()} disabled={sending || uploading} className="shrink-0 p-2 text-gray-400 hover:text-gray-200 disabled:opacity-40" title={t("myOrg.uploadFile")}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
                   </button>
                   <div className="relative">
@@ -1141,10 +1141,10 @@ export function MyOrgPage() {
                     <textarea value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
                       rows={1}
-                      placeholder={pendingImage ? "添加图片说明..." : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none overflow-y-auto" style={{ maxHeight: 120 }} disabled={sending} />
+                      placeholder={pendingImage ? t("myOrg.imageCaption") : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none overflow-y-auto" style={{ maxHeight: 120 }} disabled={sending} />
                   </div>
                   <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || sending} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
-                    {uploading ? "上传中..." : sending ? t("chat.sending") : t("chat.send")}
+                    {uploading ? t("myOrg.uploading") : sending ? t("chat.sending") : t("chat.send")}
                   </button>
                 </div>
               </div>
