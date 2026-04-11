@@ -2,34 +2,47 @@
 
 [English](README.md) | 中文文档
 
-自托管的 Web 控制台，用于部署和管理 AI Agent 实例。支持 [OpenClaw](https://github.com/openclaw/openclaw) 和 [Zylos](https://github.com/zylos-ai/zylos-core) 产品，提供实时聊天、组织管理和插件市场功能。
+自托管的 Web 控制台，用于部署和管理 AI Agent 实例。支持 [OpenClaw](https://github.com/openclaw/openclaw)、[Zylos](https://github.com/zylos-ai/zylos-core) 和 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 三种产品，提供实时聊天、组织管理和插件市场功能。
 
 ## 功能特性
 
 ### 实例管理
+- **三种产品** — OpenClaw（Claude 驱动）、Zylos（轻量编排）、Hermes Agent（自主学习，200+ 模型）
 - **完整生命周期** — 通过 Docker Compose 创建、安装、启动、停止、重启、升级、卸载 AI Agent 实例
-- **自检修复** — 7 项自动诊断（容器状态、DB 元数据、API Key、HXA 配置、WebSocket 连接、npm 依赖、AI 运行时），一键修复。Hub 一致性验证确保 org_id / agent_name 在 DB、容器配置和 Hub API 三处保持同步
+- **自检修复** — 自动诊断（容器状态、DB 元数据、API Key、HXA 配置、WebSocket、npm 依赖、AI 运行时），一键修复
 - **文件浏览** — 在 Web 界面中浏览容器文件系统，直接下载文件
 - **Docker 控制** — 查看容器日志、设置 CPU/内存限制、在管理面板中管理容器生命周期
+- **镜像自动拉取** — compose up 前自动拉取最新镜像，避免旧缓存
 
 ### 通信渠道
 - **实时聊天** — 通过 HXA Connect（WebSocket）与 AI Agent 对话，支持消息复制
-- **微信集成** — 扫码登录连接微信。消息通过 C4 通信桥传递，自动去重（30 秒窗口）
-- **Telegram 集成** — 绑定 Telegram Bot，通过手机随时与 AI Agent 对话
-- **HXA 组织** — 多组织 Bot 通信枢纽。Bot 可在组织间转移。每个用户在每个组织中有独立的 admin bot 用于私信对话
+- **Thread 质量控制** — 结构化任务协议用于 Bots Team，AI 驱动的质量评估门，验收标准和自动修改请求
+- **微信集成** — 扫码登录连接微信（OpenClaw/Zylos），Hermes 版通过 HTTP Bridge
+- **Telegram 集成** — 绑定 Telegram Bot。Hermes 使用内置 Gateway，Zylos/OpenClaw 使用 HXA 插件
+- **HXA 组织** — 多组织 Bot 通信枢纽，支持 Thread 群聊、私信和消息搜索
 
 ### 插件市场
 - **一键安装** — 直接安装插件到运行中的容器
-- **可用插件** — 微信（zylos-weixin）、Whisper 语音识别（STT）、Edge-TTS 语音合成
-- **WSL/Docker 兼容** — 自动处理 WSL2 Docker 的权限问题（chmod/utime）
+- **可用插件** — 微信（zylos-weixin / hermes-weixin）、Whisper 语音识别、Edge-TTS 语音合成
+
+### 用户设置
+- **用户级 API Key** — 每个用户可配置自己的 API Key（Anthropic/OpenAI/OpenRouter/DeepSeek），优先于管理员全局配置
+- **按产品区分配置** — Hermes 显示 OpenRouter 字段，OpenClaw/Zylos 显示 Anthropic 字段
 
 ### 管理后台
-- **全局设置** — 在统一面板中配置默认 AI 模型、API Key（Anthropic/OpenAI）、HXA Hub 连接
-- **AI 模型可配** — 为新实例设置默认模型（如 `claude-sonnet-4-5`、`claude-opus-4`，或任何兼容模型）
-- **用户管理** — 第一个注册的用户自动成为管理员，可查看和管理所有用户
+- **全局设置** — 配置默认 AI 模型、API Key（Anthropic/OpenAI）、HXA Hub 连接
+- **用户管理** — 第一个注册的用户自动成为管理员
 - **HXA 组织管理** — 创建/删除组织、管理 Agent、轮换密钥、在组织间转移 Bot
 - **实例诊断** — 逐实例健康检查，包括 HXA/Telegram/Claude/容器状态
 - **中英双语** — 完整的中英文界面支持
+
+## 支持的产品
+
+| 产品 | 运行时 | 主要特性 |
+|------|--------|---------|
+| **OpenClaw** | Claude Code | 角色访问控制、审计日志、Docker 原生 |
+| **Zylos** | Claude Code / Codex | 插件架构、任务调度、轻量 |
+| **Hermes Agent** | 多模型 (200+) | 自主学习技能、持久记忆、多平台消息 |
 
 ## 快速开始（Docker）
 
@@ -62,8 +75,6 @@ docker compose up -d
 - Node.js 20+
 - MySQL 8.0
 - Docker（用于运行 AI Agent 实例）
-
-> **Windows 用户：** 推荐使用 WSL2 或 Docker Desktop。使用 `docker compose up`（容器化后端）可以在 Windows 上直接运行。
 
 ### 后端
 
@@ -123,6 +134,15 @@ GRANT ALL ON openclaw_hire.* TO 'openclaw'@'localhost';
 - **API Key** — Anthropic / OpenAI 凭证
 - **HXA Hub** — 组织 ID、密钥、邀请码
 
+### 用户级设置
+
+每个用户可在实例详情页配置自己的 API Key：
+
+- **OpenClaw/Zylos** — Anthropic Base URL、Auth Token、OpenAI Key
+- **Hermes Agent** — OpenRouter/DeepSeek API Key、Base URL、模型
+
+用户设置在创建/配置实例时优先于管理员全局配置。
+
 完整配置模板参见 [`.env.example`](.env.example)。
 
 ## 架构
@@ -151,6 +171,7 @@ graph TB
     subgraph Instances["AI Agent 实例 (Docker)"]
         OC["OpenClaw 容器<br/>Gateway + CLI"]
         ZY["Zylos 容器<br/>Claude/Codex 运行时"]
+        HM["Hermes 容器<br/>多模型 Gateway"]
         HXAPlugin["HXA Connect 插件"]
         TGPlugin["Telegram 插件"]
         WXPlugin["微信插件"]
@@ -166,60 +187,18 @@ graph TB
     Hub <-->|WebSocket| HXAPlugin
     WeChat <-->|长轮询| WXPlugin
     Telegram <-->|Bot API| TGPlugin
+    Telegram <-->|Bot API| HM
 
     WXPlugin -->|C4 接收| C4
     TGPlugin -->|C4 接收| C4
     HXAPlugin -->|C4 接收| C4
     C4 -->|tmux 粘贴| OC
     C4 -->|tmux 粘贴| ZY
-    OC -->|C4 发送| C4
-    ZY -->|C4 发送| C4
 
     style Console fill:#1a1a2e,stroke:#16213e,color:#fff
     style Hub fill:#0f3460,stroke:#16213e,color:#fff
     style Instances fill:#1a1a2e,stroke:#533483,color:#fff
     style Client fill:#1a1a2e,stroke:#16213e,color:#fff
-```
-
-### 模块结构
-
-```mermaid
-graph TB
-    subgraph FE["前端模块"]
-        direction LR
-        Dashboard["仪表盘"]
-        InstDetail["实例详情"]
-        Marketplace["插件市场"]
-        MyOrg["我的组织"]
-        Admin["管理面板"]
-        Settings["全局设置"]
-    end
-
-    subgraph BE["后端路由"]
-        direction LR
-        AuthRoute["auth"]
-        InstRoute["instances"]
-        OrgRoute["my_org"]
-        AdminRoute["admin"]
-        HXARoute["admin_hxa"]
-        SettingsRoute["settings"]
-        MktRoute["marketplace"]
-    end
-
-    subgraph Services["后端服务"]
-        direction LR
-        InstallSvc["install_service"]
-        AuthSvc["auth_service"]
-        DB["database"]
-        MsgIdx["message_index"]
-    end
-
-    FE -->|REST API| BE
-    BE --> Services
-
-    style FE fill:#1a1a2e,stroke:#e94560,color:#fff
-    style BE fill:#1a1a2e,stroke:#0f3460,color:#fff
-    style Services fill:#1a1a2e,stroke:#533483,color:#fff
 ```
 
 ### 实例安装流程
@@ -235,42 +214,15 @@ sequenceDiagram
     U->>FE: 点击"安装"
     FE->>BE: POST /instances/{id}/install
     BE->>BE: 克隆产品仓库
-    BE->>BE: 查找 compose 文件
-    BE->>D: docker compose up -d --build
+    BE->>BE: 查找/生成 compose 文件
+    BE->>BE: 读取用户 API 设置（优先）或全局设置
+    BE->>D: docker compose pull + up -d
     D-->>BE: 容器运行中
-    BE->>BE: 从全局设置注入 API Key
-    BE->>Hub: 在组织中注册 Agent
+    BE->>Hub: 在组织中注册 Agent（OpenClaw/Zylos）
     Hub-->>BE: bot_token + agent_id
-    BE->>D: 写入 HXA 配置到容器
-    BE->>D: 重启 HXA 插件
+    BE->>D: 写入配置到容器
     BE-->>FE: 安装完成
     FE-->>U: 状态：运行中
-```
-
-### 消息流转（微信示例）
-
-```mermaid
-sequenceDiagram
-    participant WX as 微信用户
-    participant Bot as 微信插件
-    participant C4R as C4 接收
-    participant C4D as C4 调度器
-    participant AI as Claude (tmux)
-    participant C4S as C4 发送
-    participant Adapter as send.js 适配器
-
-    WX->>Bot: 发送消息
-    Bot->>Bot: 去重检测（30 秒窗口）
-    Bot->>C4R: node c4-receive.js --channel weixin
-    C4R->>C4R: 追加 "reply via" 后缀
-    C4R->>C4D: 写入 SQLite 队列
-    C4D->>AI: 粘贴到 tmux 会话
-    AI->>AI: 处理消息
-    AI->>C4S: node c4-send.js "weixin" "endpoint"
-    C4S->>Adapter: node scripts/send.js endpoint message
-    Adapter->>Adapter: 位置参数 → 命名参数转换
-    Adapter->>Bot: node dist/scripts/send.js --endpoint --content
-    Bot->>WX: 通过微信 API 发送回复
 ```
 
 **技术栈：**
