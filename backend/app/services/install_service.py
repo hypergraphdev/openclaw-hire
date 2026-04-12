@@ -87,6 +87,68 @@ def _normalize_anthropic_api_key(current: str, token: str) -> str:
     return "sk-ant-proxy-via-sub2api"
 
 
+_OPENCLAW_DEFAULT_MODEL = "openai/gpt-5.4"
+_OPENCLAW_DEFAULT_MODEL_ID = "gpt-5.4"
+_OPENCLAW_DEFAULT_MODEL_ENTRY = {
+    "id": _OPENCLAW_DEFAULT_MODEL_ID,
+    "name": "GPT-5.4",
+    "api": "openai-completions",
+    "reasoning": True,
+    "input": ["text", "image"],
+}
+
+
+def _sync_openclaw_provider_config(cfg: dict, *, prefer_default_model: bool = True) -> bool:
+    """Sync OpenClaw model providers from admin settings into openclaw.json."""
+    models = cfg.setdefault("models", {})
+    providers = models.setdefault("providers", {})
+    changed = False
+
+    anthropic = providers.setdefault("anthropic", {})
+    db_anthropic_base = get_setting("anthropic_base_url", "").strip()
+    db_anthropic_token = get_setting("anthropic_auth_token", "").strip()
+    if db_anthropic_base and anthropic.get("baseUrl") != db_anthropic_base:
+        anthropic["baseUrl"] = db_anthropic_base
+        changed = True
+    if db_anthropic_token and anthropic.get("apiKey") != db_anthropic_token:
+        anthropic["apiKey"] = db_anthropic_token
+        changed = True
+
+    db_openai_base = get_setting("openai_base_url", "").strip()
+    db_openai_key = get_setting("openai_api_key", "").strip()
+    if db_openai_base or db_openai_key:
+        openai = providers.setdefault("openai", {})
+        if db_openai_base and openai.get("baseUrl") != db_openai_base:
+            openai["baseUrl"] = db_openai_base
+            changed = True
+        if db_openai_key and openai.get("apiKey") != db_openai_key:
+            openai["apiKey"] = db_openai_key
+            changed = True
+
+        openai_models = openai.get("models")
+        if not isinstance(openai_models, list):
+            openai_models = []
+            openai["models"] = openai_models
+            changed = True
+        existing_default = next((m for m in openai_models if isinstance(m, dict) and m.get("id") == _OPENCLAW_DEFAULT_MODEL_ID), None)
+        if existing_default is None:
+            openai_models.insert(0, dict(_OPENCLAW_DEFAULT_MODEL_ENTRY))
+            changed = True
+        else:
+            for key, value in _OPENCLAW_DEFAULT_MODEL_ENTRY.items():
+                if existing_default.get(key) != value:
+                    existing_default[key] = value
+                    changed = True
+
+        if prefer_default_model:
+            defaults = cfg.setdefault("agents", {}).setdefault("defaults", {})
+            if defaults.get("model") != _OPENCLAW_DEFAULT_MODEL:
+                defaults["model"] = _OPENCLAW_DEFAULT_MODEL
+                changed = True
+
+    return changed
+
+
 def _ensure_auth_env() -> None:
     """Ensure installer subprocess inherits usable provider credentials.
 
@@ -1578,20 +1640,10 @@ def _configure_openclaw_hxa_only(
     if not openclaw_json.exists():
         return False, f"Missing config file: {openclaw_json}"
 
-    # Sync API keys from admin settings into openclaw.json (in case they were set after install)
+    # Sync provider settings from admin settings into openclaw.json.
     try:
         _cfg = json.loads(openclaw_json.read_text())
-        _anthropic = _cfg.get("models", {}).get("providers", {}).get("anthropic", {})
-        _db_base = get_setting("anthropic_base_url", "")
-        _db_token = get_setting("anthropic_auth_token", "")
-        _changed = False
-        if _db_base and _anthropic.get("baseUrl") != _db_base:
-            _anthropic["baseUrl"] = _db_base
-            _changed = True
-        if _db_token and _anthropic.get("apiKey") != _db_token:
-            _anthropic["apiKey"] = _db_token
-            _changed = True
-        if _changed:
+        if _sync_openclaw_provider_config(_cfg):
             openclaw_json.write_text(json.dumps(_cfg, indent=2) + "\n")
     except Exception:
         pass  # Non-fatal
@@ -1734,4 +1786,3 @@ def _configure_openclaw_hxa_only(
             return True, f"HXA connected. Agent: {agent_name}"
 
     return False, "HXA token written but WebSocket connection not confirmed within 30s. Check container logs."
-

@@ -5,8 +5,10 @@ import os
 import shutil
 import threading
 import urllib.request
+from ipaddress import ip_address
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -27,9 +29,11 @@ from ..schemas import (
     InstanceResponse,
 )
 from ..services.install_service import (
+    _OPENCLAW_DEFAULT_MODEL,
     _get_hub_url,
     _ORG_ID,
     _safe_agent_name,
+    _sync_openclaw_provider_config,
     compose_logs,
     configure_instance_telegram,
     configure_telegram_only,
@@ -46,6 +50,20 @@ router = APIRouter(prefix="/api/instances", tags=["instances"])
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _base_url_targets_private_network(base_url: str) -> bool:
+    try:
+        host = (urlparse(base_url).hostname or "").strip().lower()
+        if not host:
+            return False
+        if host in {"localhost", "host.docker.internal"}:
+            return True
+        return ip_address(host).is_private or ip_address(host).is_loopback
+    except ValueError:
+        return False
+    except Exception:
+        return False
 
 
 def _row_to_instance(row) -> InstanceResponse:
@@ -1855,10 +1873,20 @@ def _self_check_instance(instance_id: str, product: str, db, inst: dict | None =
                 try:
                     cfg = json.loads(open(oc_json).read())
                     ant = cfg.get("models", {}).get("providers", {}).get("anthropic", {})
+                    openai = cfg.get("models", {}).get("providers", {}).get("openai", {})
+                    default_model = (cfg.get("agents", {}).get("defaults", {}) or {}).get("model", "")
                     if db_anthropic_token and ant.get("apiKey") != db_anthropic_token:
                         key_issues.append("openclaw.json apiKey 与全局配置不一致")
                     if db_anthropic_base and ant.get("baseUrl") != db_anthropic_base:
                         key_issues.append("openclaw.json baseUrl 与全局配置不一致")
+                    if db_openai_key and openai.get("apiKey") != db_openai_key:
+                        key_issues.append("openclaw.json OpenAI apiKey 与全局配置不一致")
+                    if db_openai_base and openai.get("baseUrl") != db_openai_base:
+                        key_issues.append("openclaw.json OpenAI baseUrl 与全局配置不一致")
+                    if db_openai_base and _base_url_targets_private_network(str(db_openai_base)):
+                        key_issues.append("OpenClaw 会拦截私网/localhost OpenAI baseUrl，请改用公网地址")
+                    if db_openai_key and default_model != _OPENCLAW_DEFAULT_MODEL:
+                        key_issues.append("openclaw.json 默认模型未切到 GPT-5.4")
                 except Exception:
                     key_issues.append("openclaw.json 读取失败")
             else:
@@ -2138,18 +2166,11 @@ def self_check_repair(
         if os.path.exists(oc_json_path):
             try:
                 cfg = json.loads(open(oc_json_path).read())
-                ant = cfg.setdefault("models", {}).setdefault("providers", {}).setdefault("anthropic", {})
-                changed = False
-                if db_anthropic_base and ant.get("baseUrl") != db_anthropic_base:
-                    ant["baseUrl"] = db_anthropic_base
-                    changed = True
-                if db_anthropic_token and ant.get("apiKey") != db_anthropic_token:
-                    ant["apiKey"] = db_anthropic_token
-                    changed = True
+                changed = _sync_openclaw_provider_config(cfg)
                 if changed:
                     open(oc_json_path, "w").write(json.dumps(cfg, indent=2) + "\n")
                     docker_run(["docker", "restart", container], timeout=30)
-                    repairs.append({"name": "api_keys", "action": "已同步 API Key 到 openclaw.json 并重启"})
+                    repairs.append({"name": "api_keys", "action": "已同步 OpenClaw provider 配置并重启"})
             except Exception as e:
                 repairs.append({"name": "api_keys", "action": f"修复失败: {e}"})
     else:  # zylos
