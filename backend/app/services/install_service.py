@@ -118,6 +118,9 @@ def _sync_openclaw_provider_config(cfg: dict, *, prefer_default_model: bool = Tr
     db_openai_key = get_setting("openai_api_key", "").strip()
     if db_openai_base or db_openai_key:
         openai = providers.setdefault("openai", {})
+        if openai.get("api") != "openai-completions":
+            openai["api"] = "openai-completions"
+            changed = True
         if db_openai_base and openai.get("baseUrl") != db_openai_base:
             openai["baseUrl"] = db_openai_base
             changed = True
