@@ -98,6 +98,15 @@ _OPENCLAW_DEFAULT_MODEL_ENTRY = {
 }
 
 
+def _normalize_openclaw_openai_base_url(base_url: str) -> str:
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    if normalized.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def _sync_openclaw_provider_config(cfg: dict, *, prefer_default_model: bool = True) -> bool:
     """Sync OpenClaw model providers from admin settings into openclaw.json."""
     models = cfg.setdefault("models", {})
@@ -114,7 +123,7 @@ def _sync_openclaw_provider_config(cfg: dict, *, prefer_default_model: bool = Tr
         anthropic["apiKey"] = db_anthropic_token
         changed = True
 
-    db_openai_base = get_setting("openai_base_url", "").strip()
+    db_openai_base = _normalize_openclaw_openai_base_url(get_setting("openai_base_url", ""))
     db_openai_key = get_setting("openai_api_key", "").strip()
     if db_openai_base or db_openai_key:
         openai = providers.setdefault("openai", {})

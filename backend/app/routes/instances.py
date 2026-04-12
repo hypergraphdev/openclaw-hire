@@ -32,6 +32,7 @@ from ..services.install_service import (
     _OPENCLAW_DEFAULT_MODEL,
     _get_hub_url,
     _ORG_ID,
+    _normalize_openclaw_openai_base_url,
     _safe_agent_name,
     _sync_openclaw_provider_config,
     compose_logs,
@@ -1859,7 +1860,7 @@ def _self_check_instance(instance_id: str, product: str, db, inst: dict | None =
     # ── 3. API Keys ────────────────────────────────────────────────────
     db_anthropic_base = get_setting("anthropic_base_url", "")
     db_anthropic_token = get_setting("anthropic_auth_token", "")
-    db_openai_base = get_setting("openai_base_url", "")
+    db_openai_base = _normalize_openclaw_openai_base_url(get_setting("openai_base_url", ""))
     db_openai_key = get_setting("openai_api_key", "")
     has_any_key = bool(db_anthropic_token or db_openai_key)
 
