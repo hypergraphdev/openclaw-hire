@@ -226,7 +226,7 @@ def create_instance(
             )
             cursor.execute(
                 """
-                INSERT INTO install_events (instance_id, event_type, message, created_at)
+                INSERT INTO install_events (instance_id, state, message, created_at)
                 VALUES (%s, 'running', %s, %s)
                 """,
                 (instance_id, f"Local Agent registered as '{agent_name}' — waiting for daemon to connect.", _utc_now()),
@@ -240,7 +240,7 @@ def create_instance(
             # instance, the user may want to retry.
             cursor.execute(
                 """
-                INSERT INTO install_events (instance_id, event_type, message, created_at)
+                INSERT INTO install_events (instance_id, state, message, created_at)
                 VALUES (%s, 'failed', %s, %s)
                 """,
                 (instance_id, f"Local Agent registration failed: {err}", _utc_now()),
