@@ -209,9 +209,11 @@ def create_instance(
             hub_url = _get_hub_url()
             from ..services.install_service import _get_org_id as _goid
             org_id_live = _goid() or _ORG_ID or ""
+            # Note: `instances` may not have an `org_id` column on older
+            # deployments — org_id lives in instance_configs below.
             cursor.execute(
-                "UPDATE instances SET agent_name = %s, org_id = %s, install_state = 'running', updated_at = %s WHERE id = %s",
-                (agent_name, org_id_live, _utc_now(), instance_id),
+                "UPDATE instances SET agent_name = %s, install_state = 'running', updated_at = %s WHERE id = %s",
+                (agent_name, _utc_now(), instance_id),
             )
             # Write instance_configs so chat endpoints work (they read hub_url/agent_name here).
             cursor.execute(
