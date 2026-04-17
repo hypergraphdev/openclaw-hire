@@ -177,15 +177,21 @@ def create_instance(
     db = Depends(get_db),
 ) -> InstanceResponse:
     product = PRODUCT_MAP[payload.product]
-    if not bool(current_user.get("is_admin", 0)):
+    # Local Agent runs on the user's own machine and uses no server container
+    # resources, so it's exempt from the per-user instance quota. The quota
+    # still applies to Docker-backed products (openclaw/zylos/hermes).
+    if not bool(current_user.get("is_admin", 0)) and payload.product != "local_agent":
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT COUNT(*) AS c FROM instances WHERE owner_id = %s", (current_user["id"],))
+        cursor.execute(
+            "SELECT COUNT(*) AS c FROM instances WHERE owner_id = %s AND product <> 'local_agent'",
+            (current_user["id"],),
+        )
         cnt = cursor.fetchone()["c"]
         cursor.close()
         if cnt >= 1:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Regular users can only create one instance. Contact admin for quota increase.",
+                detail="Regular users can only create one server-side instance. Local Agent has no limit. Contact admin for quota increase.",
             )
 
     instance_id = f"inst_{uuid4().hex[:12]}"
