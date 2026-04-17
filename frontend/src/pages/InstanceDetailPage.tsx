@@ -369,6 +369,15 @@ export function InstanceDetailPage() {
           <div className="text-sm text-gray-500 mt-1">
             {PRODUCT_LABELS[instance.product] ?? instance.product} ·{" "}
             <span className="font-mono text-xs">{instance.id}</span>
+            {(detail?.config?.agent_name || instance.agent_name) && (
+              <>
+                {" · "}
+                <span className="text-gray-400">组织内:</span>{" "}
+                <span className="font-mono text-xs text-blue-300">
+                  {detail?.config?.agent_name || instance.agent_name}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
