@@ -73,6 +73,23 @@ _DEFAULT_MODEL="${OPENCLAW_MODEL:-claude-sonnet-4-5}"
 _TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TG_ENABLED="false"
 [[ -n "$_TG_TOKEN" ]] && TG_ENABLED="true"
+_OPENAI_BASE="${OPENAI_BASE_URL:-}"
+_OPENAI_KEY="${OPENAI_API_KEY:-}"
+# Build optional OpenAI provider JSON block for openclaw.json
+_OPENAI_PROVIDER_JSON=""
+if [[ -n "$_OPENAI_BASE" || -n "$_OPENAI_KEY" ]]; then
+  _OPENAI_PROVIDER_JSON=',
+      "openai": {
+        "api": "openai-completions",
+        "baseUrl": "'"$_OPENAI_BASE"'",
+        "apiKey": "'"$_OPENAI_KEY"'",
+        "models": [{"id": "gpt-5.4","name": "GPT-5.4","api": "openai-completions","reasoning": true,"input": ["text","image"]}]
+      }'
+fi
+# Default agent model: prefer OpenAI when key is set and no explicit override
+_DEFAULT_AGENT_MODEL="${OPENCLAW_MODEL:-}"
+[[ -z "$_DEFAULT_AGENT_MODEL" && -n "$_OPENAI_KEY" ]] && _DEFAULT_AGENT_MODEL="openai/gpt-5.4"
+[[ -z "$_DEFAULT_AGENT_MODEL" ]] && _DEFAULT_AGENT_MODEL="anthropic/claude-sonnet-4-5"
 
 mkdir -p "$WORKDIR"
 
@@ -156,7 +173,7 @@ cat > "$OPENCLAW_JSON" <<OCJSON
             "maxTokens": 16000
           }
         ]
-      }
+      }${_OPENAI_PROVIDER_JSON}
     }
   },
   "channels": {
@@ -172,7 +189,7 @@ cat > "$OPENCLAW_JSON" <<OCJSON
   },
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-sonnet-4-5",
+      "model": "$_DEFAULT_AGENT_MODEL",
       "compaction": { "mode": "safeguard" }
     }
   },
@@ -215,6 +232,8 @@ OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
 ANTHROPIC_BASE_URL=$_ANTHROPIC_BASE
 ANTHROPIC_AUTH_TOKEN=$_ANTHROPIC_TOKEN
 # ANTHROPIC_API_KEY intentionally omitted — apiKey in openclaw.json = ANTHROPIC_AUTH_TOKEN (sub2api Bearer)
+OPENAI_BASE_URL=$_OPENAI_BASE
+OPENAI_API_KEY=$_OPENAI_KEY
 
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 TELEGRAM_ENABLE_GROUPS=${TELEGRAM_ENABLE_GROUPS:-true}
