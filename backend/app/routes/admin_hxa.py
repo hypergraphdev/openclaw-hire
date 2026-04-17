@@ -307,6 +307,15 @@ def _get_agent_token(instance_id: str) -> str:
     except Exception:
         pass
 
+    # Local Agent: token lives in server_settings, not in any runtime file.
+    try:
+        from ..database import get_setting
+        tok = get_setting(f"local_agent_token_{instance_id}", "")
+        if tok:
+            return tok
+    except Exception:
+        pass
+
     return ""
 
 

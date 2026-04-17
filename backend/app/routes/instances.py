@@ -299,6 +299,9 @@ def list_instances(
     org_ids = {m["org_id"] for m in merged if m.get("org_id")}
     org_name_map = _resolve_org_names(org_ids)
 
+    # For Local Agent instances, reflect actual daemon online state in `status`.
+    _overlay_local_agent_status(merged)
+
     # Convert to response: drop sensitive fields, add bool flag
     results = []
     for m in merged:
@@ -308,6 +311,45 @@ def list_instances(
             m["org_name"] = org_name_map.get(m["org_id"], "")
         results.append(InstanceResponse(**m))
     return results
+
+
+def _fetch_local_agent_online(instance_id: str) -> bool | None:
+    """Query the hub for this Local Agent bot's online flag.
+
+    Returns True/False when we got an answer, None on error/missing token so
+    callers can fall back to whatever status is already in the DB.
+    """
+    token = get_setting(f"local_agent_token_{instance_id}", "")
+    if not token:
+        return None
+    hub = _get_hub_url().rstrip("/")
+    try:
+        req = urllib.request.Request(
+            f"{hub}/api/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+        return bool(data.get("online"))
+    except Exception:
+        return None
+
+
+def _overlay_local_agent_status(rows: list[dict]) -> None:
+    """Mutate instance rows so Local Agent `status` reflects daemon connection.
+
+    active = daemon connected; inactive = no daemon; failed = registration
+    failed (unchanged).
+    """
+    for m in rows:
+        if m.get("product") != "local_agent":
+            continue
+        if m.get("install_state") == "failed":
+            continue
+        online = _fetch_local_agent_online(m["id"])
+        if online is None:
+            continue
+        m["status"] = "active" if online else "inactive"
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +420,8 @@ def get_instance(
         inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
 
     inst = _merge_instance_config_fields(inst, db)
+    # Reflect daemon connection state on the Local Agent status pill.
+    _overlay_local_agent_status([inst])
 
     cursor = db.cursor(dictionary=True)
     cursor.execute(
@@ -992,13 +1036,14 @@ def rename_agent(
     cursor.close()
     _update_agent_name_in_config(instance_id, new_name)
 
-    # Restart hxa-connect so mention filter uses new name
-    try:
-        container = f"zylos_{instance_id}" if inst["product"] == "zylos" else f"{inst.get('compose_project', '')}-openclaw-gateway-1"
-        subprocess.run(["docker", "exec", container, "sh", "-lc", "pm2 restart zylos-hxa-connect 2>/dev/null || true"],
-                       capture_output=True, timeout=10)
-    except Exception:
-        pass
+    # Restart hxa-connect so mention filter uses new name (skip for container-less products)
+    if inst["product"] != "local_agent":
+        try:
+            container = f"zylos_{instance_id}" if inst["product"] == "zylos" else f"{inst.get('compose_project', '')}-openclaw-gateway-1"
+            subprocess.run(["docker", "exec", container, "sh", "-lc", "pm2 restart zylos-hxa-connect 2>/dev/null || true"],
+                           capture_output=True, timeout=10)
+        except Exception:
+            pass
 
     return {"ok": True, "agent_name": new_name}
 
