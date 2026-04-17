@@ -2,13 +2,13 @@
 
 [中文文档](README_CN.md) | English
 
-A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw), [Zylos](https://github.com/zylos-ai/zylos-core), and [Hermes Agent](https://github.com/NousResearch/hermes-agent) with real-time chat, organization management, and plugin marketplace.
+A self-hosted web console for deploying and managing AI agent instances. Supports [OpenClaw](https://github.com/openclaw/openclaw), [Zylos](https://github.com/zylos-ai/zylos-core), [Hermes Agent](https://github.com/NousResearch/hermes-agent), and **Local Agent** (run a CLI on your own machine via [@slock-ai/daemon](https://www.npmjs.com/package/@slock-ai/daemon)) with real-time chat, organization management, and plugin marketplace.
 
 ## Features
 
 ### Instance Management
-- **Three Products** — OpenClaw (Claude-based), Zylos (lightweight orchestration), Hermes Agent (self-improving, 200+ models)
-- **Full Lifecycle** — Create, install, start, stop, restart, upgrade, and uninstall AI agent instances via Docker Compose
+- **Four Products** — OpenClaw (Claude-based), Zylos (lightweight orchestration), Hermes Agent (self-improving, 200+ models), **Local Agent** (bring-your-own-compute; runs on the user's machine, no server container)
+- **Full Lifecycle** — Create, install, start, stop, restart, upgrade, and uninstall AI agent instances via Docker Compose (Local Agent skips Docker entirely)
 - **Self-Check & Repair** — Automatic diagnostics (container, DB, API keys, HXA config, WebSocket, npm deps, AI runtime) with one-click repair
 - **File Browser** — Browse container file system, download files directly from the web UI
 - **Docker Control** — View container logs, set CPU/memory limits, manage container lifecycle from admin panel
@@ -43,6 +43,25 @@ A self-hosted web console for deploying and managing AI agent instances. Support
 | **OpenClaw** | Claude Code | Role-based access, audit logging, Docker-native |
 | **Zylos** | Claude Code / Codex | Plugin architecture, task scheduling, lightweight |
 | **Hermes Agent** | Multi-model (200+) | Self-improving skills, persistent memory, multi-platform messaging |
+| **Local Agent** | Any Slock-compatible CLI (Claude Code, Codex, Kimi, Cursor, Gemini, Copilot) | Runs on the user's own machine via `npx @slock-ai/daemon`, no server resources, instant one-command connect, full DM + thread chat |
+
+## Local Agent (Bring-Your-Own-Compute)
+
+Local Agent is the first product here that **does not run on the server**. Creating a Local Agent instance provisions a bot identity on HXA Connect and hands the user a single command to run on their own laptop:
+
+```bash
+npx @slock-ai/daemon@latest --server-url https://www.ucai.net/connect --api-key <your_token>
+```
+
+The daemon opens a WebSocket to HXA Connect's `/daemon/connect` endpoint, spawns the user's local Claude Code (or Codex/Kimi/etc.) as a subprocess, and routes messages back and forth. From the console UI, a Local Agent instance behaves like any other bot: you can DM it, @mention it in threads, see its online/offline status (driven by the real daemon connection), and rename it.
+
+How it differs from Docker products:
+
+- **No install flow** — no compose file, no runtime directory, no container; registration happens synchronously when you click "deploy".
+- **`status` field reflects the daemon** — `active` when the daemon is connected, `inactive` when it isn't, without any Docker inspection.
+- **Deleting the instance** calls HXA Connect to delete the bot identity and forgets the stored API key in `server_settings`.
+
+The protocol adapter lives in [hxa-connect](https://github.com/hypergraphdev/hxa-connect) (see `/daemon/connect` WS + `/internal/agent/:id/*` HTTP). See `backend/app/services/install_service.py::register_local_agent_bot` for the registration path and `frontend/src/components/LocalAgentSetup.tsx` for the one-click-copy UI.
 
 ## Quick Start (Docker)
 

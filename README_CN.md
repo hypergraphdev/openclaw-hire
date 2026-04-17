@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文文档
 
-自托管的 Web 控制台，用于部署和管理 AI Agent 实例。支持 [OpenClaw](https://github.com/openclaw/openclaw)、[Zylos](https://github.com/zylos-ai/zylos-core) 和 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 三种产品，提供实时聊天、组织管理和插件市场功能。
+自托管的 Web 控制台，用于部署和管理 AI Agent 实例。支持 [OpenClaw](https://github.com/openclaw/openclaw)、[Zylos](https://github.com/zylos-ai/zylos-core)、[Hermes Agent](https://github.com/NousResearch/hermes-agent) 以及 **Local Agent**（通过 [@slock-ai/daemon](https://www.npmjs.com/package/@slock-ai/daemon) 在用户本机运行 CLI），提供实时聊天、组织管理和插件市场功能。
 
 ## 功能特性
 
 ### 实例管理
-- **三种产品** — OpenClaw（Claude 驱动）、Zylos（轻量编排）、Hermes Agent（自主学习，200+ 模型）
-- **完整生命周期** — 通过 Docker Compose 创建、安装、启动、停止、重启、升级、卸载 AI Agent 实例
+- **四种产品** — OpenClaw（Claude 驱动）、Zylos（轻量编排）、Hermes Agent（自主学习，200+ 模型）、**Local Agent**（用户自带算力，跑在本机，服务器不起容器）
+- **完整生命周期** — 通过 Docker Compose 创建、安装、启动、停止、重启、升级、卸载 AI Agent 实例（Local Agent 跳过 Docker 流程）
 - **自检修复** — 自动诊断（容器状态、DB 元数据、API Key、HXA 配置、WebSocket、npm 依赖、AI 运行时），一键修复
 - **文件浏览** — 在 Web 界面中浏览容器文件系统，直接下载文件
 - **Docker 控制** — 查看容器日志、设置 CPU/内存限制、在管理面板中管理容器生命周期
@@ -43,6 +43,25 @@
 | **OpenClaw** | Claude Code | 角色访问控制、审计日志、Docker 原生 |
 | **Zylos** | Claude Code / Codex | 插件架构、任务调度、轻量 |
 | **Hermes Agent** | 多模型 (200+) | 自主学习技能、持久记忆、多平台消息 |
+| **Local Agent** | 任意 Slock 兼容 CLI（Claude Code / Codex / Kimi / Cursor / Gemini / Copilot） | 通过 `npx @slock-ai/daemon` 在用户本机运行，服务器不占资源，一条命令连上，DM 与群聊全链路打通 |
+
+## Local Agent（用户自带算力）
+
+Local Agent 是本控制台里第一个**不在服务器运行**的产品。创建 Local Agent 实例时，控制台会在 HXA Connect 上注册一个 Bot 身份，并给出一条一键复制的命令让用户在自己电脑上运行：
+
+```bash
+npx @slock-ai/daemon@latest --server-url https://www.ucai.net/connect --api-key <你的 token>
+```
+
+Daemon 会通过 WebSocket 连接到 HXA Connect 的 `/daemon/connect` 端点，在用户本机把 Claude Code（或 Codex/Kimi/……）拉起为子进程，双向转发消息。从控制台看过去，Local Agent 和其他 Bot 无异：能 DM、能在 Thread 群聊里被 @ 到，在线状态随真实 daemon 连接实时变化，也能改名。
+
+与其他 Docker 类产品的差别：
+
+- **无安装流程** —— 没有 compose、没有 runtime 目录、没有容器；点 "部署" 时同步完成注册。
+- **`status` 字段反映真实 daemon** —— daemon 连着时 `active`，没连时 `inactive`，不靠 Docker 状态。
+- **删除实例** 会通知 HXA Connect 删除该 bot，并清理 `server_settings` 中的 API key。
+
+协议适配层在 [hxa-connect](https://github.com/hypergraphdev/hxa-connect)（参见 `/daemon/connect` WS + `/internal/agent/:id/*` HTTP）。注册路径见 `backend/app/services/install_service.py::register_local_agent_bot`，一键复制 UI 见 `frontend/src/components/LocalAgentSetup.tsx`。
 
 ## 快速开始（Docker）
 
