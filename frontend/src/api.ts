@@ -102,6 +102,11 @@ export const api = {
   deleteInstance: (id: string) =>
     request<{ status: string; instance_id: string }>(`/api/instances/${id}`, { method: "DELETE" }),
 
+  daemonCommand: (id: string) =>
+    request<{ server_url: string; api_key: string; command: string; agent_name: string }>(
+      `/api/instances/${id}/daemon-command`
+    ),
+
   renameAgent: (id: string, agentName: string) =>
     request<{ ok: boolean; agent_name: string }>(`/api/instances/${id}/agent-name`, {
       method: "PUT",

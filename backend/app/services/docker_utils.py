@@ -17,7 +17,13 @@ def docker_run(cmd: list[str], timeout: int = 10, cwd: str | None = None) -> tup
 
 
 def get_container_name(instance_id: str, product: str) -> str:
-    """Derive docker container name from instance_id and product type."""
+    """Derive docker container name from instance_id and product type.
+
+    Returns empty string for products without a server-side container
+    (e.g. local_agent, which runs on the user's own machine).
+    """
+    if product == "local_agent":
+        return ""
     if product == "hermes":
         return f"hermes_{instance_id}"
     if product == "zylos":
@@ -28,7 +34,9 @@ def get_container_name(instance_id: str, product: str) -> str:
 
 
 def get_compose_project(instance_id: str, product: str) -> str:
-    """Derive docker compose project name."""
+    """Derive docker compose project name (empty for container-less products)."""
+    if product == "local_agent":
+        return ""
     if product == "hermes":
         return f"hermes_{instance_id}"
     if product == "zylos":

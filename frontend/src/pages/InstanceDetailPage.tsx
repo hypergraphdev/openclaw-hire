@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
+import { LocalAgentSetup } from "../components/LocalAgentSetup";
 import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
 import { useAuth } from "../contexts/AuthContext";
@@ -13,12 +14,14 @@ const PRODUCT_LABELS: Record<string, string> = {
   openclaw: "OpenClaw",
   zylos: "Zylos",
   hermes: "Hermes Agent",
+  local_agent: "Local Agent",
 };
 
 const PRODUCT_REPOS: Record<string, string> = {
   openclaw: "https://github.com/openclaw/openclaw",
   zylos: "https://github.com/zylos-ai/zylos-core",
   hermes: "https://github.com/NousResearch/hermes-agent",
+  local_agent: "https://www.npmjs.com/package/@slock-ai/daemon",
 };
 
 // ── User Settings Card (per-user API keys) ──
@@ -735,6 +738,9 @@ export function InstanceDetailPage() {
 
           {/* Info cards */}
           {activeTab === "info" && (<>
+          {instance.product === "local_agent" && isOwner && (
+            <LocalAgentSetup instanceId={instance.id} />
+          )}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.instanceDetails")}</h2>
             <dl className="space-y-2 text-sm">
@@ -1020,8 +1026,10 @@ export function InstanceDetailPage() {
             </div>
           </div>
 
-          {/* User Settings (API Keys) */}
-          <UserSettingsCard product={instance.product} />
+          {/* User Settings (API Keys) — Local Agent uses the user's own machine credentials */}
+          {instance.product !== "local_agent" && (
+            <UserSettingsCard product={instance.product} />
+          )}
 
           </>)}
         </div>

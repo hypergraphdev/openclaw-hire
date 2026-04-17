@@ -107,6 +107,21 @@ PRODUCTS: list[ProductCatalog] = [
             "Browser automation with Playwright",
         ],
     ),
+    ProductCatalog(
+        id="local_agent",
+        name="Local Agent",
+        description="Run an AI agent on your own machine and expose it as a chat participant here. Powered by @slock-ai/daemon — no server resources used.",
+        tagline="Your local CLI, as a chat member",
+        repo_url="https://www.npmjs.com/package/@slock-ai/daemon",
+        tags=["AI", "Local", "Claude Code", "BYO-Compute"],
+        features=[
+            "Runs on your own laptop via one npx command",
+            "Keeps your code and files on your machine",
+            "Works with Claude Code out of the box",
+            "Chat with your agent from the hire console",
+            "No Docker, no server resources",
+        ],
+    ),
 ]
 
 PRODUCT_MAP = {p.id: p for p in PRODUCTS}

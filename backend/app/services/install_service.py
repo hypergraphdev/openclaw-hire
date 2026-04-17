@@ -487,6 +487,11 @@ def _run_install(instance_id: str) -> None:
     repo_url = row["repo_url"]
     owner_id = row.get("owner_id", "")
 
+    # Local Agent doesn't run on the server; its identity was provisioned at
+    # create time. Nothing to install here.
+    if product == "local_agent":
+        return
+
     try:
         _runtime_root_path().mkdir(parents=True, exist_ok=True)
         _ensure_auth_env()
@@ -846,6 +851,90 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
         pass
 
 
+def register_local_agent_bot(instance_id: str) -> tuple[bool, str, str, str, str]:
+    """Register a Local Agent with HXA Connect via ticket (member role).
+
+    Local Agent has no container — we just create a bot identity whose token
+    will be handed to the user as the @slock-ai/daemon --api-key.
+
+    Returns: (ok, agent_token, agent_id, agent_name, error_message)
+    """
+    agent_name = _safe_agent_name(instance_id)
+    org_secret = _get_org_secret()
+    org_id = _get_org_id()
+    if not org_secret or not org_id:
+        return False, "", "", agent_name, "Server missing ORG_ID/ORG_SECRET."
+
+    hub = _get_hub_url().rstrip("/")
+    from urllib.parse import urlparse as _up
+    _p = _up(hub)
+    origin = f"{_p.scheme}://{_p.netloc}"
+
+    # Best effort: clean any stale bot with the same name.
+    _cleanup_zylos_hxa_bot(agent_name, org_id, org_secret)
+
+    # Step 1: org_admin login
+    try:
+        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+        login_req = urllib.request.Request(
+            f"{hub}/api/auth/login",
+            data=login_data,
+            headers={"Content-Type": "application/json", "Origin": origin},
+            method="POST",
+        )
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+    except Exception as e:
+        return False, "", "", agent_name, f"Admin login failed: {e}"
+
+    # Step 2: create one-time ticket
+    try:
+        ticket_req = urllib.request.Request(
+            f"{hub}/api/org/tickets",
+            data=json.dumps({"reusable": False}).encode(),
+            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin},
+            method="POST",
+        )
+        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
+            ticket_result = json.loads(resp.read().decode())
+        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
+        if not ticket_secret:
+            return False, "", "", agent_name, f"Ticket creation returned no secret: {ticket_result}"
+    except Exception as e:
+        return False, "", "", agent_name, f"Ticket creation failed: {e}"
+
+    # Step 3: register bot with the ticket
+    try:
+        reg_req = urllib.request.Request(
+            f"{hub}/api/auth/register",
+            data=json.dumps({"org_id": org_id, "ticket": ticket_secret, "name": agent_name}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(reg_req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+    except Exception as e:
+        return False, "", "", agent_name, f"HXA registration failed: {e}"
+
+    agent_token = result.get("token", "")
+    agent_id = result.get("agent_id") or result.get("id", "")
+    if not agent_token:
+        return False, "", agent_id, agent_name, f"HXA registration returned no token: {result}"
+
+    return True, agent_token, agent_id, agent_name, ""
+
+
+def delete_local_agent_bot(agent_name: str) -> None:
+    """Best-effort delete a Local Agent's bot identity from HXA Connect."""
+    if not agent_name:
+        return
+    org_id = _get_org_id()
+    org_secret = _get_org_secret()
+    if not org_id or not org_secret:
+        return
+    _cleanup_zylos_hxa_bot(agent_name, org_id, org_secret)
+
+
 def _patch_zylos_web_console(runtime_dir: str) -> bool:
     """Best effort: keep web-console basePath compatible with /connect/zylos/<id>."""
     try:
@@ -1119,6 +1208,8 @@ def configure_instance_telegram(
     project: str,
 ) -> tuple[bool, str, str, str, str]:
     """Configure Telegram + org integration after install using only user-provided bot token."""
+    if product == "local_agent":
+        return False, "Local Agent runs on the user's machine and cannot be configured server-side.", "", "", ""
     plugin = _PLUGIN_MAP.get(product, "hxa-connect")
     env_path = Path(runtime_dir) / ".env"
 
@@ -1270,6 +1361,9 @@ def configure_telegram_only(
     product: str = "openclaw",
 ) -> tuple[bool, str]:
     """Configure only the Telegram channel. Routes to product-specific impl."""
+    if product == "local_agent":
+        return False, "Local Agent cannot use server-side Telegram integration."
+
     # Duplicate-token check (shared)
     duplicated_by = _telegram_token_in_use(instance_id, telegram_bot_token)
     if duplicated_by:
@@ -1538,6 +1632,8 @@ def configure_hxa_only(
     compose_file: str = "",
 ) -> tuple[bool, str]:
     """Register with HXA org. Routes to product-specific impl."""
+    if product == "local_agent":
+        return True, "Local Agent already registered at create time."
     if product == "hermes":
         return _configure_hermes_hxa(instance_id, runtime_dir)
     elif product == "zylos":

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
-from ..database import site_base_url, runtime_root, get_user_setting, set_user_setting
+from ..database import site_base_url, runtime_root, get_user_setting, set_user_setting, get_setting, set_setting
 from ..deps import get_current_user, get_db
 from ..schemas import (
     PRODUCT_MAP,
@@ -39,6 +39,8 @@ from ..services.install_service import (
     configure_instance_telegram,
     configure_telegram_only,
     configure_hxa_only,
+    delete_local_agent_bot,
+    register_local_agent_bot,
     restart_instance,
     stop_instance,
     sync_instance_status,
@@ -197,6 +199,51 @@ def create_instance(
         """,
         (instance_id, current_user["id"], payload.name, payload.product, product.repo_url, now, now),
     )
+
+    # Local Agent: no Docker install. Register a hub bot right away so the
+    # user can immediately copy the `npx @slock-ai/daemon ...` command.
+    if payload.product == "local_agent":
+        ok, token, agent_id, agent_name, err = register_local_agent_bot(instance_id)
+        if ok:
+            set_setting(f"local_agent_token_{instance_id}", token)
+            hub_url = _get_hub_url()
+            from ..services.install_service import _get_org_id as _goid
+            org_id_live = _goid() or _ORG_ID or ""
+            cursor.execute(
+                "UPDATE instances SET agent_name = %s, org_id = %s, install_state = 'running', updated_at = %s WHERE id = %s",
+                (agent_name, org_id_live, _utc_now(), instance_id),
+            )
+            # Write instance_configs so chat endpoints work (they read hub_url/agent_name here).
+            cursor.execute(
+                """
+                INSERT INTO instance_configs (instance_id, plugin_name, hub_url, org_id, agent_name, allow_group, allow_dm, configured_at, updated_at)
+                VALUES (%s, 'slock-daemon', %s, %s, %s, 1, 1, %s, %s)
+                ON DUPLICATE KEY UPDATE hub_url = VALUES(hub_url), org_id = VALUES(org_id), agent_name = VALUES(agent_name), updated_at = VALUES(updated_at)
+                """,
+                (instance_id, hub_url, org_id_live, agent_name, now, now),
+            )
+            cursor.execute(
+                """
+                INSERT INTO install_events (instance_id, event_type, message, created_at)
+                VALUES (%s, 'running', %s, %s)
+                """,
+                (instance_id, f"Local Agent registered as '{agent_name}' — waiting for daemon to connect.", _utc_now()),
+            )
+        else:
+            cursor.execute(
+                "UPDATE instances SET install_state = 'failed', status = 'failed', updated_at = %s WHERE id = %s",
+                (_utc_now(), instance_id),
+            )
+            # Surface the reason so the UI can show it — don't delete the
+            # instance, the user may want to retry.
+            cursor.execute(
+                """
+                INSERT INTO install_events (instance_id, event_type, message, created_at)
+                VALUES (%s, 'failed', %s, %s)
+                """,
+                (instance_id, f"Local Agent registration failed: {err}", _utc_now()),
+            )
+
     cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
     row = cursor.fetchone()
     cursor.close()
@@ -394,6 +441,30 @@ def get_instance(
     except Exception:
         resp_dict["container_running"] = False
     return resp_dict
+
+
+@router.get("/{instance_id}/daemon-command")
+def get_daemon_command(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """For a local_agent instance, return the one-shot `npx ... daemon` command."""
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
+    if inst.get("product") != "local_agent":
+        raise HTTPException(status_code=400, detail="Not a Local Agent instance")
+    token = get_setting(f"local_agent_token_{instance_id}", "")
+    if not token:
+        raise HTTPException(status_code=404, detail="Daemon credentials not provisioned yet")
+    server_url = _get_hub_url()
+    command = f"npx @slock-ai/daemon@latest --server-url {server_url} --api-key {token}"
+    return {
+        "server_url": server_url,
+        "api_key": token,
+        "command": command,
+        "agent_name": inst.get("agent_name") or "",
+    }
 
 
 @router.post("/{instance_id}/install", response_model=InstanceResponse)
@@ -947,6 +1018,17 @@ def delete_instance(
 
     if runtime_dir:
         shutil.rmtree(Path(runtime_dir), ignore_errors=True)
+
+    # Local Agent: delete the hub bot identity and forget the api_key.
+    if inst.get("product") == "local_agent":
+        try:
+            delete_local_agent_bot(inst.get("agent_name") or "")
+        except Exception:
+            pass
+        try:
+            set_setting(f"local_agent_token_{instance_id}", "")
+        except Exception:
+            pass
 
     cursor = db.cursor()
     # Delete child rows first to satisfy FK constraints before removing the parent instance row.

@@ -7,7 +7,7 @@ export type User = {
   created_at: string;
 };
 
-export type Product = "openclaw" | "zylos" | "hermes";
+export type Product = "openclaw" | "zylos" | "hermes" | "local_agent";
 
 export type ProductCatalog = {
   id: string;
