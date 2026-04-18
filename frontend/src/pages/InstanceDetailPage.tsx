@@ -6,6 +6,8 @@ import { InstallTimeline } from "../components/InstallTimeline";
 import { InstanceEditModal } from "../components/InstanceEditModal";
 import { LocalAgentSetup } from "../components/LocalAgentSetup";
 import { LocalAgentTelegramBridge } from "../components/LocalAgentTelegramBridge";
+import { LocalAgentWeixinBridge } from "../components/LocalAgentWeixinBridge";
+import { CollapsibleCard } from "../components/CollapsibleCard";
 import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
 import { useAuth } from "../contexts/AuthContext";
@@ -799,8 +801,11 @@ export function InstanceDetailPage() {
           {instance.product === "local_agent" && isOwner && (
             <LocalAgentSetup instanceId={instance.id} />
           )}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.instanceDetails")}</h2>
+          <CollapsibleCard
+            title={t("detail.instanceDetails")}
+            storageKey="card_detail_instance"
+            defaultCollapsed
+          >
             <dl className="space-y-2 text-sm">
               <div>
                 <dt className="text-xs text-gray-500">{t("detail.product")}</dt>
@@ -836,7 +841,7 @@ export function InstanceDetailPage() {
                 <dd className="text-gray-300 text-xs">{formatDate(instance.updated_at)}</dd>
               </div>
             </dl>
-          </div>
+          </CollapsibleCard>
 
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <h2 className="text-sm font-medium text-gray-300 mb-3">{t("detail.repository")}</h2>
@@ -909,8 +914,11 @@ export function InstanceDetailPage() {
           )}
 
           {/* Join Organization (HXA Connect) */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <h2 className="text-sm font-medium text-gray-300 mb-3">{t("org.title")}</h2>
+          <CollapsibleCard
+            title={t("org.title")}
+            storageKey="card_detail_hxa"
+            defaultCollapsed
+          >
             <div className="space-y-3">
               {(hxaResult?.ok || config?.agent_name) && (
                 <>
@@ -975,13 +983,14 @@ export function InstanceDetailPage() {
                 </>
               )}
             </div>
-          </div>
+          </CollapsibleCard>
 
           {/* Telegram Integration */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <div className="relative">
-              <div className="flex items-center gap-2 mb-3">
-                <h2 className="text-sm font-medium text-gray-300">{t("telegram.title")}</h2>
+          <CollapsibleCard
+            title={t("telegram.title")}
+            storageKey="card_detail_telegram"
+            headerExtras={
+              <div className="relative">
                 <button
                   onClick={() => setShowTelegramHelp((v) => !v)}
                   className="w-5 h-5 rounded-full bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-200 text-xs flex items-center justify-center transition-colors"
@@ -989,25 +998,26 @@ export function InstanceDetailPage() {
                 >
                   ?
                 </button>
+                {showTelegramHelp && (
+                  <div className="absolute z-10 top-7 right-0 w-72 bg-gray-800 border border-gray-700 rounded-lg p-4 shadow-lg">
+                    <p className="text-xs text-gray-300 font-medium mb-2">{t("telegram.help.title")}</p>
+                    <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
+                      <li>{t("telegram.help.step1")}</li>
+                      <li>{t("telegram.help.step2")}</li>
+                      <li>{t("telegram.help.step3")}</li>
+                      <li>{t("telegram.help.step4")}</li>
+                    </ol>
+                    <button
+                      onClick={() => setShowTelegramHelp(false)}
+                      className="mt-3 text-xs text-gray-500 hover:text-gray-300"
+                    >
+                      {t("common.close")}
+                    </button>
+                  </div>
+                )}
               </div>
-              {showTelegramHelp && (
-                <div className="absolute z-10 top-8 left-0 w-72 bg-gray-800 border border-gray-700 rounded-lg p-4 shadow-lg">
-                  <p className="text-xs text-gray-300 font-medium mb-2">{t("telegram.help.title")}</p>
-                  <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
-                    <li>{t("telegram.help.step1")}</li>
-                    <li>{t("telegram.help.step2")}</li>
-                    <li>{t("telegram.help.step3")}</li>
-                    <li>{t("telegram.help.step4")}</li>
-                  </ol>
-                  <button
-                    onClick={() => setShowTelegramHelp(false)}
-                    className="mt-3 text-xs text-gray-500 hover:text-gray-300"
-                  >
-                    {t("common.close")}
-                  </button>
-                </div>
-              )}
-            </div>
+            }
+          >
             {instance.product === "local_agent" ? (
               <LocalAgentTelegramBridge
                 instanceId={instance.id}
@@ -1089,7 +1099,20 @@ export function InstanceDetailPage() {
               )}
             </div>
             )}
-          </div>
+          </CollapsibleCard>
+
+          {/* WeChat Bridge — Local Agent only. Scan-to-login, no token to paste. */}
+          {instance.product === "local_agent" && (
+            <CollapsibleCard
+              title="微信集成"
+              storageKey="card_detail_weixin_bridge"
+            >
+              <LocalAgentWeixinBridge
+                instanceId={instance.id}
+                agentName={detail?.config?.agent_name || instance.agent_name || ""}
+              />
+            </CollapsibleCard>
+          )}
 
           {/* User Settings (API Keys) — Local Agent uses the user's own machine credentials */}
           {instance.product !== "local_agent" && (

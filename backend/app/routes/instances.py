@@ -634,6 +634,93 @@ def configure_telegram_bridge(
     }
 
 
+def _build_weixin_bridge_command(hub_url: str, bridge_token: str, forward_to: str) -> str:
+    """Shape the copy-paste command for the WeChat bridge.
+
+    No user-supplied token — WeChat login is scan-QR, so the command is
+    complete the moment we've minted the bridge bot. Same `npx tsx`
+    invocation style as the Telegram bridge so both share one repo on
+    the user's machine.
+    """
+    return (
+        "npx tsx src/index.ts"
+        " --channel weixin"
+        f" --hxa-url {hub_url}"
+        f" --hxa-key {bridge_token}"
+        f" --forward-to {forward_to}"
+    )
+
+
+@router.get("/{instance_id}/weixin-bridge")
+def get_weixin_bridge(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Returns the WeChat-bridge run command for a Local Agent instance.
+
+    `configured` is true once the bridge bot has been registered on HXA.
+    For WeChat, that's the only server-side prerequisite — the first
+    `npx …` run on the user's machine prints the QR and binds the
+    WeChat session locally.
+    """
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
+    if inst.get("product") != "local_agent":
+        raise HTTPException(status_code=400, detail="Not a Local Agent instance")
+
+    bridge_token = get_setting(f"local_agent_wx_bridge_token_{instance_id}", "")
+    bridge_name = get_setting(f"local_agent_wx_bridge_name_{instance_id}", "")
+    configured = bool(bridge_token)
+
+    result: dict = {
+        "configured": configured,
+        "bridge_bot_name": bridge_name or None,
+    }
+    if configured:
+        result["command"] = _build_weixin_bridge_command(
+            _get_hub_url(), bridge_token, inst.get("agent_name") or ""
+        )
+    return result
+
+
+@router.post("/{instance_id}/weixin-bridge")
+def configure_weixin_bridge(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Register (or reuse) a WeChat bridge bot on HXA for this Local Agent
+    instance and return the run command. No request body needed.
+    """
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
+    if inst.get("product") != "local_agent":
+        raise HTTPException(status_code=400, detail="仅 Local Agent 支持此集成。")
+    agent_name = inst.get("agent_name") or ""
+    if not agent_name:
+        raise HTTPException(status_code=400, detail="Local Agent 尚未完成注册，稍后再试。")
+
+    bridge_token = get_setting(f"local_agent_wx_bridge_token_{instance_id}", "")
+    bridge_name = get_setting(f"local_agent_wx_bridge_name_{instance_id}", "")
+    if not bridge_token:
+        ok, token, _bot_id, name, err = register_channel_bridge_bot(agent_name, channel="wx")
+        if not ok:
+            raise HTTPException(status_code=502, detail=f"注册桥 bot 失败：{err}")
+        bridge_token = token
+        bridge_name = name
+        set_setting(f"local_agent_wx_bridge_token_{instance_id}", bridge_token)
+        set_setting(f"local_agent_wx_bridge_name_{instance_id}", bridge_name)
+
+    command = _build_weixin_bridge_command(_get_hub_url(), bridge_token, agent_name)
+    return {
+        "ok": True,
+        "configured": True,
+        "bridge_bot_name": bridge_name,
+        "command": command,
+    }
+
+
 @router.post("/{instance_id}/install", response_model=InstanceResponse)
 def start_install(
     instance_id: str,
