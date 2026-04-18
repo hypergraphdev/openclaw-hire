@@ -114,6 +114,7 @@ function RenameDialog({
 }) {
   const t = useT();
   const [name, setName] = useState("");
+  const [resetWorkspace, setResetWorkspace] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -123,7 +124,7 @@ function RenameDialog({
     setSaving(true);
     setError("");
     try {
-      const res = await api.renameAgent(inst.id, trimmed);
+      const res = await api.renameAgent(inst.id, trimmed, resetWorkspace);
       onRenamed(inst.id, res.agent_name);
       onClose();
     } catch (e: unknown) {
@@ -135,7 +136,7 @@ function RenameDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-96 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-sm font-medium text-white mb-3">{t("instances.renameTitle")}</h3>
         <p className="text-xs text-gray-500 mb-2">当前: <span className="font-mono text-gray-400">{inst.agent_name}</span></p>
         <input
@@ -148,6 +149,22 @@ function RenameDialog({
           autoFocus
         />
         <p className="text-[11px] text-gray-600 mt-1">{t("instances.nameHint")}</p>
+
+        <label className="mt-3 flex items-start gap-2 text-xs text-gray-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={resetWorkspace}
+            onChange={(e) => setResetWorkspace(e.target.checked)}
+            className="mt-0.5 accent-blue-500"
+          />
+          <span>
+            同时重置 agent 工作记忆
+            <span className="block text-[11px] text-gray-600 mt-0.5">
+              会清空本机 <code className="font-mono">~/.slock/agents/&lt;bot_id&gt;/</code>（含 MEMORY.md 和 notes/）。首次改名建议勾选，否则 LLM 会继续把自己当作 <code className="font-mono">{inst.agent_name}</code>。
+            </span>
+          </span>
+        </label>
+
         {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5">{t("common.cancel")}</button>

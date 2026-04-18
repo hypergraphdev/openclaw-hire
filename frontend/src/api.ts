@@ -107,10 +107,10 @@ export const api = {
       `/api/instances/${id}/daemon-command`
     ),
 
-  renameAgent: (id: string, agentName: string) =>
-    request<{ ok: boolean; agent_name: string }>(`/api/instances/${id}/agent-name`, {
+  renameAgent: (id: string, agentName: string, resetWorkspace = true) =>
+    request<{ ok: boolean; agent_name: string; workspace_reset: boolean }>(`/api/instances/${id}/agent-name`, {
       method: "PUT",
-      body: JSON.stringify({ agent_name: agentName }),
+      body: JSON.stringify({ agent_name: agentName, reset_workspace: resetWorkspace }),
     }),
 
   renameInstance: (id: string, name: string) =>

@@ -1016,6 +1016,10 @@ def rename_instance(
 
 class _RenameAgentRequest(_BaseModel):
     agent_name: str
+    # Default true so first-time rename (hire_xxx → human name) also wipes
+    # the stale MEMORY.md on the user's machine — otherwise the LLM keeps
+    # introducing itself with the old hire_xxx id.
+    reset_workspace: bool = True
 
 
 @router.put("/{instance_id}/agent-name")
@@ -1025,7 +1029,13 @@ def rename_agent(
     current_user=Depends(get_current_user),
     db = Depends(get_db),
 ):
-    """Rename instance's agent in HXA org (only if current name starts with hire_)."""
+    """Rename instance's agent in HXA org (only if current name starts with hire_).
+
+    When `reset_workspace` is true (default), the hub also pushes an
+    `agent:reset-workspace` WS message to the connected daemon so the
+    local `~/.slock/agents/<bot_id>/` directory is wiped and MEMORY.md
+    is regenerated with the new name on the next spawn.
+    """
     inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
     current_name = inst["agent_name"] or ""
     if not current_name.startswith("hire_"):
@@ -1047,7 +1057,8 @@ def rename_agent(
 
     # Call HXA Hub rename API
     hub = _get_hub_url().rstrip("/")
-    rename_data = json.dumps({"name": new_name}).encode()
+    rename_data = json.dumps({"name": new_name, "reset_workspace": req.reset_workspace}).encode()
+    workspace_reset_pushed = False
     try:
         rename_req = urllib.request.Request(
             f"{hub}/api/me/name",
@@ -1056,7 +1067,11 @@ def rename_agent(
             method="PATCH",
         )
         with urllib.request.urlopen(rename_req, timeout=10) as resp:
-            resp.read()
+            try:
+                rename_result = json.loads(resp.read().decode())
+                workspace_reset_pushed = bool(rename_result.get("workspace_reset"))
+            except Exception:
+                pass
     except urllib.error.HTTPError as e:
         body = e.read().decode() if e.fp else ""
         raise HTTPException(status_code=e.code, detail=f"改名失败: {body}")
@@ -1077,7 +1092,7 @@ def rename_agent(
         except Exception:
             pass
 
-    return {"ok": True, "agent_name": new_name}
+    return {"ok": True, "agent_name": new_name, "workspace_reset": workspace_reset_pushed}
 
 
 _AVATAR_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
