@@ -158,8 +158,20 @@ export function MyOrgPage() {
   const t = useT();
   const [data, setData] = useState<MyOrgData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [membersCollapsed, setMembersCollapsed] = useState(false);
-  const [threadsCollapsed, setThreadsCollapsed] = useState(false);
+  const [membersCollapsed, setMembersCollapsedRaw] = useState<boolean>(() => {
+    return localStorage.getItem("my_org_members_collapsed") === "1";
+  });
+  const [threadsCollapsed, setThreadsCollapsedRaw] = useState<boolean>(() => {
+    return localStorage.getItem("my_org_threads_collapsed") === "1";
+  });
+  const setMembersCollapsed = useCallback((v: boolean) => {
+    setMembersCollapsedRaw(v);
+    localStorage.setItem("my_org_members_collapsed", v ? "1" : "0");
+  }, []);
+  const setThreadsCollapsed = useCallback((v: boolean) => {
+    setThreadsCollapsedRaw(v);
+    localStorage.setItem("my_org_threads_collapsed", v ? "1" : "0");
+  }, []);
   const [threads, setThreads] = useState<OrgThread[]>([]);
 
   // Create thread
@@ -524,6 +536,21 @@ export function MyOrgPage() {
   function handleScroll() { const el = containerRef.current; if (el) userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100; }
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) setPendingImage({ file: f, preview: URL.createObjectURL(f) }); e.target.value = ""; }
   function cancelImage() { if (pendingImage) { URL.revokeObjectURL(pendingImage.preview); setPendingImage(null); } }
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        if (file.size > 10 * 1024 * 1024) return;
+        if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage({ file, preview: URL.createObjectURL(file) });
+        return;
+      }
+    }
+  }
 
   async function handleSend() {
     if ((!input.trim() && !pendingImage) || !target || sending) return;
@@ -1140,6 +1167,7 @@ export function MyOrgPage() {
                       threadMembers={target?.type === "thread" ? threadMemberNames : undefined} />}
                     <textarea value={input} onChange={handleInputChange} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
+                      onPaste={handlePaste}
                       rows={1}
                       placeholder={pendingImage ? t("myOrg.imageCaption") : t("chat.inputPlaceholder")} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none overflow-y-auto" style={{ maxHeight: 120 }} disabled={sending} />
                   </div>

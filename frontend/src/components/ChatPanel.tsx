@@ -235,6 +235,26 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
     }
   }
 
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        if (file.size > 10 * 1024 * 1024) {
+          setSendError(t("chatPanel.imageTooLarge"));
+          return;
+        }
+        setSendError("");
+        if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage({ file, preview: URL.createObjectURL(file) });
+        return;
+      }
+    }
+  }
+
   async function handleSend() {
     if (!chatInfo || sending) return;
     if (!input.trim() && !pendingImage) return;
@@ -476,6 +496,7 @@ export function ChatPanel({ instanceId, expanded, onToggleExpand }: ChatPanelPro
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
               onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
+              onPaste={handlePaste}
               rows={1}
               style={{ maxHeight: 120 }}
               disabled={sending}

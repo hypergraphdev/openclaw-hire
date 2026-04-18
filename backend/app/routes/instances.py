@@ -988,6 +988,31 @@ async def configure_hxa_endpoint(
     return {"ok": True, "message": message, "agent_name": agent_name}
 
 
+class _RenameInstanceRequest(_BaseModel):
+    name: str
+
+
+@router.put("/{instance_id}/name")
+def rename_instance(
+    instance_id: str,
+    req: _RenameInstanceRequest,
+    current_user=Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Update the instance's display name (shown only in the console — doesn't touch HXA)."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    name = (req.name or "").strip()
+    if len(name) < 1 or len(name) > 128:
+        raise HTTPException(status_code=400, detail="Name must be 1-128 characters.")
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE instances SET name = %s, updated_at = %s WHERE id = %s",
+        (name, _utc_now(), instance_id),
+    )
+    cursor.close()
+    return {"ok": True, "name": name, "instance_id": inst["id"]}
+
+
 class _RenameAgentRequest(_BaseModel):
     agent_name: str
 

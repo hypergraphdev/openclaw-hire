@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
+import { InstanceEditModal } from "../components/InstanceEditModal";
 import { LocalAgentSetup } from "../components/LocalAgentSetup";
 import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
@@ -128,6 +129,7 @@ export function InstanceDetailPage() {
   const [logs, setLogs] = useState("");
   const [error, setError] = useState("");
   const [upgradeResult, setUpgradeResult] = useState<{ ok: boolean; output: string } | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [botToken, setBotToken] = useState("");
   const [configuring, setConfiguring] = useState(false);
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
@@ -365,6 +367,18 @@ export function InstanceDetailPage() {
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold text-white">{instance.name}</h1>
             <StatusPill state={instance.install_state} size="md" />
+            {isOwner && (
+              <button
+                onClick={() => setShowEditModal(true)}
+                title="编辑实例名称"
+                aria-label="编辑实例"
+                className="p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                </svg>
+              </button>
+            )}
           </div>
           <div className="text-sm text-gray-500 mt-1">
             {PRODUCT_LABELS[instance.product] ?? instance.product} ·{" "}
@@ -421,6 +435,15 @@ export function InstanceDetailPage() {
             </button>
           )}
         </div>
+
+        {showEditModal && instanceId && (
+          <InstanceEditModal
+            instanceId={instanceId}
+            currentName={instance.name}
+            onClose={() => setShowEditModal(false)}
+            onSaved={() => void fetchDetail()}
+          />
+        )}
 
         {upgradeResult && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setUpgradeResult(null)}>

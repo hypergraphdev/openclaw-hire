@@ -113,6 +113,12 @@ export const api = {
       body: JSON.stringify({ agent_name: agentName }),
     }),
 
+  renameInstance: (id: string, name: string) =>
+    request<{ ok: boolean; name: string; instance_id: string }>(`/api/instances/${id}/name`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
+
   instanceLogs: (id: string, lines = 200) =>
     request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
 
