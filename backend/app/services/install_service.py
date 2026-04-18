@@ -851,6 +851,82 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
         pass
 
 
+def _register_hxa_member_bot(
+    bot_name: str,
+    runtime: str | None = None,
+) -> tuple[bool, str, str, str]:
+    """Register a bot in the server's default HXA org (member role, one-shot ticket).
+
+    Shared by Local Agent registration and channel-bridge registration. Returns
+    (ok, token, agent_id, error_message). The caller passes in the fully-formed
+    bot_name — no _safe_agent_name munging happens here.
+    """
+    org_secret = _get_org_secret()
+    org_id = _get_org_id()
+    if not org_secret or not org_id:
+        return False, "", "", "Server missing ORG_ID/ORG_SECRET."
+
+    hub = _get_hub_url().rstrip("/")
+    from urllib.parse import urlparse as _up
+    _p = _up(hub)
+    origin = f"{_p.scheme}://{_p.netloc}"
+
+    # Best effort: clean any stale bot with the same name.
+    _cleanup_zylos_hxa_bot(bot_name, org_id, org_secret)
+
+    # Step 1: org_admin login
+    try:
+        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
+        login_req = urllib.request.Request(
+            f"{hub}/api/auth/login",
+            data=login_data,
+            headers={"Content-Type": "application/json", "Origin": origin},
+            method="POST",
+        )
+        with urllib.request.urlopen(login_req, timeout=10) as resp:
+            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
+    except Exception as e:
+        return False, "", "", f"Admin login failed: {e}"
+
+    # Step 2: create one-time ticket
+    try:
+        ticket_req = urllib.request.Request(
+            f"{hub}/api/org/tickets",
+            data=json.dumps({"reusable": False}).encode(),
+            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin},
+            method="POST",
+        )
+        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
+            ticket_result = json.loads(resp.read().decode())
+        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
+        if not ticket_secret:
+            return False, "", "", f"Ticket creation returned no secret: {ticket_result}"
+    except Exception as e:
+        return False, "", "", f"Ticket creation failed: {e}"
+
+    # Step 3: register bot with the ticket
+    try:
+        reg_payload: dict = {"org_id": org_id, "ticket": ticket_secret, "name": bot_name}
+        if runtime:
+            reg_payload["runtime"] = runtime
+        reg_req = urllib.request.Request(
+            f"{hub}/api/auth/register",
+            data=json.dumps(reg_payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(reg_req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+    except Exception as e:
+        return False, "", "", f"HXA registration failed: {e}"
+
+    token = result.get("token", "")
+    bot_id = result.get("agent_id") or result.get("id", "")
+    if not token:
+        return False, "", bot_id, f"HXA registration returned no token: {result}"
+    return True, token, bot_id, ""
+
+
 def register_local_agent_bot(
     instance_id: str,
     runtime: str | None = None,
@@ -867,71 +943,34 @@ def register_local_agent_bot(
     Returns: (ok, agent_token, agent_id, agent_name, error_message)
     """
     agent_name = _safe_agent_name(instance_id)
-    org_secret = _get_org_secret()
-    org_id = _get_org_id()
-    if not org_secret or not org_id:
-        return False, "", "", agent_name, "Server missing ORG_ID/ORG_SECRET."
+    ok, token, agent_id, err = _register_hxa_member_bot(agent_name, runtime=runtime)
+    if not ok:
+        return False, "", agent_id, agent_name, err
+    return True, token, agent_id, agent_name, ""
 
-    hub = _get_hub_url().rstrip("/")
-    from urllib.parse import urlparse as _up
-    _p = _up(hub)
-    origin = f"{_p.scheme}://{_p.netloc}"
 
-    # Best effort: clean any stale bot with the same name.
-    _cleanup_zylos_hxa_bot(agent_name, org_id, org_secret)
+def register_channel_bridge_bot(
+    owner_agent_name: str,
+    channel: str,
+) -> tuple[bool, str, str, str, str]:
+    """Register a hub bot that a channel-daemon (Telegram/WeChat bridge) will
+    authenticate as.
 
-    # Step 1: org_admin login
-    try:
-        login_data = json.dumps({"type": "org_admin", "org_secret": org_secret, "org_id": org_id}).encode()
-        login_req = urllib.request.Request(
-            f"{hub}/api/auth/login",
-            data=login_data,
-            headers={"Content-Type": "application/json", "Origin": origin},
-            method="POST",
-        )
-        with urllib.request.urlopen(login_req, timeout=10) as resp:
-            cookie = resp.headers.get("Set-Cookie", "").split(";")[0]
-    except Exception as e:
-        return False, "", "", agent_name, f"Admin login failed: {e}"
-
-    # Step 2: create one-time ticket
-    try:
-        ticket_req = urllib.request.Request(
-            f"{hub}/api/org/tickets",
-            data=json.dumps({"reusable": False}).encode(),
-            headers={"Content-Type": "application/json", "Cookie": cookie, "Origin": origin},
-            method="POST",
-        )
-        with urllib.request.urlopen(ticket_req, timeout=10) as resp:
-            ticket_result = json.loads(resp.read().decode())
-        ticket_secret = ticket_result.get("secret") or ticket_result.get("ticket") or ""
-        if not ticket_secret:
-            return False, "", "", agent_name, f"Ticket creation returned no secret: {ticket_result}"
-    except Exception as e:
-        return False, "", "", agent_name, f"Ticket creation failed: {e}"
-
-    # Step 3: register bot with the ticket
-    try:
-        reg_payload: dict = {"org_id": org_id, "ticket": ticket_secret, "name": agent_name}
-        if runtime:
-            reg_payload["runtime"] = runtime
-        reg_req = urllib.request.Request(
-            f"{hub}/api/auth/register",
-            data=json.dumps(reg_payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(reg_req, timeout=15) as resp:
-            result = json.loads(resp.read().decode())
-    except Exception as e:
-        return False, "", "", agent_name, f"HXA registration failed: {e}"
-
-    agent_token = result.get("token", "")
-    agent_id = result.get("agent_id") or result.get("id", "")
-    if not agent_token:
-        return False, "", agent_id, agent_name, f"HXA registration returned no token: {result}"
-
-    return True, agent_token, agent_id, agent_name, ""
+    Named deterministically off the owner agent name, e.g.
+    `MW_NEW_Gemini_Bot` + channel=`tg` → `MW_NEW_Gemini_Bot_tg`. Truncated to
+    stay within hxa-connect's name limit. Returns:
+        (ok, bridge_token, bridge_bot_id, bridge_bot_name, error_message)
+    """
+    base = owner_agent_name or "hire"
+    suffix = f"_{channel}"
+    name = (base[: 128 - len(suffix)] + suffix).replace("__", "_").strip("_")
+    # Only [a-zA-Z0-9_-] allowed by hub.
+    import re as _re
+    name = _re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+    ok, token, bot_id, err = _register_hxa_member_bot(name)
+    if not ok:
+        return False, "", bot_id, name, err
+    return True, token, bot_id, name, ""
 
 
 def delete_local_agent_bot(agent_name: str) -> None:

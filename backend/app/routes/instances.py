@@ -40,6 +40,7 @@ from ..services.install_service import (
     configure_telegram_only,
     configure_hxa_only,
     delete_local_agent_bot,
+    register_channel_bridge_bot,
     register_local_agent_bot,
     restart_instance,
     stop_instance,
@@ -517,6 +518,119 @@ def get_daemon_command(
         "api_key": token,
         "command": command,
         "agent_name": inst.get("agent_name") or "",
+    }
+
+
+def _build_telegram_bridge_command(hub_url: str, bridge_token: str, tg_token: str, forward_to: str) -> str:
+    """Shape the copy-paste command shown to the user for the Telegram bridge.
+
+    We use the dev-mode invocation (`npx tsx src/index.ts ...`) because
+    hxa-channel-daemon isn't on npm yet — the user will `git clone` the
+    repo and cd into it before pasting. Once the package is published,
+    swap the prefix to `npx hxa-channel-daemon@latest`.
+    """
+    return (
+        "npx tsx src/index.ts"
+        " --channel telegram"
+        f" --telegram-token {tg_token}"
+        f" --hxa-url {hub_url}"
+        f" --hxa-key {bridge_token}"
+        f" --forward-to {forward_to}"
+    )
+
+
+@router.get("/{instance_id}/telegram-bridge")
+def get_telegram_bridge(
+    instance_id: str,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """For a local_agent instance: returns the current Telegram-bridge
+    config (if any) and a ready-to-run `hxa-channel-daemon` command.
+
+    `configured` is true once the user has saved a Telegram bot token and
+    the bridge bot has been registered on HXA.
+    """
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
+    if inst.get("product") != "local_agent":
+        raise HTTPException(status_code=400, detail="Not a Local Agent instance")
+
+    tg_token = get_setting(f"local_agent_tg_token_{instance_id}", "")
+    bridge_token = get_setting(f"local_agent_tg_bridge_token_{instance_id}", "")
+    bridge_name = get_setting(f"local_agent_tg_bridge_name_{instance_id}", "")
+    configured = bool(tg_token and bridge_token)
+
+    result: dict = {
+        "configured": configured,
+        "bridge_bot_name": bridge_name or None,
+    }
+    if configured:
+        result["command"] = _build_telegram_bridge_command(
+            _get_hub_url(), bridge_token, tg_token, inst.get("agent_name") or ""
+        )
+    return result
+
+
+class _LocalAgentTelegramBridgeRequest(_BaseModel):
+    telegram_bot_token: str
+
+
+@router.post("/{instance_id}/telegram-bridge")
+def configure_telegram_bridge(
+    instance_id: str,
+    req: _LocalAgentTelegramBridgeRequest,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Configure the Telegram bridge for a Local Agent instance.
+
+    Stores the user-supplied TG bot token, registers (once) a bridge bot
+    on HXA whose identity the local `hxa-channel-daemon` will authenticate
+    as, and returns a copy-paste command to run on the user's machine.
+    """
+    is_admin = bool(current_user.get("is_admin"))
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=is_admin)
+    if inst.get("product") != "local_agent":
+        raise HTTPException(status_code=400, detail="仅 Local Agent 支持此集成。")
+    agent_name = inst.get("agent_name") or ""
+    if not agent_name:
+        raise HTTPException(status_code=400, detail="Local Agent 尚未完成注册，稍后再试。")
+
+    tg_token = (req.telegram_bot_token or "").strip()
+    if not tg_token or ":" not in tg_token:
+        raise HTTPException(status_code=400, detail="Telegram bot token 不能为空，且应形如 123456:ABC…")
+
+    # Register (or reuse) a dedicated bridge bot on HXA. Stored per-instance
+    # so a rename of the Local Agent bot still points at a stable bridge id.
+    bridge_token = get_setting(f"local_agent_tg_bridge_token_{instance_id}", "")
+    bridge_name = get_setting(f"local_agent_tg_bridge_name_{instance_id}", "")
+    if not bridge_token:
+        ok, token, _bot_id, name, err = register_channel_bridge_bot(agent_name, channel="tg")
+        if not ok:
+            raise HTTPException(status_code=502, detail=f"注册桥 bot 失败：{err}")
+        bridge_token = token
+        bridge_name = name
+        set_setting(f"local_agent_tg_bridge_token_{instance_id}", bridge_token)
+        set_setting(f"local_agent_tg_bridge_name_{instance_id}", bridge_name)
+
+    set_setting(f"local_agent_tg_token_{instance_id}", tg_token)
+
+    # Flip the "telegram configured" flag on the instance row so the existing
+    # detail-page "已配置" badge still works.
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE instances SET telegram_bot_token = %s, updated_at = %s WHERE id = %s",
+        (tg_token, _utc_now(), instance_id),
+    )
+    cursor.close()
+
+    command = _build_telegram_bridge_command(_get_hub_url(), bridge_token, tg_token, agent_name)
+    return {
+        "ok": True,
+        "configured": True,
+        "bridge_bot_name": bridge_name,
+        "command": command,
     }
 
 

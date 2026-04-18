@@ -5,6 +5,7 @@ import { ChatPanel } from "../components/ChatPanel";
 import { InstallTimeline } from "../components/InstallTimeline";
 import { InstanceEditModal } from "../components/InstanceEditModal";
 import { LocalAgentSetup } from "../components/LocalAgentSetup";
+import { LocalAgentTelegramBridge } from "../components/LocalAgentTelegramBridge";
 import { MonitorTab } from "../components/MonitorTab";
 import { StatusPill } from "../components/StatusPill";
 import { useAuth } from "../contexts/AuthContext";
@@ -1007,6 +1008,12 @@ export function InstanceDetailPage() {
                 </div>
               )}
             </div>
+            {instance.product === "local_agent" ? (
+              <LocalAgentTelegramBridge
+                instanceId={instance.id}
+                agentName={detail?.config?.agent_name || instance.agent_name || ""}
+              />
+            ) : (
             <div className="space-y-3">
               {(configResult || instance.is_telegram_configured) && !showTelegramReconfig && (
                 <>
@@ -1081,6 +1088,7 @@ export function InstanceDetailPage() {
                 </>
               )}
             </div>
+            )}
           </div>
 
           {/* User Settings (API Keys) — Local Agent uses the user's own machine credentials */}

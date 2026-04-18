@@ -107,6 +107,17 @@ export const api = {
       `/api/instances/${id}/daemon-command`
     ),
 
+  getTelegramBridge: (id: string) =>
+    request<{ configured: boolean; bridge_bot_name: string | null; command?: string }>(
+      `/api/instances/${id}/telegram-bridge`
+    ),
+
+  configureTelegramBridge: (id: string, telegramBotToken: string) =>
+    request<{ ok: boolean; configured: boolean; bridge_bot_name: string; command: string }>(
+      `/api/instances/${id}/telegram-bridge`,
+      { method: "POST", body: JSON.stringify({ telegram_bot_token: telegramBotToken }) }
+    ),
+
   renameAgent: (id: string, agentName: string, resetWorkspace = true) =>
     request<{ ok: boolean; agent_name: string; workspace_reset: boolean }>(`/api/instances/${id}/agent-name`, {
       method: "PUT",
