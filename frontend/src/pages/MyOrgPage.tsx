@@ -61,7 +61,7 @@ function CopyBtn({ text }: { text: string }) {
   return (
     <button
       onClick={async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }}
-      className="absolute bottom-1 right-1 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+      className="absolute bottom-1 right-1 opacity-0 group-hover/bubble:opacity-100 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10 hover:!opacity-100"
       title="复制"
     >
       {copied ? (
