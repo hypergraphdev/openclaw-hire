@@ -271,6 +271,11 @@ export function MyOrgPage() {
   }
 
   const selectDM = useCallback(async (bot: MyOrgPeer) => {
+    // Only allow DM with your own bots — for cross-user conversation, use a thread.
+    if (!bot.is_mine) {
+      alert("只能跟自己的实例私聊。要跟其他人的 bot 对话，请在群聊里 @ 它。");
+      return;
+    }
     // Save draft of current target before switching
     if (target) {
       const curName = target.type === "dm" ? target.bot.name : target.thread.id;
@@ -698,6 +703,14 @@ export function MyOrgPage() {
   }
 
   const allBots = data?.all_bots || [];
+  // Sort: mine first (so users find their own instances at the top of a busy
+  // org), then alphabetical by name within each group.
+  const sortedBots = useMemo(() => {
+    return [...allBots].sort((a, b) => {
+      if (a.is_mine !== b.is_mine) return a.is_mine ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [allBots]);
   const myBotNames = useMemo(() => new Set((data?.my_bots || []).map((b) => b.agent_name)), [data?.my_bots]);
 
   if (loading) return <div className="text-gray-400 text-sm p-6">{t("common.loading")}</div>;
@@ -843,13 +856,29 @@ export function MyOrgPage() {
         {/* Sidebar */}
         <div className="w-64 border-r border-gray-800 overflow-auto p-3">
           <SectionHeader title={t("myOrg.botList")} count={allBots.length} collapsed={membersCollapsed} onToggle={() => setMembersCollapsed(!membersCollapsed)} />
-          {!membersCollapsed && <div className="space-y-1 mb-4">{allBots.map((bot) => (
-            <button key={bot.bot_id} onClick={() => selectDM(bot)} className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative ${selectedKey === `dm_${bot.bot_id}` ? "bg-blue-600/20 border border-blue-600" : "hover:bg-gray-800 border border-transparent"}`}>
-              <OnlineDot online={bot.online} /><span className="text-sm text-gray-200 truncate flex-1">{bot.name}</span>
-              {bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
-              <Badge count={unreadCounts[`dm_${bot.bot_id}`] || 0} />
-            </button>
-          ))}</div>}
+          {!membersCollapsed && <div className="space-y-1 mb-4">{sortedBots.map((bot) => {
+            const dmEnabled = bot.is_mine;
+            const baseCls = "w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 relative";
+            const stateCls = selectedKey === `dm_${bot.bot_id}`
+              ? "bg-blue-600/20 border border-blue-600"
+              : dmEnabled
+                ? "hover:bg-gray-800 border border-transparent"
+                : "border border-transparent cursor-not-allowed opacity-60";
+            return (
+              <button
+                key={bot.bot_id}
+                onClick={() => selectDM(bot)}
+                disabled={!dmEnabled}
+                title={dmEnabled ? "" : "只能跟自己的 bot 私聊；群聊里可以 @ 其他人的 bot"}
+                className={`${baseCls} ${stateCls}`}
+              >
+                <OnlineDot online={bot.online} />
+                <span className="text-sm text-gray-200 truncate flex-1">{bot.name}</span>
+                {bot.is_mine && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-400">{t("myOrg.mine")}</span>}
+                <Badge count={unreadCounts[`dm_${bot.bot_id}`] || 0} />
+              </button>
+            );
+          })}</div>}
 
           <SectionHeader title={t("myOrg.threads")} count={threads.length} collapsed={threadsCollapsed} onToggle={() => setThreadsCollapsed(!threadsCollapsed)}
             action={<button onClick={() => setShowCreateThread(true)} className="text-gray-500 hover:text-blue-400 text-sm" title={t("myOrg.createThread")}>+</button>} />
@@ -1067,10 +1096,10 @@ export function MyOrgPage() {
               )}
 
               {/* Messages */}
-              <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-auto px-4 py-3 space-y-2">
+              <div ref={containerRef} onScroll={handleScroll} className={`flex-1 overflow-auto px-4 py-3 ${target?.type === "thread" ? "space-y-1" : "space-y-2"}`}>
                 {hasMore && <button onClick={loadMore} className="text-xs text-blue-400 hover:text-blue-300 block mx-auto mb-2">{t("chat.loadMore")}</button>}
                 {filteredMessages.length === 0 && !botTyping && <div className="text-center text-gray-500 text-sm py-8">{showSearch ? t("myOrg.noSearchResults") : t("chat.noMessages")}</div>}
-                {filteredMessages.map((msg) => {
+                {filteredMessages.map((msg, idx) => {
                   const senderName = (msg as ChatMessage).sender_name || "";
                   // Build set of all "my" identities: agent names + admin bot name + instance bot name
                   const myNames = new Set((data?.my_bots || []).map((b: { agent_name: string }) => b.agent_name));
@@ -1098,16 +1127,79 @@ export function MyOrgPage() {
                   const hasImage = msg.content?.match(/\[(?:image|图片)\]\((https?:\/\/[^\s)]+)\)/);
                   const textContent = msg.content?.replace(/\[(?:image|图片)\]\(https?:\/\/[^\s)]+\)\n?/, "").trim();
                   const msgTime = friendlyTime(msg.created_at);
+
+                  // ─── Thread mode: Slack/Gmail-style flat layout ───
+                  if (target?.type === "thread") {
+                    // Resolve sender avatar (from bot list — may be missing for deleted/ex-members)
+                    const senderBot = allBots.find((b) => b.bot_id === sid || b.name === senderName);
+                    const avatarUrl = senderBot?.avatar_url || null;
+                    // Collapse the header when the previous visible message is from the same sender
+                    // AND within 5 min — matches chat conventions (Slack, Discord, Linear…).
+                    const prev = idx > 0 ? filteredMessages[idx - 1] : null;
+                    const sameSender = prev &&
+                      ((prev.sender_id && prev.sender_id === sid) ||
+                        ((prev as ChatMessage).sender_name || "") === senderName);
+                    const closeInTime = prev && Math.abs(msg.created_at - prev.created_at) < 5 * 60 * 1000;
+                    const showHeader = !(sameSender && closeInTime);
+
+                    return (
+                      <div
+                        key={msg.id}
+                        id={`msg-${msg.id}`}
+                        className={`group/row flex items-start gap-3 px-1 py-0.5 -mx-1 rounded transition-colors hover:bg-gray-800/40 ${highlightMsgId === msg.id ? "ring-2 ring-yellow-400" : ""} ${showHeader ? "mt-3" : ""}`}
+                      >
+                        <div className="w-9 shrink-0 flex justify-center pt-0.5">
+                          {showHeader ? (
+                            <div className="h-9 w-9 rounded-md bg-gray-800 border border-gray-700 overflow-hidden flex items-center justify-center">
+                              {avatarUrl ? (
+                                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <span className="text-sm font-semibold text-gray-400 select-none">
+                                  {(senderName || "?").charAt(0).toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="opacity-0 group-hover/row:opacity-100 text-[10px] text-gray-600 pt-1">{msgTime}</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {showHeader && (
+                            <div className="flex items-baseline gap-2 leading-tight">
+                              <span className="text-sm font-semibold text-gray-100 truncate">{senderName || "unknown"}</span>
+                              {isSelf && (
+                                <span className="text-[10px] px-1 py-0.5 rounded bg-blue-600/30 text-blue-300">{t("myOrg.mine")}</span>
+                              )}
+                              {msgTime && <span className="text-[10px] text-gray-500">{msgTime}</span>}
+                            </div>
+                          )}
+                          <div className="text-sm text-gray-200 leading-relaxed break-words relative">
+                            {hasImage && <img src={hasImage[1]} alt="" className="max-w-sm max-h-64 rounded my-1" />}
+                            {textContent && (
+                              <RenderContent
+                                content={textContent}
+                                threadMemberNames={threadMemberNames}
+                                onMentionClick={handleMentionClick}
+                              />
+                            )}
+                            <CopyBtn text={msg.content || ""} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // ─── DM mode: keep the existing chat-bubble layout ───
                   return (
                     <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isSelf ? "justify-end" : "justify-start"} transition-all duration-300 ${highlightMsgId === msg.id ? "ring-2 ring-yellow-400 rounded-lg" : ""}`}>
                       <div className={`group/bubble relative max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         <div className={`flex items-center gap-2 mb-0.5 ${isSelf ? "justify-end" : "justify-start"}`}>
                           {!isSelf && <span className="text-[10px] text-gray-400">{senderName}</span>}
-                          {isSelf && (target?.type === "thread" || (data?.my_bots || []).length > 1) && <span className="text-[10px] text-blue-200/70">{senderName}</span>}
+                          {isSelf && ((data?.my_bots || []).length > 1) && <span className="text-[10px] text-blue-200/70">{senderName}</span>}
                           {msgTime && <span className={`text-[10px] ${isSelf ? "text-blue-200/50" : "text-gray-600"}`}>{msgTime}</span>}
                         </div>
                         {hasImage && <img src={hasImage[1]} alt="" className="max-w-full max-h-48 rounded mb-1" />}
-                        {textContent && <RenderContent content={textContent} threadMemberNames={target?.type === "thread" ? threadMemberNames : undefined} onMentionClick={handleMentionClick} />}
+                        {textContent && <RenderContent content={textContent} threadMemberNames={undefined} onMentionClick={handleMentionClick} />}
                         <CopyBtn text={msg.content || ""} />
                       </div>
                     </div>

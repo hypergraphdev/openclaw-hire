@@ -275,6 +275,7 @@ def get_my_org(
             "name": bot_name,
             "online": b.get("online", False),
             "is_mine": bot_name in my_agent_names,
+            "avatar_url": b.get("avatar_url"),
         })
 
     # Fix stale org_id in DB: if a bot appears in this Hub org but DB says different org, update DB
@@ -365,6 +366,7 @@ def get_my_org(
                         "name": orphan_name,
                         "online": False,
                         "is_mine": True,
+                        "avatar_url": None,
                     })
                     repaired += 1
             except Exception:

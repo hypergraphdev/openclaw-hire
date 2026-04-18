@@ -209,6 +209,7 @@ export type MyOrgPeer = {
   name: string;
   online: boolean;
   is_mine: boolean;
+  avatar_url?: string | null;
 };
 
 export type MyOrgInfo = {
