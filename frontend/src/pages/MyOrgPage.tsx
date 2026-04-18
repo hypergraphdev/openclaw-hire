@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import { PixelOffice } from "../components/PixelOffice";
@@ -71,50 +74,117 @@ function CopyBtn({ text }: { text: string }) {
 }
 
 // Render message content with clickable @mentions and file links
+const MENTION_REGEX = /@[\w\-\u4e00-\u9fff]+/g;
+
+/** Turn a plain-text string into a mix of text + clickable @mention spans. */
+function splitMentions(
+  text: string,
+  threadMemberNames?: Set<string>,
+  onMentionClick?: (name: string) => void,
+): React.ReactNode {
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  MENTION_REGEX.lastIndex = 0;
+  while ((m = MENTION_REGEX.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const name = m[0].slice(1);
+    const inThread = !threadMemberNames || threadMemberNames.has(name);
+    out.push(
+      <span
+        key={`mention-${m.index}`}
+        onClick={onMentionClick ? () => onMentionClick(name) : undefined}
+        className={`cursor-pointer font-medium ${inThread ? "text-blue-300 hover:text-blue-200" : "text-orange-400 hover:text-orange-300"}`}
+      >
+        @{name}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out.length === 1 ? out[0] : <>{out.map((el, i) => <React.Fragment key={i}>{el}</React.Fragment>)}</>;
+}
+
+/** Walk an inline container's children; replace string leaves with
+ *  mention-aware nodes. Nested React elements are returned as-is —
+ *  react-markdown will have already passed us the processed versions. */
+function processInlineChildren(
+  children: React.ReactNode,
+  threadMemberNames?: Set<string>,
+  onMentionClick?: (name: string) => void,
+): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child === "string") return splitMentions(child, threadMemberNames, onMentionClick);
+    return child;
+  });
+}
+
 function RenderContent({ content, threadMemberNames, onMentionClick }: {
   content: string;
   threadMemberNames?: Set<string>;
   onMentionClick?: (name: string) => void;
 }) {
-  // Split by @mentions and markdown links [text](url)
-  const parts = content.split(/(@[\w\-\u4e00-\u9fff]+|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g);
-  const elements: React.ReactNode[] = [];
-  let i = 0;
-  while (i < parts.length) {
-    const part = parts[i];
-    if (!part) { i++; continue; }
-    // Check markdown link: [text](url) — captured groups are at i+1 (text) and i+2 (url)
-    if (part.match(/^\[.+\]\(https?:\/\//) && i + 2 < parts.length) {
-      const text = parts[i + 1] || part;
-      const url = parts[i + 2] || "";
-      elements.push(
-        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-          className="text-blue-300 hover:text-blue-200 underline break-all">
-          {text}
-        </a>
-      );
-      i += 3;
-      continue;
-    }
-    // Check @mention
-    const mentionMatch = part.match(/^@([\w\-\u4e00-\u9fff]+)$/);
-    if (mentionMatch) {
-      const name = mentionMatch[1];
-      const inThread = !threadMemberNames || threadMemberNames.has(name);
-      elements.push(
-        <span key={i}
-          onClick={() => onMentionClick?.(name)}
-          className={`cursor-pointer font-medium ${inThread ? "text-blue-300 hover:text-blue-200" : "text-orange-400 hover:text-orange-300"}`}>
-          @{name}
-        </span>
-      );
-      i++;
-      continue;
-    }
-    elements.push(<span key={i}>{part}</span>);
-    i++;
-  }
-  return <>{elements}</>;
+  const inline = (children: React.ReactNode) =>
+    processInlineChildren(children, threadMemberNames, onMentionClick);
+
+  return (
+    <div
+      className={[
+        // Paragraph / line spacing
+        "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+        // Emphasis
+        "[&_strong]:font-semibold [&_strong]:text-gray-100 [&_em]:italic",
+        // Inline code
+        "[&_:not(pre)>code]:bg-gray-800 [&_:not(pre)>code]:text-gray-200 [&_:not(pre)>code]:rounded [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:text-[0.85em] [&_:not(pre)>code]:font-mono",
+        // Code block
+        "[&_pre]:bg-gray-950 [&_pre]:border [&_pre]:border-gray-700 [&_pre]:rounded [&_pre]:p-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre]:font-mono [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-gray-200",
+        // Lists
+        "[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5",
+        // Headings (we keep them small since messages aren't articles)
+        "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-1",
+        "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1",
+        "[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-1 [&_h3]:mb-0.5",
+        "[&_h4]:text-sm [&_h4]:font-semibold [&_h4]:mt-1",
+        // Blockquote
+        "[&_blockquote]:border-l-2 [&_blockquote]:border-gray-600 [&_blockquote]:pl-3 [&_blockquote]:text-gray-400 [&_blockquote]:my-1",
+        // Links
+        "[&_a]:text-blue-300 [&_a]:underline [&_a]:break-all",
+        // Tables (GFM)
+        "[&_table]:border-collapse [&_table]:my-2 [&_table]:text-xs",
+        "[&_th]:border [&_th]:border-gray-700 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-gray-800",
+        "[&_td]:border [&_td]:border-gray-700 [&_td]:px-2 [&_td]:py-1",
+        // Horizontal rule
+        "[&_hr]:border-gray-700 [&_hr]:my-2",
+      ].join(" ")}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        skipHtml
+        components={{
+          a: ({ href, children }) => (
+            <a href={href ?? "#"} target="_blank" rel="noopener noreferrer">
+              {inline(children)}
+            </a>
+          ),
+          p: ({ children }) => <p>{inline(children)}</p>,
+          li: ({ children }) => <li>{inline(children)}</li>,
+          strong: ({ children }) => <strong>{inline(children)}</strong>,
+          em: ({ children }) => <em>{inline(children)}</em>,
+          h1: ({ children }) => <h1>{inline(children)}</h1>,
+          h2: ({ children }) => <h2>{inline(children)}</h2>,
+          h3: ({ children }) => <h3>{inline(children)}</h3>,
+          h4: ({ children }) => <h4>{inline(children)}</h4>,
+          h5: ({ children }) => <h5>{inline(children)}</h5>,
+          h6: ({ children }) => <h6>{inline(children)}</h6>,
+          blockquote: ({ children }) => <blockquote>{inline(children)}</blockquote>,
+          // Leave `code` alone — we don't want @ mentions to turn into links
+          // inside inline code or code blocks.
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function playNotificationSound() {
@@ -1192,7 +1262,7 @@ export function MyOrgPage() {
                   // ─── DM mode: keep the existing chat-bubble layout ───
                   return (
                     <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isSelf ? "justify-end" : "justify-start"} transition-all duration-300 ${highlightMsgId === msg.id ? "ring-2 ring-yellow-400 rounded-lg" : ""}`}>
-                      <div className={`group/bubble relative max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
+                      <div className={`group/bubble relative max-w-[75%] rounded-lg px-3 py-2 text-sm leading-relaxed break-words ${isSelf ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-200"}`}>
                         <div className={`flex items-center gap-2 mb-0.5 ${isSelf ? "justify-end" : "justify-start"}`}>
                           {!isSelf && <span className="text-[10px] text-gray-400">{senderName}</span>}
                           {isSelf && ((data?.my_bots || []).length > 1) && <span className="text-[10px] text-blue-200/70">{senderName}</span>}
