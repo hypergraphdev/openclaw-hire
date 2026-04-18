@@ -53,7 +53,7 @@ export const api = {
   catalog: () => request<ProductCatalog[]>("/api/catalog"),
 
   // Instances
-  createInstance: (payload: { name: string; product: string }) =>
+  createInstance: (payload: { name: string; product: string; runtime?: string }) =>
     request<Instance>("/api/instances", { method: "POST", body: JSON.stringify(payload) }),
 
   listInstances: () => request<Instance[]>("/api/instances"),

@@ -129,15 +129,30 @@ PRODUCT_MAP = {p.id: p for p in PRODUCTS}
 
 # ── Instances ─────────────────────────────────────────────────────────────────
 
+LOCAL_AGENT_RUNTIMES = {"claude", "codex", "gemini"}
+
+
 class CreateInstanceRequest(BaseModel):
     name: str
     product: str
+    # Local Agent only — which local CLI the daemon should spawn.
+    # Ignored for Docker-backed products (their runtime is fixed).
+    runtime: str | None = None
 
     @field_validator("product")
     @classmethod
     def valid_product(cls, v: str) -> str:
         if v not in PRODUCT_MAP:
             raise ValueError(f"Product must be one of: {list(PRODUCT_MAP.keys())}")
+        return v
+
+    @field_validator("runtime")
+    @classmethod
+    def valid_runtime(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if v not in LOCAL_AGENT_RUNTIMES:
+            raise ValueError(f"runtime must be one of: {sorted(LOCAL_AGENT_RUNTIMES)}")
         return v
 
     @field_validator("name")

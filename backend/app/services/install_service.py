@@ -851,11 +851,18 @@ def _cleanup_zylos_hxa_bot(agent_name: str, org_id: str, org_secret: str) -> Non
         pass
 
 
-def register_local_agent_bot(instance_id: str) -> tuple[bool, str, str, str, str]:
+def register_local_agent_bot(
+    instance_id: str,
+    runtime: str | None = None,
+) -> tuple[bool, str, str, str, str]:
     """Register a Local Agent with HXA Connect via ticket (member role).
 
     Local Agent has no container — we just create a bot identity whose token
     will be handed to the user as the @slock-ai/daemon --api-key.
+
+    `runtime` tells hxa-connect which local CLI the daemon should spawn
+    (claude / codex / gemini …). It is stored as the bot's profile.runtime
+    field; connect.ts reads it when pushing agent:start on daemon ready.
 
     Returns: (ok, agent_token, agent_id, agent_name, error_message)
     """
@@ -905,9 +912,12 @@ def register_local_agent_bot(instance_id: str) -> tuple[bool, str, str, str, str
 
     # Step 3: register bot with the ticket
     try:
+        reg_payload: dict = {"org_id": org_id, "ticket": ticket_secret, "name": agent_name}
+        if runtime:
+            reg_payload["runtime"] = runtime
         reg_req = urllib.request.Request(
             f"{hub}/api/auth/register",
-            data=json.dumps({"org_id": org_id, "ticket": ticket_secret, "name": agent_name}).encode(),
+            data=json.dumps(reg_payload).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
         )

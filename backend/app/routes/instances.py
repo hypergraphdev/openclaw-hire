@@ -209,7 +209,8 @@ def create_instance(
     # Local Agent: no Docker install. Register a hub bot right away so the
     # user can immediately copy the `npx @slock-ai/daemon ...` command.
     if payload.product == "local_agent":
-        ok, token, agent_id, agent_name, err = register_local_agent_bot(instance_id)
+        chosen_runtime = payload.runtime or "claude"
+        ok, token, agent_id, agent_name, err = register_local_agent_bot(instance_id, runtime=chosen_runtime)
         if ok:
             set_setting(f"local_agent_token_{instance_id}", token)
             hub_url = _get_hub_url()

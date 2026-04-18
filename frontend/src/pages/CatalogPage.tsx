@@ -4,6 +4,12 @@ import { api } from "../api";
 import { useT } from "../contexts/LanguageContext";
 import type { ProductCatalog } from "../types";
 
+const LOCAL_AGENT_RUNTIMES: Array<{ id: string; label: string; hint: string }> = [
+  { id: "claude", label: "Claude Code", hint: "需本机装好 `claude` CLI 并登录" },
+  { id: "codex",  label: "Codex CLI",   hint: "需本机装好 `codex` CLI 并登录" },
+  { id: "gemini", label: "Gemini CLI",  hint: "需本机装好 `gemini` CLI 并登录" },
+];
+
 function DeployModal({
   product,
   onClose,
@@ -12,19 +18,21 @@ function DeployModal({
 }: {
   product: ProductCatalog;
   onClose: () => void;
-  onDeploy: (name: string) => Promise<void>;
+  onDeploy: (name: string, runtime?: string) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const [name, setName] = useState(`${product.id}-${Date.now().toString(36).slice(-4)}`);
+  const [runtime, setRuntime] = useState("claude");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const isLocalAgent = product.id === "local_agent";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await onDeploy(name);
+      await onDeploy(name, isLocalAgent ? runtime : undefined);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("catalog.deployFailed"));
       setLoading(false);
@@ -54,6 +62,23 @@ function DeployModal({
               className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
+          {isLocalAgent && (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">本机 CLI</label>
+              <select
+                value={runtime}
+                onChange={(e) => setRuntime(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {LOCAL_AGENT_RUNTIMES.map((r) => (
+                  <option key={r.id} value={r.id}>{r.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {LOCAL_AGENT_RUNTIMES.find((r) => r.id === runtime)?.hint}
+              </p>
+            </div>
+          )}
           <div className="bg-gray-800 rounded-md p-3 text-xs text-gray-400">
             <span className="text-gray-500">{t("catalog.repository")}</span>
             <a href={product.repo_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">
@@ -95,9 +120,14 @@ export function CatalogPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleDeploy(name: string) {
+  async function handleDeploy(name: string, runtime?: string) {
     if (!selectedProduct) return;
-    const instance = await api.createInstance({ name, product: selectedProduct.id });
+    const payload: { name: string; product: string; runtime?: string } = {
+      name,
+      product: selectedProduct.id,
+    };
+    if (runtime) payload.runtime = runtime;
+    const instance = await api.createInstance(payload);
     navigate(`/instances/${instance.id}`);
   }
 
