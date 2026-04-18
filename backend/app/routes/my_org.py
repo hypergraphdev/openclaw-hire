@@ -782,14 +782,7 @@ def thread_messages(
         raise HTTPException(status_code=400, detail="Not in an organization.")
 
     hub_url = _get_hub_url().rstrip("/")
-    if info["my_bots"]:
-        token = _get_agent_token(info["my_bots"][0]["instance_id"])
-    else:
-        _cur = db.cursor(dictionary=True)
-        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
-        user_row = _cur.fetchone()
-        _cur.close()
-        token = _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "")
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
 
@@ -906,17 +899,69 @@ def thread_send(
     return result
 
 
-def _get_thread_token(user_id: str, info: dict, hub_url: str, db) -> str:
-    """Get bot token for thread operations."""
-    if info["my_bots"]:
-        token = _get_agent_token(info["my_bots"][0]["instance_id"])
-        if token:
-            return token
-    _cur = db.cursor(dictionary=True)
-    _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
-    user_row = _cur.fetchone()
-    _cur.close()
-    return _ensure_user_bot(hub_url, user_id, user_row["name"] if user_row else "", target_org_id=info.get("org_id") or None)
+def _get_thread_token(
+    user_id: str,
+    info: dict,
+    hub_url: str,
+    db,
+    thread_id: str | None = None,
+) -> str:
+    """Get a bot token for thread operations.
+
+    If ``thread_id`` is given, probe each candidate token against
+    GET /api/threads/{id} and return the first one whose bot is actually
+    a participant — this avoids "Not a participant of this thread" 403s
+    when a user has multiple bots and the current top-of-list one isn't
+    in the thread yet (common after creating a new Local Agent).
+    """
+    candidates: list[str] = []
+    for b in info.get("my_bots", []) or []:
+        tok = _get_agent_token(b["instance_id"])
+        if tok and tok not in candidates:
+            candidates.append(tok)
+    # Admin bot is the universal fallback — the hub user's personal bot.
+    try:
+        _cur = db.cursor(dictionary=True)
+        _cur.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        user_row = _cur.fetchone()
+        _cur.close()
+        admin = _ensure_user_bot(
+            hub_url,
+            user_id,
+            user_row["name"] if user_row else "",
+            target_org_id=info.get("org_id") or None,
+        )
+        if admin and admin not in candidates:
+            candidates.append(admin)
+    except Exception:
+        pass
+
+    if not candidates:
+        return ""
+    if not thread_id:
+        return candidates[0]
+
+    # Pick the first candidate that's a participant of this thread.
+    for tok in candidates:
+        try:
+            probe = urllib.request.Request(
+                f"{hub_url}/api/threads/{thread_id}",
+                headers={"Authorization": f"Bearer {tok}"},
+            )
+            with urllib.request.urlopen(probe, timeout=5) as _resp:
+                _resp.read()
+            return tok
+        except urllib.error.HTTPError as e:
+            # 403/404 → not a participant; try next. Other errors → give up
+            # and return the first so the caller surfaces a real error.
+            if e.code in (403, 404):
+                continue
+            return candidates[0]
+        except Exception:
+            continue
+    # Nothing is a participant — return first so caller can propagate the
+    # actual hub error verbatim (likely 403 NOT_PARTICIPANT).
+    return candidates[0]
 
 
 @router.get("/threads/{thread_id}")
@@ -932,7 +977,7 @@ def get_thread_detail(
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
-    token = _get_thread_token(user_id, info, hub_url, db)
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
     return _hub_request(hub_url, token, "GET", f"/api/threads/{thread_id}")
@@ -957,7 +1002,7 @@ def update_thread(
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
-    token = _get_thread_token(user_id, info, hub_url, db)
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
 
@@ -984,7 +1029,7 @@ def leave_thread(
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
-    token = _get_thread_token(user_id, info, hub_url, db)
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
 
@@ -1040,7 +1085,7 @@ def invite_to_thread(
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
-    token = _get_thread_token(user_id, info, hub_url, db)
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
     # Hub requires bot_id, resolve name first
@@ -1065,7 +1110,7 @@ def kick_from_thread(
     if info["status"] != "ok":
         raise HTTPException(status_code=400, detail="Not in an organization.")
     hub_url = _get_hub_url().rstrip("/")
-    token = _get_thread_token(user_id, info, hub_url, db)
+    token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
     if not token:
         raise HTTPException(status_code=400, detail="No bot available.")
     try:
@@ -1427,7 +1472,7 @@ def evaluate_thread_task(
 
     if auto_rev and should_request_revision(task, evaluation, min_score):
         hub_url = _get_hub_url().rstrip("/")
-        token = _get_thread_token(user_id, info, hub_url, db)
+        token = _get_thread_token(user_id, info, hub_url, db, thread_id=thread_id)
         if token:
             revision_msg = format_revision_request({**task, "quality_score": score}, feedback)
             try:
