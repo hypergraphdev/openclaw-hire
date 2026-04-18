@@ -130,6 +130,17 @@ export function InstanceDetailPage() {
   const [error, setError] = useState("");
   const [upgradeResult, setUpgradeResult] = useState<{ ok: boolean; output: string } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarBroken, setAvatarBroken] = useState(false);
+
+  const fetchAvatar = useCallback(() => {
+    if (!instanceId) return;
+    api.getAvatar(instanceId)
+      .then((r) => { setAvatarUrl(r.avatar_url); setAvatarBroken(false); })
+      .catch(() => { /* not a hard error — header just shows the initial */ });
+  }, [instanceId]);
+
+  useEffect(() => { fetchAvatar(); }, [fetchAvatar]);
   const [botToken, setBotToken] = useState("");
   const [configuring, setConfiguring] = useState(false);
   const [configResult, setConfigResult] = useState<TelegramConfigResponse | null>(null);
@@ -365,6 +376,20 @@ export function InstanceDetailPage() {
       <div className="mb-6 space-y-4">
         <div>
           <div className="flex flex-wrap items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-gray-800 border border-gray-700 overflow-hidden flex items-center justify-center shrink-0">
+              {avatarUrl && !avatarBroken ? (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  onError={() => setAvatarBroken(true)}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-sm font-semibold text-gray-400 select-none">
+                  {(instance.name || "?").charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
             <h1 className="text-xl font-semibold text-white">{instance.name}</h1>
             <StatusPill state={instance.install_state} size="md" />
             {isOwner && (
@@ -441,7 +466,7 @@ export function InstanceDetailPage() {
             instanceId={instanceId}
             currentName={instance.name}
             onClose={() => setShowEditModal(false)}
-            onSaved={() => void fetchDetail()}
+            onSaved={() => { void fetchDetail(); fetchAvatar(); }}
           />
         )}
 
