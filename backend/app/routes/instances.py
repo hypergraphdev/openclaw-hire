@@ -1079,6 +1079,130 @@ def rename_agent(
     return {"ok": True, "agent_name": new_name}
 
 
+_AVATAR_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_AVATAR_MAX_BYTES = 2 * 1024 * 1024
+
+
+@router.get("/{instance_id}/avatar")
+def get_avatar(
+    instance_id: str,
+    current_user=Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Read the current avatar URL from HXA Connect for this instance's bot."""
+    _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    from .admin_hxa import _get_agent_token
+    from ..services.install_service import _get_hub_url
+
+    agent_token = _get_agent_token(instance_id)
+    if not agent_token:
+        return {"avatar_url": None}
+    hub = _get_hub_url().rstrip("/")
+    try:
+        req = urllib.request.Request(
+            f"{hub}/api/me",
+            headers={"Authorization": f"Bearer {agent_token}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            me = json.loads(resp.read().decode())
+        return {"avatar_url": me.get("avatar_url") or None}
+    except Exception:
+        return {"avatar_url": None}
+
+
+@router.post("/{instance_id}/avatar")
+async def upload_avatar(
+    instance_id: str,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Proxy-upload an avatar image to HXA Connect on behalf of this instance's bot."""
+    inst = _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    from .admin_hxa import _get_agent_token
+    from ..services.install_service import _get_hub_url
+
+    agent_token = _get_agent_token(instance_id)
+    if not agent_token:
+        raise HTTPException(status_code=400, detail="找不到该实例的 agent token。")
+
+    mime = (file.content_type or "").lower()
+    if mime not in _AVATAR_ALLOWED_MIMES:
+        raise HTTPException(status_code=415, detail=f"头像仅支持 jpg/png/gif/webp，当前：{mime}")
+
+    data = await file.read()
+    if len(data) > _AVATAR_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"头像不能大于 {_AVATAR_MAX_BYTES // 1024 // 1024}MB")
+    if not data:
+        raise HTTPException(status_code=400, detail="空文件")
+
+    # Hand-rolled multipart/form-data (no requests/httpx in deps).
+    import secrets
+    boundary = secrets.token_hex(16)
+    filename = (file.filename or "avatar").encode("ascii", errors="replace").decode()
+    body = b""
+    body += f"--{boundary}\r\n".encode()
+    body += (
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {mime}\r\n\r\n"
+    ).encode()
+    body += data
+    body += f"\r\n--{boundary}--\r\n".encode()
+
+    hub = _get_hub_url().rstrip("/")
+    req = urllib.request.Request(
+        f"{hub}/api/me/avatar",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {agent_token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:500] if e.fp else str(e)
+        raise HTTPException(status_code=e.code, detail=f"Hub 头像上传失败：{detail}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Hub 不可达：{e}")
+
+    return {"ok": True, "avatar_url": result.get("avatar_url", ""), "instance_id": inst["id"]}
+
+
+@router.delete("/{instance_id}/avatar")
+def delete_avatar(
+    instance_id: str,
+    current_user=Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """Clear the bot's avatar on HXA Connect."""
+    _get_instance_or_404(instance_id, current_user["id"], db, is_admin=bool(current_user.get("is_admin")))
+    from .admin_hxa import _get_agent_token
+    from ..services.install_service import _get_hub_url
+
+    agent_token = _get_agent_token(instance_id)
+    if not agent_token:
+        raise HTTPException(status_code=400, detail="找不到该实例的 agent token。")
+
+    hub = _get_hub_url().rstrip("/")
+    req = urllib.request.Request(
+        f"{hub}/api/me/avatar",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:500] if e.fp else str(e)
+        raise HTTPException(status_code=e.code, detail=f"Hub 清除失败：{detail}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Hub 不可达：{e}")
+    return {"ok": True}
+
+
 @router.delete("/{instance_id}")
 def delete_instance(
     instance_id: str,

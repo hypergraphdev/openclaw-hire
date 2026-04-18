@@ -119,6 +119,28 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
+  getAvatar: (id: string) =>
+    request<{ avatar_url: string | null }>(`/api/instances/${id}/avatar`),
+
+  uploadAvatar: async (id: string, file: File): Promise<{ ok: boolean; avatar_url: string; instance_id: string }> => {
+    const token = getStoredToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_BASE}/api/instances/${id}/avatar`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "上传失败" }));
+      throw new Error(err.detail || "上传失败");
+    }
+    return res.json();
+  },
+
+  deleteAvatar: (id: string) =>
+    request<{ ok: boolean }>(`/api/instances/${id}/avatar`, { method: "DELETE" }),
+
   instanceLogs: (id: string, lines = 200) =>
     request<InstanceLogs>(`/api/instances/${id}/logs?lines=${lines}`),
 
